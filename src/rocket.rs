@@ -18,7 +18,7 @@ pub struct RocketCone;
 #[derive(Component)]
 pub struct FinMarker;
 
-const CONE_DENISTY: f32 = 1.0;
+const CONE_DENSITY: f32 = 1.0;
 const FUSELAGE_DENSITY: f32 = 1.0;
 //const FIN_DENSITY: f32 = 0.025;
 
@@ -278,7 +278,7 @@ pub fn spawn_rocket_system(
                 ..Default::default()
             },
             Collider::cone(rocket_dims.cone_length, rocket_dims.radius),
-            ColliderDensity(CONE_DENISTY),
+            ColliderDensity(CONE_DENSITY),
             Friction::new(0.7),
             Restitution::new(0.4),
             RocketCone,
