@@ -11,7 +11,6 @@ bevy = { version = "0.13.1" }
 # Can't upgrade to 0.26 due to
 # https://github.com/mvlabat/bevy_egui/issues/269
 bevy_egui = "0.25.0"
-bevy_math = "0.13.0"
 bevy-inspector-egui = "0.23.2"
 bevy_generative = "0.2.0"
 bevy_firework = "0.3.0"

@@ -1,5 +1,4 @@
-use bevy::prelude::*;
-use bevy_math::primitives::Cylinder;
+use bevy::{math::primitives::Cylinder, prelude::*};
 use bevy_xpbd_3d::plugins::collision::Collider;
 use bevy_xpbd_3d::prelude::*;
 

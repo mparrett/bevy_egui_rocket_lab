@@ -384,7 +384,6 @@ dependencies = [
  "bevy_egui",
  "bevy_firework",
  "bevy_generative",
- "bevy_math",
  "bevy_utilitarian",
  "bevy_xpbd_3d",
  "rand 0.8.5",

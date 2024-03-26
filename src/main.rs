@@ -3,6 +3,7 @@ use bevy::{
     core_pipeline::{bloom::BloomSettings, Skybox},
     diagnostic::FrameTimeDiagnosticsPlugin,
     input::common_conditions::input_toggle_active,
+    math::primitives::Cylinder,
     prelude::*,
     render::{
         camera::PerspectiveProjection,
@@ -16,7 +17,6 @@ use bevy_firework::plugin::ParticleSystemPlugin;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_generative::terrain::TerrainPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy_math::primitives::Cylinder;
 use bevy_xpbd_3d::{math::*, prelude::*};
 
 use egui::Key;
