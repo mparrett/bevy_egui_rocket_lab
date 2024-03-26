@@ -17,7 +17,6 @@ bevy_firework = "0.3.0"
 bevy_xpbd_3d = "0.4.2"
 bevy_utilitarian = "0.4.0"
 rand = "0.8.5"
-bevy_dolly = "0.0.3"
 
 # enable some optimizations for our code in dev mode
 #[profile.dev]
