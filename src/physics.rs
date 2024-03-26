@@ -80,21 +80,21 @@ pub fn update_forces_system(
         if force.timer.finished() {
             println!("Timer finished, removing force timer");
             commands.entity(entity).remove::<ForceTimer>();
-        } else {
-            if force.force.is_some() {
-                if force.sync_rotation_with_entity {
-                    //println!("Applying force (synced)");
-                    external_force.apply_force(
-                        ent_transform.rotation.mul_vec3(Vec3::Y) * force.force.unwrap(),
-                    );
-                } else {
-                    //println!("Applying force (synced)");
-                    external_force.apply_force(force.force.unwrap());
-                }
+            continue;
+        }
+
+        if let Some(value) = force.force {
+            if force.sync_rotation_with_entity {
+                //println!("Applying force (synced)");
+                external_force.apply_force(ent_transform.rotation.mul_vec3(Vec3::Y) * value);
+            } else {
+                //println!("Applying force (synced)");
+                external_force.apply_force(value);
             }
-            if force.torque.is_some() {
-                external_torque.apply_torque(force.torque.unwrap());
-            }
+        }
+
+        if let Some(value) = force.torque {
+            external_torque.apply_torque(value);
         }
     }
 }
