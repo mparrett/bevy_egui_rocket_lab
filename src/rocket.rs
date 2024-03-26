@@ -1,5 +1,4 @@
-use bevy::prelude::*;
-use bevy_math::primitives::Cylinder;
+use bevy::{math::primitives::Cylinder, prelude::*};
 use bevy_xpbd_3d::plugins::collision::Collider;
 use bevy_xpbd_3d::prelude::*;
 
@@ -19,9 +18,11 @@ pub struct RocketCone;
 #[derive(Component)]
 pub struct FinMarker;
 
-const CONE_DENISTY: f32 = 1.0;
+const CONE_DENSITY: f32 = 1.0;
 const FUSELAGE_DENSITY: f32 = 1.0;
 //const FIN_DENSITY: f32 = 0.025;
+
+pub const CIRCLE_RESOLUTION: u32 = 16;
 
 /*
 // TODO: Refactor to use ECS properly
@@ -247,7 +248,11 @@ pub fn spawn_rocket_system(
     commands.spawn(rocket_bundle).with_children(|parent| {
         parent.spawn((
             PbrBundle {
-                mesh: meshes.add(Cylinder::new(rocket_dims.radius, rocket_dims.length).mesh()),
+                mesh: meshes.add(
+                    Cylinder::new(rocket_dims.radius, rocket_dims.length)
+                        .mesh()
+                        .resolution(CIRCLE_RESOLUTION),
+                ),
                 //material: materials.add(Color::rgb(0.8, 0.2, 0.2)),
                 transform: Transform::from_xyz(0.0, 0.0, 0.0),
                 material: materials.add(rocket_material.clone()),
@@ -265,7 +270,7 @@ pub fn spawn_rocket_system(
                 mesh: meshes.add(Mesh::from(Cone {
                     radius: rocket_dims.radius,
                     height: rocket_dims.cone_length,
-                    segments: 8,
+                    segments: CIRCLE_RESOLUTION,
                 })),
                 //material: materials.add(Color::rgb(0.8, 0.2, 0.2).into()),
                 material: materials.add(rocket_material),
@@ -273,7 +278,7 @@ pub fn spawn_rocket_system(
                 ..Default::default()
             },
             Collider::cone(rocket_dims.cone_length, rocket_dims.radius),
-            ColliderDensity(CONE_DENISTY),
+            ColliderDensity(CONE_DENSITY),
             Friction::new(0.7),
             Restitution::new(0.4),
             RocketCone,

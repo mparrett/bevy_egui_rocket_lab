@@ -3,6 +3,7 @@ use bevy::{
     core_pipeline::{bloom::BloomSettings, Skybox},
     diagnostic::FrameTimeDiagnosticsPlugin,
     input::common_conditions::input_toggle_active,
+    math::primitives::Cylinder,
     prelude::*,
     render::{
         camera::PerspectiveProjection,
@@ -16,7 +17,6 @@ use bevy_firework::plugin::ParticleSystemPlugin;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_generative::terrain::TerrainPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy_math::primitives::Cylinder;
 use bevy_xpbd_3d::{math::*, prelude::*};
 
 use egui::Key;
@@ -757,7 +757,11 @@ fn update_rocket_dimensions_system(
 
     // Update the mesh and collider to match the new dimensions
     for (mut mesh_handle, mut collider, _) in body_query.iter_mut() {
-        *mesh_handle = meshes.add(Cylinder::new(rocket_dims.radius, rocket_dims.length).mesh());
+        *mesh_handle = meshes.add(
+            Cylinder::new(rocket_dims.radius, rocket_dims.length)
+                .mesh()
+                .resolution(rocket::CIRCLE_RESOLUTION),
+        );
         *collider = Collider::cylinder(rocket_dims.length, rocket_dims.radius);
     }
 
@@ -765,7 +769,7 @@ fn update_rocket_dimensions_system(
         *mesh_handle = meshes.add(Mesh::from(Cone {
             radius: rocket_dims.radius,
             height: rocket_dims.cone_length,
-            segments: 8,
+            segments: rocket::CIRCLE_RESOLUTION,
         }));
         *collider = Collider::cone(rocket_dims.cone_length, rocket_dims.radius);
         transform.translation.y = rocket_dims.total_length() * 0.5;
