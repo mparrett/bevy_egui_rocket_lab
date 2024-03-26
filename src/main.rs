@@ -6,8 +6,8 @@ use bevy::{
     prelude::*,
     render::{
         camera::PerspectiveProjection,
-        texture::{ImageAddressMode, ImageSamplerDescriptor},
         camera::Viewport,
+        texture::{ImageAddressMode, ImageSamplerDescriptor},
     },
     transform::TransformSystem,
 };
@@ -24,13 +24,18 @@ use sky::SkyProperties;
 
 use crate::{
     camera::{
-        //update_camera_target, 
+        set_camera_viewports,
+        //update_camera_target,
         update_camera_transform_system,
-        update_camera_zoom_perspective_system, 
-        CameraProperties, ControlMode, FollowMode,
-        OccupiedScreenSpace, OriginalCameraTransform, CAMERA_MODES, INITIAL_CAMERA_POS,
+        update_camera_zoom_perspective_system,
+        CameraProperties,
+        ControlMode,
+        FollowMode,
+        OccupiedScreenSpace,
+        OriginalCameraTransform,
+        CAMERA_MODES,
+        INITIAL_CAMERA_POS,
         ZOOM_LEVELS,
-        set_camera_viewports
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
@@ -42,8 +47,8 @@ use crate::{
         RocketDimensions, RocketFlightParameters, RocketMarker, RocketState, RocketStateEnum,
     },
     sky::{
-        animate_light_direction, cubemap_asset_loaded, setup_sky_system, spawn_simple_sky_box,
-        toggle_fog_system, FocalPoint, CUBEMAPS, CUBEMAP_IDX,
+        animate_light_direction, cubemap_asset_loaded, setup_sky_system, spawn_regular_sky_map,
+        spawn_simple_sky_box, toggle_fog_system, FocalPoint, CUBEMAPS, CUBEMAP_IDX,
     },
     util::random_vec,
 };
@@ -169,18 +174,19 @@ fn main() {
         (
             //update_camera_target,
             update_camera_zoom_perspective_system,
-            update_camera_transform_system
-            
+            update_camera_transform_system,
         )
             .after(PhysicsSet::Sync)
             .before(TransformSystem::TransformPropagate),
     );
 
-    app.init_resource::<FocalPoint>();
-    app.add_systems(Startup, spawn_simple_sky_box);
+    // Simple sky box
+    //app.init_resource::<FocalPoint>();
+    //app.add_systems(Startup, spawn_simple_sky_box);
     //app.add_systems(Update, (sync_sky_box_center_offset));
 
-    //app.add_systems(Startup, (spawn_regular_sky_map));
+    // Cubemap sky
+    app.add_systems(Startup, spawn_regular_sky_map);
     app.add_systems(Update, (cubemap_asset_loaded, animate_light_direction));
     app.add_systems(Update, adjust_time_scale);
 
@@ -229,6 +235,7 @@ fn init_egui_ui_input_system(
     mut rocket_force_query: Query<(&mut ExternalForce, &mut ExternalTorque), With<RocketMarker>>,
     mut camera_query: Query<&mut Transform, With<Camera>>,
     mut exit: EventWriter<AppExit>,
+    mut camera_properties: ResMut<CameraProperties>,
 ) {
     let ctx = contexts.ctx_mut();
     let (rocket_ent, mut forces, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
@@ -240,12 +247,7 @@ fn init_egui_ui_input_system(
     if ctx.input(|i| i.key_pressed(Key::R)) {
         println!("Resetting rocket state");
 
-        if let Ok(mut camera_transform) = camera_query.get_single_mut() {
-            // Slight jitter issue here
-            // Might want to have a camera translatino target and ease
-            // like we do with look target
-            camera_transform.translation = INITIAL_CAMERA_POS.clone();
-        }
+        camera_properties.desired_translation = INITIAL_CAMERA_POS.clone();
 
         // Reset stats
         //rocket_state.max_height = 0;
@@ -358,19 +360,19 @@ fn do_launch_system(
 
     // Camera truck/dolly movement
     if ctx.input(|i| i.key_down(Key::ArrowUp)) {
-        let delta_to_target = camera_properties.translation - camera_properties.target;
+        let delta_to_target = camera_properties.desired_translation - camera_properties.target;
         let increment = 0.05;
-        camera_properties.translation.x =
-            camera_properties.translation.x - increment * delta_to_target.x;
-        camera_properties.translation.z =
-            camera_properties.translation.z - increment * delta_to_target.z;
+        camera_properties.desired_translation.x =
+            camera_properties.desired_translation.x - increment * delta_to_target.x;
+        camera_properties.desired_translation.z =
+            camera_properties.desired_translation.z - increment * delta_to_target.z;
     } else if ctx.input(|i| i.key_down(Key::ArrowDown)) {
-        let delta_to_target = camera_properties.translation - camera_properties.target;
+        let delta_to_target = camera_properties.desired_translation - camera_properties.target;
         let increment = 0.05;
-        camera_properties.translation.x =
-            camera_properties.translation.x + increment * delta_to_target.x;
-        camera_properties.translation.z =
-            camera_properties.translation.z + increment * delta_to_target.z;
+        camera_properties.desired_translation.x =
+            camera_properties.desired_translation.x + increment * delta_to_target.x;
+        camera_properties.desired_translation.z =
+            camera_properties.desired_translation.z + increment * delta_to_target.z;
     }
 
     if ctx.input(|i| i.key_pressed(Key::Enter)) {
@@ -542,7 +544,10 @@ fn ui_system(
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<&Transform, With<Camera>>,
-    mut rocket_query: Query<(Entity, &RigidBody, &ColliderMassProperties), (With<RocketMarker>, Without<Camera>)>,
+    mut rocket_query: Query<
+        (Entity, &RigidBody, &ColliderMassProperties),
+        (With<RocketMarker>, Without<Camera>),
+    >,
 ) {
     let ctx = contexts.ctx_mut();
 
@@ -565,7 +570,7 @@ fn ui_system(
 
                 ui.label("Elevation");
                 ui.add(egui::Slider::new(
-                    &mut camera_properties.translation.y,
+                    &mut camera_properties.desired_translation.y,
                     0.1..=20.0,
                 ));
                 ui.label("Zoom");
@@ -681,8 +686,13 @@ fn ui_system(
                 );
                 if let Ok(qq) = rocket_query.get_single() {
                     let (ent, rigid_body, mass) = qq;
-                    ui.label(format!("Mass: {:.2}, ...: {:.2} {:.2} {:.2}", 
-                        mass.mass.0, mass.center_of_mass.x, mass.center_of_mass.y, mass.center_of_mass.z));
+                    ui.label(format!(
+                        "Mass: {:.2}, ...: {:.2} {:.2} {:.2}",
+                        mass.mass.0,
+                        mass.center_of_mass.x,
+                        mass.center_of_mass.y,
+                        mass.center_of_mass.z
+                    ));
                 }
                 ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
             })
@@ -800,6 +810,7 @@ fn setup_camera_system(
     let camera_pos = INITIAL_CAMERA_POS;
     let camera_transform =
         Transform::from_translation(camera_pos).looking_at(camera_properties.target, Vec3::Y);
+
     commands.insert_resource(OriginalCameraTransform(camera_transform.clone()));
 
     let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
@@ -831,26 +842,31 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
     // See: https://docs.rs/bevy/latest/src/alien_cake_addict/alien_cake_addict.rs.html#235
 
     // example instructions
-    /*
-    // how to hide/show in game states?
+    // TODO: game states to hide/show this?
     commands.spawn(
         TextBundle::from_section(
             "Press 'R' to reset\n\
-            Press 'Space' to launch!\n\
-            Use camera controls to get the best view!\n",
+            Press 'Enter' to launch!\n\
+            Press 'C' to toggle camera mode\n\
+            Press 'Z' to toggle zoom\n\
+            Press 'Q' to quit\n\
+            Press 'D'/'S' to destabilize/stabilize\n\
+            Press 'F' to toggle fog\n\
+            Press 'T' to toggle fog type\n\
+            Press 'Space' to toggle slowmo\n\
+            Use arrow keys to move camera (wip)\n",
             TextStyle {
-                font_size: 18.,
+                font_size: 16.,
                 ..default()
             },
         )
         .with_style(Style {
             position_type: PositionType::Absolute,
-            top: Val::Px(75.0),
-            left: Val::Px(200.0),
+            top: Val::Px(85.0),
+            left: Val::Px(220.0),
             ..default()
         }),
     );
-    */
 
     // scoreboard
     commands.spawn((
@@ -868,7 +884,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
         .with_style(Style {
             position_type: PositionType::Relative,
             top: Val::Px(20.0),
-            left: Val::Px(250.0),
+            left: Val::Px(200.0),
             width: Val::Px(300.0),
             ..default()
         }),

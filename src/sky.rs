@@ -85,14 +85,14 @@ pub fn setup_sky_system(mut commands: Commands) {
     });
 }
 
-//pub fn spawn_regular_sky_map(mut commands: Commands, asset_server: Res<AssetServer>) {
-//    let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
-//    commands.insert_resource(Cubemap {
-//        is_loaded: false,
-//        index: CUBEMAP_IDX,
-//        image_handle: skybox_handle.clone(),
-//    });
-//}
+pub fn spawn_regular_sky_map(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
+    commands.insert_resource(Cubemap {
+        is_loaded: false,
+        index: CUBEMAP_IDX,
+        image_handle: skybox_handle.clone(),
+    });
+}
 
 pub fn cubemap_asset_loaded(
     asset_server: Res<AssetServer>,

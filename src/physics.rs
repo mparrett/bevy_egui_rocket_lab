@@ -80,7 +80,7 @@ pub fn update_forces_system(
         if force.timer.finished() {
             println!("Timer finished, removing force timer");
             commands.entity(entity).remove::<ForceTimer>();
-        } else {            
+        } else {
             if force.force.is_some() {
                 if force.sync_rotation_with_entity {
                     //println!("Applying force (synced)");
