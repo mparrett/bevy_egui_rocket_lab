@@ -13,7 +13,9 @@ bevy = { version = "0.13.1" }
 bevy_egui = "0.25.0"
 bevy-inspector-egui = "0.23.2"
 bevy_generative = "0.2.0"
-bevy_firework = "0.3.0"
+# Particle code relies on a yet unreleased feature.
+# See https://github.com/mbrea-c/bevy_firework/pull/12
+bevy_firework = { git = "https://github.com/mbrea-c/bevy_firework", rev = "a191fd8" }
 bevy_xpbd_3d = "0.4.2"
 bevy_utilitarian = "0.4.0"
 rand = "0.8.5"

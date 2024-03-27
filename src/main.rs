@@ -20,6 +20,7 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_xpbd_3d::{math::*, prelude::*};
 
 use egui::Key;
+use particles::RocketParticlesPlugin;
 use sky::SkyProperties;
 
 use crate::{
@@ -40,7 +41,6 @@ use crate::{
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
     ground::setup_ground_system,
-    particles::get_rocket_particle_spawn_bundle,
     physics::{get_timer_id, lock_all_axes, update_forces_system, ForceTimer, TimedForces},
     rocket::{
         create_rocket_fin_pbr_bundles, spawn_rocket_system, FinMarker, RocketBody, RocketCone,
@@ -77,6 +77,9 @@ struct LaunchEvent;
 #[derive(Event)]
 struct DownedEvent;
 
+#[derive(Event, Default)]
+struct ResetEvent;
+
 #[derive(Component, Default)]
 struct ScoreMarker;
 
@@ -93,6 +96,7 @@ fn main() {
     app.init_state::<GameState>();
     app.add_event::<LaunchEvent>();
     app.add_event::<DownedEvent>();
+    app.add_event::<ResetEvent>();
 
     app.add_plugins(
         DefaultPlugins
@@ -123,6 +127,7 @@ fn main() {
     .insert_resource(Gravity(Vector::NEG_Y * 9.81 * 1.0))
     .add_plugins(EguiPlugin)
     .add_plugins(TerrainPlugin)
+    .add_plugins(RocketParticlesPlugin)
     .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .register_type::<ForceTimer>() // you need to register your type to display it
     .add_plugins(
@@ -236,6 +241,7 @@ fn init_egui_ui_input_system(
     mut camera_query: Query<&mut Transform, With<Camera>>,
     mut exit: EventWriter<AppExit>,
     mut camera_properties: ResMut<CameraProperties>,
+    mut reset: EventWriter<ResetEvent>,
 ) {
     let ctx = contexts.ctx_mut();
     let (rocket_ent, mut forces, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
@@ -271,8 +277,7 @@ fn init_egui_ui_input_system(
             *locked_axes = lock_all_axes(LockedAxes::new());
         }
 
-        // TODO: Disable particle spawner
-        // reset_particle_effects()
+        reset.send_default();
     }
     // TODO: Fail mode F
 
@@ -457,7 +462,6 @@ fn on_launch_event(
     mut launch_events: EventReader<LaunchEvent>,
     mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
     mut rocket_state: ResMut<RocketState>,
-    rocket_dims: Res<RocketDimensions>,
     mut commands: Commands,
     rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut rocket_query: Query<
@@ -504,16 +508,6 @@ fn on_launch_event(
             sync_rotation_with_entity: true,
         };
         commands.entity(rocket_ent).insert(force_timer);
-
-        let spawner = commands
-            .spawn(get_rocket_particle_spawn_bundle())
-            .insert(Transform::from_xyz(
-                0.,
-                -rocket_dims.total_length() * 0.5,
-                0.0,
-            ))
-            .id();
-        commands.entity(rocket_ent).push_children(&[spawner]);
 
         // TODO: Find how to delay audio
         let audio_bundle = AudioBundle {

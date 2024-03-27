@@ -621,8 +621,7 @@ dependencies = [
 [[package]]
 name = "bevy_firework"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9cac7376eefccd7d47bf4b0398bcfd13979cfe1918848200035b7456d490f38c"
+source = "git+https://github.com/mbrea-c/bevy_firework?rev=a191fd8#a191fd87fa0e844b0c134cd9d1b7bfcc579f6fd6"
 dependencies = [
  "bevy",
  "bevy_utilitarian",
