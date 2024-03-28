@@ -42,14 +42,9 @@ pub const SKY_DIR_LIGHT_COLOR: Color = Color::WHITE;
 
 pub static FOG_MODES: &[usize] = &[0, 1, 2];
 
-#[derive(Resource)]
+#[derive(Resource, Default)]
 pub struct SkyProperties {
     pub fog_mode: usize,
-}
-impl Default for SkyProperties {
-    fn default() -> Self {
-        SkyProperties { fog_mode: 0 }
-    }
 }
 
 pub fn setup_sky_system(mut commands: Commands) {
@@ -154,6 +149,7 @@ use bevy::pbr::{NotShadowCaster, PbrBundle, StandardMaterial};
 
 const WORLD_TILE_SIZE: f32 = 100.;
 
+#[allow(dead_code)]
 pub fn spawn_simple_sky_box(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,

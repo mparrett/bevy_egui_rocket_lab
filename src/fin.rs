@@ -95,10 +95,10 @@ fn create_fin_geometry(mesh: &mut MeshData, fin: &Fin) {
     ]);
 
     // Calculate normals
-    let front_normal = (front_top_left - front_bottom_left)
+    let _front_normal = (front_top_left - front_bottom_left)
         .cross(front_bottom_right - front_bottom_left)
         .normalize();
-    let back_normal = (back_bottom_right - back_bottom_left)
+    let _back_normal = (back_bottom_right - back_bottom_left)
         .cross(back_top_left - back_bottom_left)
         .normalize();
     let left_side_normal = (back_top_left - front_top_left)

@@ -105,7 +105,7 @@ pub fn update_camera_transform_system(
     mut camera_properties: ResMut<CameraProperties>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut camera_query: Query<(&mut Camera, &Projection, &mut Transform)>,
-    ui_scale: Res<UiScale>,
+    _ui_scale: Res<UiScale>,
 ) {
     let (mut camera, _, mut transform) = match camera_query.get_single_mut() {
         Ok((camera, Projection::Perspective(projection), transform)) => {
@@ -137,7 +137,7 @@ pub fn update_camera_transform_system(
     match camera_properties.follow_mode {
         FollowMode::FreeLook => {
             // TODO
-        },
+        }
         FollowMode::FixedGround => {
             // Update look-at target. Lag behind target
             interpolate_to_target(
@@ -148,7 +148,7 @@ pub fn update_camera_transform_system(
             );
 
             // Position: Original camera transform
-            camera_properties.lagged_translation = original_camera_transform.translation.clone();
+            camera_properties.lagged_translation = original_camera_transform.translation;
             //interpolate_to_target(&mut camera_properties.lagged_translation,
             //    original_camera_transform.translation, spring_mu, time.delta_seconds());
         }
@@ -256,9 +256,9 @@ fn interpolate_to_target_alt(
     target: &mut Vec3,
     target_vec: Vec3,
     follow_lag_ratio: f32,
-    delta_t: f32,
+    _delta_t: f32,
 ) {
-    target.x = (target_vec.x * follow_lag_ratio);
-    target.y = (target_vec.y * follow_lag_ratio);
-    target.z = (target_vec.z * follow_lag_ratio);
+    target.x = target_vec.x * follow_lag_ratio;
+    target.y = target_vec.y * follow_lag_ratio;
+    target.z = target_vec.z * follow_lag_ratio;
 }

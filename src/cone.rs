@@ -34,10 +34,10 @@ struct MeshData {
 impl MeshData {
     fn new(num_vertices: usize, num_indices: usize) -> Self {
         Self {
-            positions: Vec::with_capacity(num_vertices as usize),
-            normals: Vec::with_capacity(num_vertices as usize),
-            uvs: Vec::with_capacity(num_vertices as usize),
-            indices: Vec::with_capacity(num_indices as usize),
+            positions: Vec::with_capacity(num_vertices),
+            normals: Vec::with_capacity(num_vertices),
+            uvs: Vec::with_capacity(num_vertices),
+            indices: Vec::with_capacity(num_indices),
         }
     }
 }
