@@ -21,6 +21,7 @@ pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 pub const CAMERA_FAST_FOLLOW_SPEED: f32 = 40.0;
 pub const CAMERA_FOLLOW_SPEED: f32 = 10.0; // Faster follow speed for above/side camera
 pub const HUMAN_LOOK_SPEED: f32 = 3.0; // Mimic human head movement
+pub const POSITION_LAG_RATIO: f32 = 0.99;
 
 pub const ZOOM_LEVELS: &[f32] = &[0.8, 1.0, 2.0, 4.0, 8.0, 16.0];
 pub const CAMERA_MODES: &[FollowMode] = &[
@@ -185,7 +186,7 @@ pub fn update_camera_transform_system(
                 desired_target.y + 0.5,
                 desired_target.z + 0.1,
             ),
-            0.99,
+            POSITION_LAG_RATIO,
             time.delta_seconds(),
         );
 
