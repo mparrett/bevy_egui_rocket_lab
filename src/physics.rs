@@ -6,7 +6,6 @@ use std::{
     collections::HashSet,
     hash::{Hash, Hasher},
     sync::atomic::{AtomicUsize, Ordering},
-    usize,
 };
 
 pub static ID_COUNTER: AtomicUsize = AtomicUsize::new(1);

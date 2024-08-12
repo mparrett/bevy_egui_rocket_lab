@@ -7,7 +7,6 @@ use bevy::{
     prelude::*,
     render::{
         camera::PerspectiveProjection,
-        camera::Viewport,
         texture::{ImageAddressMode, ImageSamplerDescriptor},
     },
     transform::TransformSystem,
@@ -48,7 +47,7 @@ use crate::{
     },
     sky::{
         animate_light_direction, cubemap_asset_loaded, setup_sky_system, spawn_regular_sky_map,
-        spawn_simple_sky_box, toggle_fog_system, FocalPoint, CUBEMAPS, CUBEMAP_IDX,
+        toggle_fog_system, CUBEMAPS, CUBEMAP_IDX,
     },
     util::random_vec,
 };
