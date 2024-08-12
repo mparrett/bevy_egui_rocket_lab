@@ -3,10 +3,10 @@ use bevy::{
     core_pipeline::{bloom::BloomSettings, Skybox},
     diagnostic::FrameTimeDiagnosticsPlugin,
     input::common_conditions::input_toggle_active,
-    math::primitives::Cylinder,
     prelude::*,
     render::{
         camera::PerspectiveProjection,
+        camera::Viewport,
         texture::{ImageAddressMode, ImageSamplerDescriptor},
     },
     transform::TransformSystem,
@@ -16,10 +16,10 @@ use bevy_firework::plugin::ParticleSystemPlugin;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_generative::terrain::TerrainPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
+use bevy_math::primitives::Cylinder;
 use bevy_xpbd_3d::{math::*, prelude::*};
 
 use egui::Key;
-use particles::RocketParticlesPlugin;
 use sky::SkyProperties;
 
 use crate::{
@@ -40,6 +40,7 @@ use crate::{
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
     ground::setup_ground_system,
+    particles::get_rocket_particle_spawn_bundle,
     physics::{get_timer_id, lock_all_axes, update_forces_system, ForceTimer, TimedForces},
     rocket::{
         create_rocket_fin_pbr_bundles, spawn_rocket_system, FinMarker, RocketBody, RocketCone,
@@ -47,7 +48,7 @@ use crate::{
     },
     sky::{
         animate_light_direction, cubemap_asset_loaded, setup_sky_system, spawn_regular_sky_map,
-        toggle_fog_system, CUBEMAPS, CUBEMAP_IDX,
+        spawn_simple_sky_box, toggle_fog_system, FocalPoint, CUBEMAPS, CUBEMAP_IDX,
     },
     util::random_vec,
 };
@@ -76,9 +77,6 @@ struct LaunchEvent;
 #[derive(Event)]
 struct DownedEvent;
 
-#[derive(Event, Default)]
-struct ResetEvent;
-
 #[derive(Component, Default)]
 struct ScoreMarker;
 
@@ -95,7 +93,6 @@ fn main() {
     app.init_state::<GameState>();
     app.add_event::<LaunchEvent>();
     app.add_event::<DownedEvent>();
-    app.add_event::<ResetEvent>();
 
     app.add_plugins(
         DefaultPlugins
@@ -126,8 +123,7 @@ fn main() {
     .insert_resource(Gravity(Vector::NEG_Y * 9.81 * 1.0))
     .add_plugins(EguiPlugin)
     .add_plugins(TerrainPlugin)
-    .add_plugins(RocketParticlesPlugin)
-    .add_plugins(FrameTimeDiagnosticsPlugin)
+    .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .register_type::<ForceTimer>() // you need to register your type to display it
     .add_plugins(
         WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
@@ -237,10 +233,9 @@ fn init_egui_ui_input_system(
         (With<RocketMarker>, Without<Camera>),
     >,
     mut rocket_force_query: Query<(&mut ExternalForce, &mut ExternalTorque), With<RocketMarker>>,
-    _camera_query: Query<&mut Transform, With<Camera>>,
+    mut camera_query: Query<&mut Transform, With<Camera>>,
     mut exit: EventWriter<AppExit>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut reset: EventWriter<ResetEvent>,
 ) {
     let ctx = contexts.ctx_mut();
     let (rocket_ent, mut forces, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
@@ -252,7 +247,7 @@ fn init_egui_ui_input_system(
     if ctx.input(|i| i.key_pressed(Key::R)) {
         println!("Resetting rocket state");
 
-        camera_properties.desired_translation = INITIAL_CAMERA_POS;
+        camera_properties.desired_translation = INITIAL_CAMERA_POS.clone();
 
         // Reset stats
         //rocket_state.max_height = 0;
@@ -276,7 +271,8 @@ fn init_egui_ui_input_system(
             *locked_axes = lock_all_axes(LockedAxes::new());
         }
 
-        reset.send_default();
+        // TODO: Disable particle spawner
+        // reset_particle_effects()
     }
     // TODO: Fail mode F
 
@@ -366,13 +362,17 @@ fn do_launch_system(
     if ctx.input(|i| i.key_down(Key::ArrowUp)) {
         let delta_to_target = camera_properties.desired_translation - camera_properties.target;
         let increment = 0.05;
-        camera_properties.desired_translation.x -= increment * delta_to_target.x;
-        camera_properties.desired_translation.z -= increment * delta_to_target.z;
+        camera_properties.desired_translation.x =
+            camera_properties.desired_translation.x - increment * delta_to_target.x;
+        camera_properties.desired_translation.z =
+            camera_properties.desired_translation.z - increment * delta_to_target.z;
     } else if ctx.input(|i| i.key_down(Key::ArrowDown)) {
         let delta_to_target = camera_properties.desired_translation - camera_properties.target;
         let increment = 0.05;
-        camera_properties.desired_translation.x += increment * delta_to_target.x;
-        camera_properties.desired_translation.z += increment * delta_to_target.z;
+        camera_properties.desired_translation.x =
+            camera_properties.desired_translation.x + increment * delta_to_target.x;
+        camera_properties.desired_translation.z =
+            camera_properties.desired_translation.z + increment * delta_to_target.z;
     }
 
     if ctx.input(|i| i.key_pressed(Key::Enter)) {
@@ -457,6 +457,7 @@ fn on_launch_event(
     mut launch_events: EventReader<LaunchEvent>,
     mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
     mut rocket_state: ResMut<RocketState>,
+    rocket_dims: Res<RocketDimensions>,
     mut commands: Commands,
     rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut rocket_query: Query<
@@ -504,6 +505,16 @@ fn on_launch_event(
         };
         commands.entity(rocket_ent).insert(force_timer);
 
+        let spawner = commands
+            .spawn(get_rocket_particle_spawn_bundle())
+            .insert(Transform::from_xyz(
+                0.,
+                -rocket_dims.total_length() * 0.5,
+                0.0,
+            ))
+            .id();
+        commands.entity(rocket_ent).push_children(&[spawner]);
+
         // TODO: Find how to delay audio
         let audio_bundle = AudioBundle {
             source: asset_server.load("audio/air-rushes-out-fast-long.ogg"), // TODO load as resource
@@ -533,7 +544,7 @@ fn ui_system(
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<&Transform, With<Camera>>,
-    rocket_query: Query<
+    mut rocket_query: Query<
         (Entity, &RigidBody, &ColliderMassProperties),
         (With<RocketMarker>, Without<Camera>),
     >,
@@ -674,7 +685,7 @@ fn ui_system(
                         .text("duration"),
                 );
                 if let Ok(qq) = rocket_query.get_single() {
-                    let (_ent, _rigid_body, mass) = qq;
+                    let (ent, rigid_body, mass) = qq;
                     ui.label(format!(
                         "Mass: {:.2}, ...: {:.2} {:.2} {:.2}",
                         mass.mass.0,
@@ -746,11 +757,7 @@ fn update_rocket_dimensions_system(
 
     // Update the mesh and collider to match the new dimensions
     for (mut mesh_handle, mut collider, _) in body_query.iter_mut() {
-        *mesh_handle = meshes.add(
-            Cylinder::new(rocket_dims.radius, rocket_dims.length)
-                .mesh()
-                .resolution(rocket::CIRCLE_RESOLUTION),
-        );
+        *mesh_handle = meshes.add(Cylinder::new(rocket_dims.radius, rocket_dims.length).mesh());
         *collider = Collider::cylinder(rocket_dims.length, rocket_dims.radius);
     }
 
@@ -758,7 +765,7 @@ fn update_rocket_dimensions_system(
         *mesh_handle = meshes.add(Mesh::from(Cone {
             radius: rocket_dims.radius,
             height: rocket_dims.cone_length,
-            segments: rocket::CIRCLE_RESOLUTION,
+            segments: 8,
         }));
         *collider = Collider::cone(rocket_dims.cone_length, rocket_dims.radius);
         transform.translation.y = rocket_dims.total_length() * 0.5;
@@ -804,7 +811,7 @@ fn setup_camera_system(
     let camera_transform =
         Transform::from_translation(camera_pos).looking_at(camera_properties.target, Vec3::Y);
 
-    commands.insert_resource(OriginalCameraTransform(camera_transform));
+    commands.insert_resource(OriginalCameraTransform(camera_transform.clone()));
 
     let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
 
