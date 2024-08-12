@@ -752,7 +752,11 @@ fn update_rocket_dimensions_system(
 
     // Update the mesh and collider to match the new dimensions
     for (mut mesh_handle, mut collider, _) in body_query.iter_mut() {
-        *mesh_handle = meshes.add(Cylinder::new(rocket_dims.radius, rocket_dims.length).mesh().resolution(rocket::CIRCLE_RESOLUTION));
+        *mesh_handle = meshes.add(
+            Cylinder::new(rocket_dims.radius, rocket_dims.length)
+                .mesh()
+                .resolution(rocket::CIRCLE_RESOLUTION),
+        );
         *collider = Collider::cylinder(rocket_dims.length, rocket_dims.radius);
     }
 
