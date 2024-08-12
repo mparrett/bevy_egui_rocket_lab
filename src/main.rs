@@ -367,17 +367,13 @@ fn do_launch_system(
     if ctx.input(|i| i.key_down(Key::ArrowUp)) {
         let delta_to_target = camera_properties.desired_translation - camera_properties.target;
         let increment = 0.05;
-        camera_properties.desired_translation.x =
-            camera_properties.desired_translation.x - increment * delta_to_target.x;
-        camera_properties.desired_translation.z =
-            camera_properties.desired_translation.z - increment * delta_to_target.z;
+        camera_properties.desired_translation.x -= increment * delta_to_target.x;
+        camera_properties.desired_translation.z -= increment * delta_to_target.z;
     } else if ctx.input(|i| i.key_down(Key::ArrowDown)) {
         let delta_to_target = camera_properties.desired_translation - camera_properties.target;
         let increment = 0.05;
-        camera_properties.desired_translation.x =
-            camera_properties.desired_translation.x + increment * delta_to_target.x;
-        camera_properties.desired_translation.z =
-            camera_properties.desired_translation.z + increment * delta_to_target.z;
+        camera_properties.desired_translation.x += increment * delta_to_target.x;
+        camera_properties.desired_translation.z += increment * delta_to_target.z;
     }
 
     if ctx.input(|i| i.key_pressed(Key::Enter)) {
