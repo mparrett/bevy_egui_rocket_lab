@@ -128,7 +128,7 @@ fn main() {
     .add_plugins(EguiPlugin)
     .add_plugins(TerrainPlugin)
     .add_plugins(RocketParticlesPlugin)
-    .add_plugins(FrameTimeDiagnosticsPlugin::default())
+    .add_plugins(FrameTimeDiagnosticsPlugin)
     .register_type::<ForceTimer>() // you need to register your type to display it
     .add_plugins(
         WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
@@ -422,7 +422,6 @@ fn on_crash_event(
         let audio_bundle = AudioBundle {
             source: asset_server.load("audio/impact_wood.ogg"), // TODO load as resource
             settings: PlaybackSettings::DESPAWN,
-            ..default()
         };
         commands.spawn(audio_bundle);
     }
@@ -514,7 +513,6 @@ fn on_launch_event(
         let audio_bundle = AudioBundle {
             source: asset_server.load("audio/air-rushes-out-fast-long.ogg"), // TODO load as resource
             settings: PlaybackSettings::DESPAWN,
-            ..default()
         };
         commands.spawn(audio_bundle);
     }
@@ -794,7 +792,6 @@ fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/Welcome_to_the_Lab_v1.ogg"),
         settings: PlaybackSettings::LOOP,
-        ..default()
     });
 }
 
@@ -875,7 +872,6 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
                 font: asset_server.load("fonts/FiraMono-Medium.ttf"), // Sans-Bold
                 font_size: 30.0,
                 color: Color::rgb(1.0, 1.0, 1.0),
-                ..default()
             },
         )
         .with_text_justify(JustifyText::Right)
