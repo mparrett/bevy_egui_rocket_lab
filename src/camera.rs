@@ -146,7 +146,7 @@ pub fn update_camera_transform_system(
         );
 
         // Position: Original camera transform
-        camera_properties.lagged_translation = original_camera_transform.translation.clone();
+        camera_properties.lagged_translation = original_camera_transform.translation;
         //interpolate_to_target(&mut camera_properties.lagged_translation,
         //    original_camera_transform.translation, spring_mu, time.delta_seconds());
     } else if camera_properties.follow_mode == FollowMode::FollowAbove {

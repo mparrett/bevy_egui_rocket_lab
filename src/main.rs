@@ -253,7 +253,7 @@ fn init_egui_ui_input_system(
     if ctx.input(|i| i.key_pressed(Key::R)) {
         println!("Resetting rocket state");
 
-        camera_properties.desired_translation = INITIAL_CAMERA_POS.clone();
+        camera_properties.desired_translation = INITIAL_CAMERA_POS;
 
         // Reset stats
         //rocket_state.max_height = 0;
@@ -807,7 +807,7 @@ fn setup_camera_system(
     let camera_transform =
         Transform::from_translation(camera_pos).looking_at(camera_properties.target, Vec3::Y);
 
-    commands.insert_resource(OriginalCameraTransform(camera_transform.clone()));
+    commands.insert_resource(OriginalCameraTransform(camera_transform));
 
     let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
 
