@@ -532,10 +532,7 @@ fn ui_system(
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<&Transform, With<Camera>>,
-    mut rocket_query: Query<
-        (Entity, &RigidBody, &ColliderMassProperties),
-        (With<RocketMarker>, Without<Camera>),
-    >,
+    rocket_query: Query<&ColliderMassProperties, (With<RocketMarker>, Without<Camera>)>,
 ) {
     let ctx = contexts.ctx_mut();
 
@@ -672,8 +669,7 @@ fn ui_system(
                     egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
                         .text("duration"),
                 );
-                if let Ok(qq) = rocket_query.get_single() {
-                    let (ent, rigid_body, mass) = qq;
+                if let Ok(mass) = rocket_query.get_single() {
                     ui.label(format!(
                         "Mass: {:.2}, ...: {:.2} {:.2} {:.2}",
                         mass.mass.0,
