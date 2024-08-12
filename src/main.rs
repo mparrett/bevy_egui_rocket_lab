@@ -3,6 +3,7 @@ use bevy::{
     core_pipeline::{bloom::BloomSettings, Skybox},
     diagnostic::FrameTimeDiagnosticsPlugin,
     input::common_conditions::input_toggle_active,
+    math::primitives::Cylinder,
     prelude::*,
     render::{
         camera::PerspectiveProjection,
@@ -16,10 +17,10 @@ use bevy_firework::plugin::ParticleSystemPlugin;
 use bevy_egui::{egui, EguiContexts, EguiPlugin};
 use bevy_generative::terrain::TerrainPlugin;
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy_math::primitives::Cylinder;
 use bevy_xpbd_3d::{math::*, prelude::*};
 
 use egui::Key;
+use particles::RocketParticlesPlugin;
 use sky::SkyProperties;
 
 use crate::{
@@ -40,7 +41,6 @@ use crate::{
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
     ground::setup_ground_system,
-    particles::get_rocket_particle_spawn_bundle,
     physics::{get_timer_id, lock_all_axes, update_forces_system, ForceTimer, TimedForces},
     rocket::{
         create_rocket_fin_pbr_bundles, spawn_rocket_system, FinMarker, RocketBody, RocketCone,
@@ -77,6 +77,9 @@ struct LaunchEvent;
 #[derive(Event)]
 struct DownedEvent;
 
+#[derive(Event, Default)]
+struct ResetEvent;
+
 #[derive(Component, Default)]
 struct ScoreMarker;
 
@@ -93,6 +96,7 @@ fn main() {
     app.init_state::<GameState>();
     app.add_event::<LaunchEvent>();
     app.add_event::<DownedEvent>();
+    app.add_event::<ResetEvent>();
 
     app.add_plugins(
         DefaultPlugins
@@ -123,6 +127,7 @@ fn main() {
     .insert_resource(Gravity(Vector::NEG_Y * 9.81 * 1.0))
     .add_plugins(EguiPlugin)
     .add_plugins(TerrainPlugin)
+    .add_plugins(RocketParticlesPlugin)
     .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .register_type::<ForceTimer>() // you need to register your type to display it
     .add_plugins(
@@ -236,6 +241,7 @@ fn init_egui_ui_input_system(
     mut camera_query: Query<&mut Transform, With<Camera>>,
     mut exit: EventWriter<AppExit>,
     mut camera_properties: ResMut<CameraProperties>,
+    mut reset: EventWriter<ResetEvent>,
 ) {
     let ctx = contexts.ctx_mut();
     let (rocket_ent, mut forces, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
@@ -271,8 +277,7 @@ fn init_egui_ui_input_system(
             *locked_axes = lock_all_axes(LockedAxes::new());
         }
 
-        // TODO: Disable particle spawner
-        // reset_particle_effects()
+        reset.send_default();
     }
     // TODO: Fail mode F
 
@@ -504,16 +509,6 @@ fn on_launch_event(
             sync_rotation_with_entity: true,
         };
         commands.entity(rocket_ent).insert(force_timer);
-
-        let spawner = commands
-            .spawn(get_rocket_particle_spawn_bundle())
-            .insert(Transform::from_xyz(
-                0.,
-                -rocket_dims.total_length() * 0.5,
-                0.0,
-            ))
-            .id();
-        commands.entity(rocket_ent).push_children(&[spawner]);
 
         // TODO: Find how to delay audio
         let audio_bundle = AudioBundle {
@@ -757,7 +752,7 @@ fn update_rocket_dimensions_system(
 
     // Update the mesh and collider to match the new dimensions
     for (mut mesh_handle, mut collider, _) in body_query.iter_mut() {
-        *mesh_handle = meshes.add(Cylinder::new(rocket_dims.radius, rocket_dims.length).mesh());
+        *mesh_handle = meshes.add(Cylinder::new(rocket_dims.radius, rocket_dims.length).mesh().resolution(rocket::CIRCLE_RESOLUTION));
         *collider = Collider::cylinder(rocket_dims.length, rocket_dims.radius);
     }
 
@@ -765,7 +760,7 @@ fn update_rocket_dimensions_system(
         *mesh_handle = meshes.add(Mesh::from(Cone {
             radius: rocket_dims.radius,
             height: rocket_dims.cone_length,
-            segments: 8,
+            segments: rocket::CIRCLE_RESOLUTION,
         }));
         *collider = Collider::cone(rocket_dims.cone_length, rocket_dims.radius);
         transform.translation.y = rocket_dims.total_length() * 0.5;
