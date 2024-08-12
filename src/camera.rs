@@ -254,7 +254,7 @@ fn interpolate_to_target_alt(
     follow_lag_ratio: f32,
     delta_t: f32,
 ) {
-    target.x = (target_vec.x * follow_lag_ratio);
-    target.y = (target_vec.y * follow_lag_ratio);
-    target.z = (target_vec.z * follow_lag_ratio);
+    target.x = target_vec.x * follow_lag_ratio;
+    target.y = target_vec.y * follow_lag_ratio;
+    target.z = target_vec.z * follow_lag_ratio;
 }
