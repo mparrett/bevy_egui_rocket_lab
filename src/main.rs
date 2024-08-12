@@ -7,7 +7,6 @@ use bevy::{
     prelude::*,
     render::{
         camera::PerspectiveProjection,
-        camera::Viewport,
         texture::{ImageAddressMode, ImageSamplerDescriptor},
     },
     transform::TransformSystem,
@@ -48,7 +47,7 @@ use crate::{
     },
     sky::{
         animate_light_direction, cubemap_asset_loaded, setup_sky_system, spawn_regular_sky_map,
-        spawn_simple_sky_box, toggle_fog_system, FocalPoint, CUBEMAPS, CUBEMAP_IDX,
+        toggle_fog_system, CUBEMAPS, CUBEMAP_IDX,
     },
     util::random_vec,
 };
@@ -128,7 +127,7 @@ fn main() {
     .add_plugins(EguiPlugin)
     .add_plugins(TerrainPlugin)
     .add_plugins(RocketParticlesPlugin)
-    .add_plugins(FrameTimeDiagnosticsPlugin::default())
+    .add_plugins(FrameTimeDiagnosticsPlugin)
     .register_type::<ForceTimer>() // you need to register your type to display it
     .add_plugins(
         WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
@@ -238,7 +237,6 @@ fn init_egui_ui_input_system(
         (With<RocketMarker>, Without<Camera>),
     >,
     mut rocket_force_query: Query<(&mut ExternalForce, &mut ExternalTorque), With<RocketMarker>>,
-    mut camera_query: Query<&mut Transform, With<Camera>>,
     mut exit: EventWriter<AppExit>,
     mut camera_properties: ResMut<CameraProperties>,
     mut reset: EventWriter<ResetEvent>,
@@ -253,7 +251,7 @@ fn init_egui_ui_input_system(
     if ctx.input(|i| i.key_pressed(Key::R)) {
         println!("Resetting rocket state");
 
-        camera_properties.desired_translation = INITIAL_CAMERA_POS.clone();
+        camera_properties.desired_translation = INITIAL_CAMERA_POS;
 
         // Reset stats
         //rocket_state.max_height = 0;
@@ -367,17 +365,13 @@ fn do_launch_system(
     if ctx.input(|i| i.key_down(Key::ArrowUp)) {
         let delta_to_target = camera_properties.desired_translation - camera_properties.target;
         let increment = 0.05;
-        camera_properties.desired_translation.x =
-            camera_properties.desired_translation.x - increment * delta_to_target.x;
-        camera_properties.desired_translation.z =
-            camera_properties.desired_translation.z - increment * delta_to_target.z;
+        camera_properties.desired_translation.x -= increment * delta_to_target.x;
+        camera_properties.desired_translation.z -= increment * delta_to_target.z;
     } else if ctx.input(|i| i.key_down(Key::ArrowDown)) {
         let delta_to_target = camera_properties.desired_translation - camera_properties.target;
         let increment = 0.05;
-        camera_properties.desired_translation.x =
-            camera_properties.desired_translation.x + increment * delta_to_target.x;
-        camera_properties.desired_translation.z =
-            camera_properties.desired_translation.z + increment * delta_to_target.z;
+        camera_properties.desired_translation.x += increment * delta_to_target.x;
+        camera_properties.desired_translation.z += increment * delta_to_target.z;
     }
 
     if ctx.input(|i| i.key_pressed(Key::Enter)) {
@@ -422,7 +416,6 @@ fn on_crash_event(
         let audio_bundle = AudioBundle {
             source: asset_server.load("audio/impact_wood.ogg"), // TODO load as resource
             settings: PlaybackSettings::DESPAWN,
-            ..default()
         };
         commands.spawn(audio_bundle);
     }
@@ -462,7 +455,6 @@ fn on_launch_event(
     mut launch_events: EventReader<LaunchEvent>,
     mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
     mut rocket_state: ResMut<RocketState>,
-    rocket_dims: Res<RocketDimensions>,
     mut commands: Commands,
     rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut rocket_query: Query<
@@ -514,7 +506,6 @@ fn on_launch_event(
         let audio_bundle = AudioBundle {
             source: asset_server.load("audio/air-rushes-out-fast-long.ogg"), // TODO load as resource
             settings: PlaybackSettings::DESPAWN,
-            ..default()
         };
         commands.spawn(audio_bundle);
     }
@@ -539,10 +530,7 @@ fn ui_system(
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<&Transform, With<Camera>>,
-    mut rocket_query: Query<
-        (Entity, &RigidBody, &ColliderMassProperties),
-        (With<RocketMarker>, Without<Camera>),
-    >,
+    rocket_query: Query<&ColliderMassProperties, (With<RocketMarker>, Without<Camera>)>,
 ) {
     let ctx = contexts.ctx_mut();
 
@@ -679,8 +667,7 @@ fn ui_system(
                     egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
                         .text("duration"),
                 );
-                if let Ok(qq) = rocket_query.get_single() {
-                    let (ent, rigid_body, mass) = qq;
+                if let Ok(mass) = rocket_query.get_single() {
                     ui.label(format!(
                         "Mass: {:.2}, ...: {:.2} {:.2} {:.2}",
                         mass.mass.0,
@@ -752,7 +739,11 @@ fn update_rocket_dimensions_system(
 
     // Update the mesh and collider to match the new dimensions
     for (mut mesh_handle, mut collider, _) in body_query.iter_mut() {
-        *mesh_handle = meshes.add(Cylinder::new(rocket_dims.radius, rocket_dims.length).mesh().resolution(rocket::CIRCLE_RESOLUTION));
+        *mesh_handle = meshes.add(
+            Cylinder::new(rocket_dims.radius, rocket_dims.length)
+                .mesh()
+                .resolution(rocket::CIRCLE_RESOLUTION),
+        );
         *collider = Collider::cylinder(rocket_dims.length, rocket_dims.radius);
     }
 
@@ -790,7 +781,6 @@ fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/Welcome_to_the_Lab_v1.ogg"),
         settings: PlaybackSettings::LOOP,
-        ..default()
     });
 }
 
@@ -806,7 +796,7 @@ fn setup_camera_system(
     let camera_transform =
         Transform::from_translation(camera_pos).looking_at(camera_properties.target, Vec3::Y);
 
-    commands.insert_resource(OriginalCameraTransform(camera_transform.clone()));
+    commands.insert_resource(OriginalCameraTransform(camera_transform));
 
     let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
 
@@ -871,7 +861,6 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
                 font: asset_server.load("fonts/FiraMono-Medium.ttf"), // Sans-Bold
                 font_size: 30.0,
                 color: Color::rgb(1.0, 1.0, 1.0),
-                ..default()
             },
         )
         .with_text_justify(JustifyText::Right)
