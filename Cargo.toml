@@ -1,10 +1,43 @@
 [package]
-name = "bevy-egui-playground"
+name = "bevy-rocket-lab"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bevy = "0.10.0"
-bevy_egui = "0.20.1"
+# 0.13.1 includes important bug fixes
+bevy = { version = "0.13.1" }
+# Can't upgrade to 0.26 due to
+# https://github.com/mvlabat/bevy_egui/issues/269
+bevy_egui = "0.25.0"
+bevy-inspector-egui = "0.23.2"
+bevy_generative = "0.2.0"
+# Particle code relies on a yet unreleased feature.
+# See https://github.com/mbrea-c/bevy_firework/pull/12
+bevy_firework = { git = "https://github.com/mbrea-c/bevy_firework", rev = "a191fd8" }
+bevy_xpbd_3d = "0.4.2"
+bevy_utilitarian = "0.4.0"
+rand = "0.8.5"
+
+# enable some optimizations for our code in dev mode
+[profile.dev]
+opt-level = 1
+
+# Enable high optimizations for dependencies (incl. Bevy), but not for our code:
+[profile.dev.package."*"]
+opt-level = 3
+
+[lints.clippy]
+type_complexity = "allow"
+too_many_arguments = "allow"
+
+#[profile.release]
+#codegen-units = 1
+
+#[target.aarch64-apple-darwin]
+#rustflags = [
+#  "-Clink-arg=-fuse-ld=/opt/homebrew/opt/llvm/bin/ld64.lld", # Use LLD Linker
+#  "-Zshare-generics=y",                                      # (Nightly) Make the current crate share its generic instantiations
+#  "-Zthreads=0",                                             # (Nightly) Use improved multithreading with the recommended amount of threads.
+#]
