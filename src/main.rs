@@ -237,7 +237,6 @@ fn init_egui_ui_input_system(
         (With<RocketMarker>, Without<Camera>),
     >,
     mut rocket_force_query: Query<(&mut ExternalForce, &mut ExternalTorque), With<RocketMarker>>,
-    mut camera_query: Query<&mut Transform, With<Camera>>,
     mut exit: EventWriter<AppExit>,
     mut camera_properties: ResMut<CameraProperties>,
     mut reset: EventWriter<ResetEvent>,
@@ -456,7 +455,6 @@ fn on_launch_event(
     mut launch_events: EventReader<LaunchEvent>,
     mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
     mut rocket_state: ResMut<RocketState>,
-    rocket_dims: Res<RocketDimensions>,
     mut commands: Commands,
     rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut rocket_query: Query<

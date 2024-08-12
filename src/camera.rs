@@ -105,7 +105,6 @@ pub fn update_camera_transform_system(
     mut camera_properties: ResMut<CameraProperties>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut camera_query: Query<(&mut Camera, &Projection, &mut Transform)>,
-    ui_scale: Res<UiScale>,
 ) {
     let (mut camera, _, mut transform) = match camera_query.get_single_mut() {
         Ok((camera, Projection::Perspective(projection), transform)) => {
