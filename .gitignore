@@ -1,3 +1,12 @@
 /target
+/out
+/bevy-repo
+/_temp
+/terst
 src/_*
+
+.DS_Store
+.cargo/
+.vscode/
+*.psd
 
