@@ -208,7 +208,7 @@ pub fn set_camera_viewports(
         );
 
         for mut camera in &mut query {
-            println!("Resize event with camera");
+            debug!("Resize event with camera");
             camera.viewport = Some(Viewport {
                 physical_position: UVec2::new(
                     used_screen_space.left as u32,

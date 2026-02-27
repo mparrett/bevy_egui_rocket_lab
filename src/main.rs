@@ -178,7 +178,7 @@ fn adjust_time_scale(
 ) {
     if input.just_pressed(KeyCode::Space) {
         *slowmo = !*slowmo;
-        println!("Slowmo is {}", *slowmo);
+        info!("Slowmo is {}", *slowmo);
     }
 
     if *slowmo {
@@ -216,7 +216,7 @@ fn init_egui_ui_input_system(
     }
     // Reset
     if ctx.input(|i| i.key_pressed(Key::R)) {
-        println!("Resetting rocket state");
+        info!("Resetting rocket state");
 
         camera_properties.desired_translation = INITIAL_CAMERA_POS;
 
@@ -233,7 +233,7 @@ fn init_egui_ui_input_system(
         ext_torque.clear();
 
         for mut locked_axes in locked_axes.iter_mut() {
-            println!("Lock axes!");
+            debug!("Lock axes");
             *locked_axes = lock_all_axes(LockedAxes::new());
         }
 
@@ -333,7 +333,7 @@ fn do_launch_system(
     }
 
     if ctx.input(|i| i.key_pressed(Key::Enter)) {
-        println!("Begin launch sequence!");
+        info!("Begin launch sequence!");
         launch_event_writer.send(LaunchEvent);
     }
 }
@@ -354,7 +354,7 @@ fn rocket_position_system(
         && transform.translation.y < 0.2
         && rocket_state.state == RocketStateEnum::Launched
     {
-        println!("Detected rocket down at {:?}", transform.translation);
+        info!("Detected rocket down at {:?}", transform.translation);
         rocket_state.state = RocketStateEnum::Grounded;
         crash_events.send(DownedEvent);
     } else {
@@ -370,7 +370,7 @@ fn on_crash_event(
     mut crash_reader: EventReader<DownedEvent>,
 ) {
     for _event in crash_reader.read() {
-        println!("Crash event!");
+        info!("Crash event");
         let audio_bundle = AudioBundle {
             source: asset_server.load("audio/impact_wood.ogg"),
             settings: PlaybackSettings::DESPAWN,
@@ -392,15 +392,15 @@ fn on_launch_event(
     asset_server: Res<AssetServer>,
 ) {
     for _ in launch_events.read() {
-        println!("Launch event!");
+        info!("Launch event");
         if rocket_state.state == RocketStateEnum::Launched {
-            println!("Rocket already launched");
+            info!("Rocket already launched");
             return;
         }
 
         // Unlock physics body
         for mut locked_axes in locked_axes.iter_mut() {
-            println!("Unlock axes!");
+            debug!("Unlock axes");
             *locked_axes = LockedAxes::new();
         }
 
@@ -629,7 +629,7 @@ fn update_rocket_dimensions_system(
         return;
     }
 
-    println!("Updating rocket dimensions");
+    debug!("Updating rocket dimensions");
 
     // Adjust the Rigid Body position
     for mut rb_transform in rb_query.iter_mut() {
@@ -659,7 +659,7 @@ fn update_rocket_dimensions_system(
     // Remove fins
     // TODO: Only do this if fins changed.
     for fin in fins_query.iter_mut() {
-        println!("Removing fins");
+        debug!("Removing fins");
         commands.entity(fin).despawn_recursive();
     }
     // Add fins

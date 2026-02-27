@@ -137,20 +137,20 @@ pub fn toggle_fog_system(
 ) {
     if let Ok(mut fog_settings) = fog.get_single_mut() {
         if key_code.just_pressed(KeyCode::KeyF) {
-            println!("Toggle fog alpha");
+            debug!("Toggle fog alpha");
             let a = fog_settings.color.a();
             fog_settings.color.set_a(1.0 - a);
         }
 
         if key_code.just_pressed(KeyCode::KeyL) {
-            println!("Toggle fog lighting alpha");
+            debug!("Toggle fog lighting alpha");
             let a = fog_settings.directional_light_color.a();
             fog_settings.directional_light_color.set_a(0.5 - a);
         }
 
         if key_code.just_pressed(KeyCode::KeyT) {
             sky_props.fog_mode = (sky_props.fog_mode + 1) % FOG_MODES.len();
-            println!("Toggle fog type to {}", sky_props.fog_mode);
+            debug!("Toggle fog type to {}", sky_props.fog_mode);
             if sky_props.fog_mode == 0 {
                 *fog_settings = FogSettings::default();
             } else if sky_props.fog_mode == 1 {

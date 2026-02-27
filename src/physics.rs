@@ -70,17 +70,15 @@ pub fn update_forces_system(
     {
         force.timer.tick(time.delta());
         if force.timer.finished() {
-            println!("Timer finished, removing force timer");
+            debug!("Timer finished, removing force timer");
             commands.entity(entity).remove::<ForceTimer>();
         } else {
             if force.force.is_some() {
                 if force.sync_rotation_with_entity {
-                    //println!("Applying force (synced)");
                     external_force.apply_force(
                         ent_transform.rotation.mul_vec3(Vec3::Y) * force.force.unwrap(),
                     );
                 } else {
-                    //println!("Applying force (synced)");
                     external_force.apply_force(force.force.unwrap());
                 }
             }
