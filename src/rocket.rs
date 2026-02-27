@@ -4,7 +4,7 @@ use bevy_xpbd_3d::prelude::*;
 
 use crate::cone::Cone;
 use crate::fin::Fin;
-use crate::physics::TimedForces;
+use crate::physics::lock_all_axes;
 
 #[derive(Component)]
 pub struct RocketMarker;
@@ -20,41 +20,8 @@ pub struct FinMarker;
 
 const CONE_DENSITY: f32 = 1.0;
 const FUSELAGE_DENSITY: f32 = 1.0;
-//const FIN_DENSITY: f32 = 0.025;
 
 pub const CIRCLE_RESOLUTION: u32 = 16;
-
-/*
-// TODO: Refactor to use ECS properly
-#[derive(Component)]
-struct Length(f32);
-
-#[derive(Component)]
-struct Height(f32);
-
-
-#[derive(Component)]
-struct Radius(f32);
-
-
-#[derive(Component)]
-struct NumFins(f32);
-
-
-#[derive(Bundle)]
-struct Size2D {
-    length: Length,
-    height: Height,
-}
-
-#[derive(Bundle)]
-struct RocketBundle {
-  size: Size2D,
-  radius: Radius,
-  num_fins: NumFins,
-  fin_size: Size2D
-}
-*/
 
 #[derive(Resource)]
 pub struct RocketDimensions {
@@ -98,23 +65,15 @@ pub enum RocketStateEnum {
 
 #[derive(Resource)]
 pub struct RocketState {
-    pub is_ignited: bool,
-    pub is_grounded: bool,
     pub max_height: f32,
     pub max_velocity: f32,
-    pub additional_mass: f32,
-    pub engine_angle: f32,
     pub state: RocketStateEnum,
 }
 impl Default for RocketState {
     fn default() -> Self {
         RocketState {
-            is_grounded: false,
-            is_ignited: false,
             max_height: 0.0,
             max_velocity: 0.0,
-            additional_mass: 1.0,
-            engine_angle: 0.0,
             state: RocketStateEnum::Grounded,
         }
     }
@@ -152,12 +111,6 @@ pub fn create_rocket_fin_pbr_bundles(
         width: 0.015,
     });
 
-    /*
-    let fin_material = StandardMaterial {
-        base_color: Color::hex(rocket_color_hex).unwrap(),
-        ..Default::default()
-    };
-    */
     let fin_material = StandardMaterial {
         base_color: Color::hex(rocket_color_hex).unwrap(),
         metallic: 0.7,
@@ -194,16 +147,6 @@ pub fn create_rocket_fin_pbr_bundles(
     bundles
 }
 
-pub fn locked_axes() {
-    LockedAxes::new()
-        .lock_rotation_x()
-        .lock_rotation_y()
-        .lock_rotation_z()
-        .lock_translation_x()
-        .lock_translation_y()
-        .lock_translation_z();
-}
-
 pub fn spawn_rocket_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -231,17 +174,15 @@ pub fn spawn_rocket_system(
     let rocket_bundle = (
         RigidBody::Dynamic,
         RocketMarker,
-        //AdditionalMassProperties::Mass(rocket_state.additional_mass),
         ExternalForce::ZERO.with_persistence(false),
         ExternalImpulse::ZERO.with_persistence(false),
         ExternalTorque::ZERO.with_persistence(false),
         AngularVelocity::ZERO,
         LinearVelocity::ZERO,
-        TimedForces::default(),
-        LinearDamping(0.4), // Simulate air resistance. TODO: Dynamic based on rocket shape?
-        AngularDamping(1.0), // Simulate air resistance. TODO: Dynamic based on rocket shape?
+        LinearDamping(0.4),
+        AngularDamping(1.0),
         SpatialBundle::from_transform(initial_rocket_pos),
-        locked_axes(),
+        lock_all_axes(LockedAxes::new()),
         Name::new("Rocket"),
     );
 
@@ -253,7 +194,6 @@ pub fn spawn_rocket_system(
                         .mesh()
                         .resolution(CIRCLE_RESOLUTION),
                 ),
-                //material: materials.add(Color::rgb(0.8, 0.2, 0.2)),
                 transform: Transform::from_xyz(0.0, 0.0, 0.0),
                 material: materials.add(rocket_material.clone()),
                 ..Default::default()
@@ -272,7 +212,6 @@ pub fn spawn_rocket_system(
                     height: rocket_dims.cone_length,
                     segments: CIRCLE_RESOLUTION,
                 })),
-                //material: materials.add(Color::rgb(0.8, 0.2, 0.2).into()),
                 material: materials.add(rocket_material),
                 transform: Transform::from_xyz(0.0, rocket_dims.total_length() * 0.5, 0.0),
                 ..Default::default()

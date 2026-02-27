@@ -3,7 +3,6 @@ use bevy_xpbd_3d::prelude::LockedAxes;
 use bevy_xpbd_3d::prelude::*;
 
 use std::{
-    collections::HashSet,
     hash::{Hash, Hasher},
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -45,12 +44,6 @@ impl Default for ForceTimer {
         }
     }
 }
-#[derive(Component, Default)]
-pub struct TimedForces {
-    // Using HashSet for better performance on large sets of forces
-    pub forces_set: HashSet<ForceTimer>,
-}
-
 pub fn lock_all_axes(locked_axes: LockedAxes) -> LockedAxes {
     locked_axes
         .lock_translation_x()

@@ -24,23 +24,15 @@ use sky::SkyProperties;
 
 use crate::{
     camera::{
-        set_camera_viewports,
-        //update_camera_target,
-        update_camera_transform_system,
-        update_camera_zoom_perspective_system,
-        CameraProperties,
-        ControlMode,
-        FollowMode,
-        OccupiedScreenSpace,
-        OriginalCameraTransform,
-        CAMERA_MODES,
-        INITIAL_CAMERA_POS,
+        set_camera_viewports, update_camera_transform_system,
+        update_camera_zoom_perspective_system, CameraProperties, ControlMode, FollowMode,
+        OccupiedScreenSpace, OriginalCameraTransform, CAMERA_MODES, INITIAL_CAMERA_POS,
         ZOOM_LEVELS,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
     ground::setup_ground_system,
-    physics::{get_timer_id, lock_all_axes, update_forces_system, ForceTimer, TimedForces},
+    physics::{get_timer_id, lock_all_axes, update_forces_system, ForceTimer},
     rocket::{
         create_rocket_fin_pbr_bundles, spawn_rocket_system, FinMarker, RocketBody, RocketCone,
         RocketDimensions, RocketFlightParameters, RocketMarker, RocketState, RocketStateEnum,
@@ -105,21 +97,10 @@ fn main() {
                     address_mode_u: ImageAddressMode::Repeat,
                     address_mode_v: ImageAddressMode::Repeat,
                     address_mode_w: ImageAddressMode::Repeat,
-                    //mag_filter: ImageFilterMode::Linear,
-                    //min_filter: ImageFilterMode::Linear,
-                    //mipmap_filter: ImageFilterMode::Linear,
-                    //lod_min_clamp: 0.,
-                    //lod_max_clamp: 4.,
                     ..default()
                 },
-            }), /*
-                .set(AssetPlugin {
-                        mode: AssetMode::Processed,
-                        ..default()
-                    }
-                ) */
+            }),
     )
-    //.insert_resource(ClearColor(Color::BLACK))
     .add_plugins(ParticleSystemPlugin)
     .add_plugins(PhysicsPlugins::default())
     .insert_resource(SkyProperties::default())
@@ -128,11 +109,10 @@ fn main() {
     .add_plugins(TerrainPlugin)
     .add_plugins(RocketParticlesPlugin)
     .add_plugins(FrameTimeDiagnosticsPlugin)
-    .register_type::<ForceTimer>() // you need to register your type to display it
+    .register_type::<ForceTimer>()
     .add_plugins(
         WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
     )
-    //.add_plugins(PhysicsDebugPlugin::default())
     .init_resource::<OccupiedScreenSpace>()
     .init_resource::<RocketDimensions>()
     .init_resource::<RocketFlightParameters>()
@@ -141,7 +121,6 @@ fn main() {
     .add_systems(
         Startup,
         (
-            //setup_effects_system,
             setup_ground_system,
             setup_camera_system,
             spawn_rocket_system,
@@ -154,16 +133,12 @@ fn main() {
     .add_systems(
         Update,
         (
-            //print_collider_masses,
             ui_system,
             set_camera_viewports,
             update_rocket_dimensions_system,
             toggle_fog_system,
-            update_rocket_ccd_system,
-            remove_rocket_ccd_system,
             init_egui_ui_input_system,
             do_launch_system,
-            //run_rocket_thrust_effect_system,
             update_forces_system,
             fps_text_update_system,
             fps_counter_showhide,
@@ -176,7 +151,6 @@ fn main() {
     .add_systems(
         PostUpdate,
         (
-            //update_camera_target,
             update_camera_zoom_perspective_system,
             update_camera_transform_system,
         )
@@ -184,12 +158,6 @@ fn main() {
             .before(TransformSystem::TransformPropagate),
     );
 
-    // Simple sky box
-    //app.init_resource::<FocalPoint>();
-    //app.add_systems(Startup, spawn_simple_sky_box);
-    //app.add_systems(Update, (sync_sky_box_center_offset));
-
-    // Cubemap sky
     app.add_systems(Startup, spawn_regular_sky_map);
     app.add_systems(Update, (cubemap_asset_loaded, animate_light_direction));
     app.add_systems(Update, adjust_time_scale);
@@ -229,7 +197,6 @@ fn init_egui_ui_input_system(
     mut rocket_query: Query<
         (
             Entity,
-            &mut TimedForces,
             &mut Transform,
             &mut LinearVelocity,
             &mut AngularVelocity,
@@ -242,7 +209,7 @@ fn init_egui_ui_input_system(
     mut reset: EventWriter<ResetEvent>,
 ) {
     let ctx = contexts.ctx_mut();
-    let (rocket_ent, mut forces, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
+    let (rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
         rocket_query.single_mut();
     if ctx.input(|i| i.key_pressed(Key::Q)) {
         exit.send(AppExit);
@@ -253,9 +220,6 @@ fn init_egui_ui_input_system(
 
         camera_properties.desired_translation = INITIAL_CAMERA_POS;
 
-        // Reset stats
-        //rocket_state.max_height = 0;
-
         rocket_state.state = RocketStateEnum::Initial;
 
         // Position and velocity
@@ -264,9 +228,7 @@ fn init_egui_ui_input_system(
         *lin_velocity = LinearVelocity::ZERO;
         *ang_velocity = AngularVelocity::ZERO;
 
-        // Clear forces. This might no longer be necessary
         let (mut ext_force, mut ext_torque) = rocket_force_query.get_single_mut().unwrap();
-        forces.forces_set.clear();
         ext_force.clear();
         ext_torque.clear();
 
@@ -304,9 +266,7 @@ fn init_egui_ui_input_system(
 
     // Stabilize by resetting the forces and velocities
     if ctx.input(|i| i.key_pressed(Key::S)) {
-        forces.forces_set.clear();
         commands.entity(rocket_ent).remove::<ForceTimer>();
-        commands.entity(rocket_ent).remove::<TimedForces>();
         rocket_transform.rotation = Quat::IDENTITY;
         *lin_velocity = LinearVelocity::ZERO;
         *ang_velocity = AngularVelocity::ZERO;
@@ -354,10 +314,8 @@ fn do_launch_system(
             }
         }
     } else if ctx.input(|i| i.key_down(Key::ArrowUp)) {
-        //camera_properties.translation.y += 0.1;
         camera_properties.fixed_distance -= 0.1;
     } else if ctx.input(|i| i.key_down(Key::ArrowDown)) {
-        //camera_properties.translation.y -= 0.1;
         camera_properties.fixed_distance += 0.1;
     }
 
@@ -414,40 +372,10 @@ fn on_crash_event(
     for _event in crash_reader.read() {
         println!("Crash event!");
         let audio_bundle = AudioBundle {
-            source: asset_server.load("audio/impact_wood.ogg"), // TODO load as resource
+            source: asset_server.load("audio/impact_wood.ogg"),
             settings: PlaybackSettings::DESPAWN,
         };
         commands.spawn(audio_bundle);
-    }
-}
-
-fn update_rocket_ccd_system(
-    _commands: Commands,
-    mut rocket_query: Query<(Entity, &Transform), With<RocketMarker>>,
-) {
-    // enable continuous collision detection
-    // prevents falling through the ground
-    // don't need the performance hit most of the time
-    for (_rocket_ent, transform) in rocket_query.iter_mut() {
-        if transform.translation.y < 8.0 {
-            // TODO: See: Grounded in examples
-            //println!("Add Ccd");
-            //commands.entity(rocket_ent).insert(Ccd::enabled());
-        }
-    }
-    //Ccd::enabled(),
-}
-
-fn remove_rocket_ccd_system(
-    _commands: Commands,
-    mut rocket_query: Query<(Entity, &Transform), With<RocketMarker>>,
-) {
-    for (_rocket_ent, transform) in rocket_query.iter_mut() {
-        if transform.translation.y >= 8.0 {
-            // TODO: Grounded
-            //println!("Remove Ccd");
-            //commands.entity(rocket_ent).remove::<Ccd>();
-        }
     }
 }
 
@@ -458,13 +386,7 @@ fn on_launch_event(
     mut commands: Commands,
     rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut rocket_query: Query<
-        (
-            Entity,
-            //&mut Sleeping,
-            &RigidBody,
-            &Transform,
-            &LinearVelocity,
-        ),
+        (Entity, &RigidBody, &Transform, &LinearVelocity),
         (With<RocketMarker>, Without<Camera>),
     >,
     asset_server: Res<AssetServer>,
@@ -486,25 +408,17 @@ fn on_launch_event(
 
         let (rocket_ent, _, _transform, _) = rocket_query.single_mut();
 
-        // Note: Only one ExternalForce per rigid body, but can compose
-        // non-persistent forces by using .apply_force or manually adding vectors
-
-        // We want thrust parallel to rocket fuselage
-        // To do that we need to synchronize it with the rocket's rotation
-        // before .apply_force
         let force_timer = ForceTimer {
             id: get_timer_id(),
             timer: Timer::from_seconds(rocket_flight_parameters.duration, TimerMode::Once),
-            //force: Some(_transform.rotation.mul_vec3(Vec3::Y * rocket_flight_parameters.force)), // static
-            force: Some(Vec3::Y * rocket_flight_parameters.force), // since we are syncing, we should use world space here
+            force: Some(Vec3::Y * rocket_flight_parameters.force),
             torque: None,
             sync_rotation_with_entity: true,
         };
         commands.entity(rocket_ent).insert(force_timer);
 
-        // TODO: Find how to delay audio
         let audio_bundle = AudioBundle {
-            source: asset_server.load("audio/air-rushes-out-fast-long.ogg"), // TODO load as resource
+            source: asset_server.load("audio/air-rushes-out-fast-long.ogg"),
             settings: PlaybackSettings::DESPAWN,
         };
         commands.spawn(audio_bundle);
@@ -563,10 +477,6 @@ fn ui_system(
                     &mut camera_properties.target.y,
                     -50.0..=50.0,
                 ));
-
-                //ui.heading("Position");
-                //let pos = camera_transform.translation;
-                //ui.label(format!("{:.2} {:.2} {:.2}", pos.x, pos.y, pos.z));
 
                 ui.label("Camera Mode");
 
@@ -683,22 +593,11 @@ fn ui_system(
             .width();
     }
 
-    //occupied_screen_space.right = 0.0;
-    //occupied_screen_space.bottom = 0.0;
-
     occupied_screen_space.bottom = egui::TopBottomPanel::bottom("bottom_panel")
         .resizable(true)
         .show(ctx, |ui| {
             ui.heading("Bottom Panel");
-            //let (_, rigid_body_trans, velo) = rocket_query.single();
             ui.label("TODO");
-            //let pos: Vec3 = rigid_body_trans.translation;
-            //let rot: Vec3 = rigid_body_trans.rotation.mul_vec3(Vec3::Y);
-            //ui.label(format!(
-            //    "Position, rotation, speed: {:+.2} {:+.2} {:+.2} | {:+.2} {:+.2} {:+.2} | {:+.2} {:+.2} {:+.2}",
-            //    pos.x, pos.y, pos.z, rot.x, rot.y, rot.z, velo.linvel.x, velo.linvel.y, velo.linvel.z
-            //));
-            //ui.label(format!("Max Height: {:.2}, Speed: {:.2}", rocket_state.max_height, rocket_state.max_velocity));
             ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
         })
         .response
@@ -777,7 +676,6 @@ fn update_rocket_dimensions_system(
 }
 
 fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // TODO: Rocket effects should be parallel to the rocket fuselage
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/Welcome_to_the_Lab_v1.ogg"),
         settings: PlaybackSettings::LOOP,

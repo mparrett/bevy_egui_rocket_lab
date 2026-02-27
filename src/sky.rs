@@ -130,59 +130,6 @@ pub fn animate_light_direction(
         transform.rotate_y(time.delta_seconds() * rotate_speed);
     }
 }
-/*
-https://github.com/claudijo/pirate-sea-jam/blob/main/src/sky_box/systems.rs
-Pirate sky box
-*/
-#[derive(Resource)]
-pub struct FocalPoint(pub Vec3);
-impl Default for FocalPoint {
-    fn default() -> Self {
-        FocalPoint(Vec3::new(0., 0., 0.))
-    }
-}
-
-#[derive(Component)]
-pub struct Sky;
-
-use bevy::pbr::{NotShadowCaster, PbrBundle, StandardMaterial};
-
-const WORLD_TILE_SIZE: f32 = 100.;
-
-#[allow(dead_code)]
-pub fn spawn_simple_sky_box(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    // Simple sky box; from pirate demo
-    commands.spawn((
-        PbrBundle {
-            mesh: meshes.add(Mesh::from(Cuboid::new(1., 1., 1.))),
-            material: materials.add(StandardMaterial {
-                base_color: Color::hex("a5cddf").unwrap(),
-                unlit: true,
-                cull_mode: None,
-                ..default()
-            }),
-            transform: Transform::from_scale(Vec3::splat(WORLD_TILE_SIZE * 10.)),
-            ..default()
-        },
-        Sky,
-        NotShadowCaster,
-    ));
-}
-
-// From pirate demo;     I suppose this is used to sync with a character position, not sure
-//pub fn sync_sky_box_center_offset(
-//    focal_point: Res<FocalPoint>,
-//    mut sky_box_query: Query<&mut Transform, With<Sky>>,
-//) {
-//    for mut transform in &mut sky_box_query {
-//        transform.translation = focal_point.0;
-//    }
-//}
-
 pub fn toggle_fog_system(
     key_code: Res<ButtonInput<KeyCode>>,
     mut sky_props: ResMut<SkyProperties>,
