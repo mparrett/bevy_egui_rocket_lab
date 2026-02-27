@@ -37,3 +37,13 @@ No test suite exists yet.
 ## Clippy
 
 `type_complexity` and `too_many_arguments` are allowed project-wide in `Cargo.toml`.
+
+## Project Memory
+
+Memory files live in `docs/project_notes/`.
+
+**Before proposing changes**: Check `decisions.md` for existing ADRs
+**When encountering errors**: Search `bugs.md` for known solutions
+**When looking up config**: Check `key_facts.md` for ports, URLs, environments
+
+When resolving bugs or making decisions, update the relevant file.
