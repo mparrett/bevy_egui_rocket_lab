@@ -237,7 +237,6 @@ fn init_egui_ui_input_system(
         (With<RocketMarker>, Without<Camera>),
     >,
     mut rocket_force_query: Query<(&mut ExternalForce, &mut ExternalTorque), With<RocketMarker>>,
-    _camera_query: Query<&mut Transform, With<Camera>>,
     mut exit: EventWriter<AppExit>,
     mut camera_properties: ResMut<CameraProperties>,
     mut reset: EventWriter<ResetEvent>,
@@ -417,7 +416,6 @@ fn on_crash_event(
         let audio_bundle = AudioBundle {
             source: asset_server.load("audio/impact_wood.ogg"), // TODO load as resource
             settings: PlaybackSettings::DESPAWN,
-            ..default()
         };
         commands.spawn(audio_bundle);
     }
@@ -508,7 +506,6 @@ fn on_launch_event(
         let audio_bundle = AudioBundle {
             source: asset_server.load("audio/air-rushes-out-fast-long.ogg"), // TODO load as resource
             settings: PlaybackSettings::DESPAWN,
-            ..default()
         };
         commands.spawn(audio_bundle);
     }
@@ -533,10 +530,7 @@ fn ui_system(
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<&Transform, With<Camera>>,
-    rocket_query: Query<
-        (Entity, &RigidBody, &ColliderMassProperties),
-        (With<RocketMarker>, Without<Camera>),
-    >,
+    rocket_query: Query<&ColliderMassProperties, (With<RocketMarker>, Without<Camera>)>,
 ) {
     let ctx = contexts.ctx_mut();
 
@@ -673,8 +667,7 @@ fn ui_system(
                     egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
                         .text("duration"),
                 );
-                if let Ok(qq) = rocket_query.get_single() {
-                    let (_ent, _rigid_body, mass) = qq;
+                if let Ok(mass) = rocket_query.get_single() {
                     ui.label(format!(
                         "Mass: {:.2}, ...: {:.2} {:.2} {:.2}",
                         mass.mass.0,
@@ -788,7 +781,6 @@ fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn(AudioBundle {
         source: asset_server.load("audio/Welcome_to_the_Lab_v1.ogg"),
         settings: PlaybackSettings::LOOP,
-        ..default()
     });
 }
 
@@ -869,7 +861,6 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
                 font: asset_server.load("fonts/FiraMono-Medium.ttf"), // Sans-Bold
                 font_size: 30.0,
                 color: Color::rgb(1.0, 1.0, 1.0),
-                ..default()
             },
         )
         .with_text_justify(JustifyText::Right)

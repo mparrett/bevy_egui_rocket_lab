@@ -105,7 +105,6 @@ pub fn update_camera_transform_system(
     mut camera_properties: ResMut<CameraProperties>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut camera_query: Query<(&mut Camera, &Projection, &mut Transform)>,
-    _ui_scale: Res<UiScale>,
 ) {
     let (mut camera, _, mut transform) = match camera_query.get_single_mut() {
         Ok((camera, Projection::Perspective(projection), transform)) => {
@@ -134,76 +133,72 @@ pub fn update_camera_transform_system(
                                                    //println!("Desired target: {:?}", desired_target);
     let camera_dist = camera_properties.fixed_distance;
 
-    match camera_properties.follow_mode {
-        FollowMode::FreeLook => {
-            // TODO
-        }
-        FollowMode::FixedGround => {
-            // Update look-at target. Lag behind target
-            interpolate_to_target(
-                &mut camera_properties.lagged_target,
-                desired_target,
-                HUMAN_LOOK_SPEED,
-                time.delta_seconds(),
-            );
+    if camera_properties.follow_mode == FollowMode::FixedGround {
+        // Update look-at target
+        // Spring/gimbal following
+        let spring_mu = HUMAN_LOOK_SPEED;
+        interpolate_to_target(
+            &mut camera_properties.lagged_target,
+            desired_target,
+            spring_mu,
+            time.delta_seconds(),
+        );
 
-            // Position: Original camera transform
-            camera_properties.lagged_translation = original_camera_transform.translation;
-            //interpolate_to_target(&mut camera_properties.lagged_translation,
-            //    original_camera_transform.translation, spring_mu, time.delta_seconds());
-        }
-        FollowMode::FollowAbove => {
-            // Interpolate look target
-            interpolate_to_target(
-                &mut camera_properties.lagged_target,
-                desired_target,
-                CAMERA_FOLLOW_SPEED,
-                time.delta_seconds(),
-            );
-            // Position. Actual target will be `camera_dist` above the rocket
-            interpolate_to_target(
-                &mut camera_properties.lagged_translation,
-                Vec3::new(
-                    desired_target.x + 0.1,
-                    desired_target.y + camera_dist,
-                    desired_target.z + 0.1,
-                ),
-                CAMERA_FAST_FOLLOW_SPEED,
-                time.delta_seconds(),
-            )
-        }
-        FollowMode::FollowSide => {
-            // Interpolate look target
-            // We want fast follow on translation but slower on look
-            interpolate_to_target(
-                &mut camera_properties.lagged_target,
-                desired_target,
-                HUMAN_LOOK_SPEED,
-                time.delta_seconds(),
-            );
+        // Position: Original camera transform
+        camera_properties.lagged_translation = original_camera_transform.translation;
+        //interpolate_to_target(&mut camera_properties.lagged_translation,
+        //    original_camera_transform.translation, spring_mu, time.delta_seconds());
+    } else if camera_properties.follow_mode == FollowMode::FollowAbove {
+        // Interpolate look target
+        interpolate_to_target(
+            &mut camera_properties.lagged_target,
+            desired_target,
+            CAMERA_FOLLOW_SPEED,
+            time.delta_seconds(),
+        );
+        // Position. Actual target will be above the rocket
+        interpolate_to_target(
+            &mut camera_properties.lagged_translation,
+            Vec3::new(
+                desired_target.x + 0.1,
+                desired_target.y + camera_dist,
+                desired_target.z + 0.1,
+            ),
+            CAMERA_FAST_FOLLOW_SPEED,
+            time.delta_seconds(),
+        )
+    } else if camera_properties.follow_mode == FollowMode::FollowSide {
+        // Interpolate look target
+        // We want fast follow on translation but slower on look
+        interpolate_to_target(
+            &mut camera_properties.lagged_target,
+            desired_target,
+            HUMAN_LOOK_SPEED,
+            time.delta_seconds(),
+        );
 
-            // Interpolate position
-            interpolate_to_target_alt(
-                &mut camera_properties.lagged_translation,
-                Vec3::new(
-                    desired_target.x + camera_dist,
-                    desired_target.y + 0.5,
-                    desired_target.z + 0.1,
-                ),
-                POSITION_LAG_RATIO,
-                time.delta_seconds(),
-            );
+        // Interpolate position
+        interpolate_to_target_alt(
+            &mut camera_properties.lagged_translation,
+            Vec3::new(
+                desired_target.x + camera_dist,
+                desired_target.y + 0.5,
+                desired_target.z + 0.1,
+            ),
+            POSITION_LAG_RATIO,
+            time.delta_seconds(),
+        );
 
-            // Handle orbit but with correct math
-            // let angle = camera_properties.orbit_angle_degrees.to_radians();
-            // camera_properties.translation = camera_properties.target
-            //     + Vec3::new(
-            //         angle.sin() * (camera_properties.fixed_distance + camera_properties.target.x),
-            //         camera_properties.translation.y,
-            //         angle.cos() * (camera_properties.fixed_distance + camera_properties.target.z),
-            //     );
-        }
+        // Handle orbit but with correct math
+        // let angle = camera_properties.orbit_angle_degrees.to_radians();
+        // camera_properties.translation = camera_properties.target
+        //     + Vec3::new(
+        //         angle.sin() * (camera_properties.fixed_distance + camera_properties.target.x),
+        //         camera_properties.translation.y,
+        //         angle.cos() * (camera_properties.fixed_distance + camera_properties.target.z),
+        //     );
     }
+
     //println!("Lagged target: {:?}", camera_properties.lagged_target);
     // Update camera transform based on dynamic target and position
     // println!("{}", translation);
@@ -256,7 +251,7 @@ fn interpolate_to_target_alt(
     target: &mut Vec3,
     target_vec: Vec3,
     follow_lag_ratio: f32,
-    _delta_t: f32,
+    delta_t: f32,
 ) {
     target.x = target_vec.x * follow_lag_ratio;
     target.y = target_vec.y * follow_lag_ratio;
