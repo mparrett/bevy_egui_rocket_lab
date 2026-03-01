@@ -555,16 +555,6 @@ fn ui_system(
         .rect
         .width();
 
-    occupied_screen_space.bottom = egui::TopBottomPanel::bottom("bottom_panel")
-        .resizable(true)
-        .show(ctx, |ui| {
-            ui.heading("Bottom Panel");
-            ui.label("TODO");
-            ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
-        })
-        .response
-        .rect
-        .height();
     Ok(())
 }
 
@@ -676,48 +666,42 @@ fn setup_camera_system(
 }
 
 fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // Instructions
+    // Instructions (top-right, below FPS)
     commands.spawn((
         Text::new(
-            "Press 'R' to reset\n\
-            Press 'Enter' to launch!\n\
-            Press 'C' to toggle camera mode\n\
-            Press 'Z' to toggle zoom\n\
-            Press 'Q' to quit\n\
-            Press 'D'/'S' to destabilize/stabilize\n\
-            Press 'F' to toggle fog\n\
-            Press 'T' to toggle fog type\n\
-            Press 'Space' to toggle slowmo\n\
-            Use arrow keys to move camera (wip)\n",
+            "R: reset  Enter: launch  C: camera mode\n\
+             Z: zoom  Q: quit  D/S: destabilize/stabilize\n\
+             F: fog  T: fog type  Space: slowmo\n\
+             Arrow keys: move camera",
         ),
         TextFont {
-            font_size: 16.,
+            font_size: 13.,
             ..default()
         },
+        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(85.0),
-            left: Val::Px(220.0),
+            top: Val::Px(30.0),
+            right: Val::Px(10.0),
             ..default()
         },
     ));
 
-    // Scoreboard
+    // Scoreboard (top-right, below instructions)
     commands.spawn((
         Text::new("Max altitude:"),
         TextFont {
             font: asset_server.load("fonts/FiraMono-Medium.ttf"),
-            font_size: 30.0,
+            font_size: 16.0,
             ..default()
         },
         TextColor(Color::srgb(1.0, 1.0, 1.0)),
-        TextLayout::new_with_justify(Justify::Right),
-        BackgroundColor(Color::srgba(0.3, 0.3, 1.0, 0.7)),
+        BackgroundColor(Color::srgba(0.1, 0.1, 0.3, 0.6)),
         Node {
-            position_type: PositionType::Relative,
-            top: Val::Px(20.0),
-            left: Val::Px(200.0),
-            width: Val::Px(300.0),
+            position_type: PositionType::Absolute,
+            top: Val::Px(100.0),
+            right: Val::Px(10.0),
+            padding: UiRect::all(Val::Px(6.0)),
             ..default()
         },
         ScoreMarker,

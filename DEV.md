@@ -21,11 +21,10 @@
 
 ## Key Dependencies
 
-- **bevy_xpbd_3d** — 3D physics (forces, collisions, axis locking)
+- **avian3d** — 3D physics (forces, collisions, axis locking)
 - **bevy_egui** — Immediate-mode UI panels
 - **bevy_firework** — Particle system
 - **bevy-inspector-egui** — World inspector debug tool (toggle with Escape)
-- **bevy_generative** — Terrain generation plugin
 
 ## Assets
 
