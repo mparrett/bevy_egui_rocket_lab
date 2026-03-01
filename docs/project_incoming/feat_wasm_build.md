@@ -1,37 +1,22 @@
 # Feature: WASM Build for Browser Testing
 
-## Summary
+## Status: DONE (2026-02-28)
 
-Set up a working WASM build pipeline so the game can run in the browser. This enables faster iteration — just reload the tab instead of recompiling and relaunching natively.
+Build pipeline works. Basic browser testing confirmed.
 
-## Context
+## What was done
 
-- `just release-wasm` exists but hasn't been tested since the Bevy 0.13→0.18 upgrade
-- Bevy 0.18 supports `wasm32-unknown-unknown` target
-- wasm-bindgen-cli is required (see DEV.md)
-- avian3d 0.5 should support WASM (verify)
-- bevy_firework 0.9 should support WASM (verify)
-- bevy_egui 0.39 supports WASM
+1. Removed Homebrew Rust (conflicts with rustup cross-compilation targets)
+2. Updated rustup stable toolchain to 1.93.1
+3. Added `getrandom = { version = "0.2", features = ["js"] }` to Cargo.toml
+4. Updated `wasm-bindgen-cli` to 0.2.114 (must match crate version)
+5. Added `just serve-wasm` target (build + serve)
+6. Documented toolchain and WASM build in DEV.md
+7. `index.html` already existed and works as-is
 
-## Tasks
+## Remaining polish
 
-1. **Verify/update `just release-wasm`** — ensure the justfile target works with current deps
-2. **Fix any WASM-incompatible code** — e.g., audio codecs, file I/O, thread usage
-3. **Add `index.html` harness** — minimal HTML page that loads the WASM module
-4. **Add `just serve-wasm`** — local dev server (e.g., `python -m http.server` or `basic-http-server`)
-5. **Test in browser** — verify rendering, egui panel, audio, physics all work
-6. **Document** — update DEV.md with WASM build/serve instructions
-
-## Known Risks
-
-- Audio: OGG playback may need web audio API workarounds (user gesture to start)
-- Texture loading: the PNG ground texture should work, but cubemap KTX2 may need fallback
-- Performance: WASM builds are single-threaded; particle system may need tuning
-- bevy_egui clipboard/input handling may differ on web
-
-## Acceptance Criteria
-
-- `just release-wasm && just serve-wasm` produces a working browser build
-- Rocket renders, launches, and camera follows
-- Egui panel is interactive
-- No console errors on load
+- [ ] Optimize WASM size with `wasm-opt` (currently ~100MB)
+- [ ] Audio autoplay — may need user gesture before first sound plays
+- [ ] Performance profiling — physics is single-threaded on WASM
+- [ ] Test KTX2 compressed cubemaps (currently using PNG, which is safe)

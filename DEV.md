@@ -30,12 +30,44 @@
 
 `assets/` contains audio (`.ogg`), fonts, textures (`.png`, `.ktx2`), environment maps, and a `.glb` mesh. Texture conversion scripts live in `scripts/` (requires [KTX-Software](https://github.com/KhronosGroup/KTX-Software/releases)).
 
-## WASM Build Prerequisites
+## Toolchain
+
+This project requires **rustup**-managed Rust (not Homebrew). Homebrew's `rust` formula doesn't support cross-compilation targets like `wasm32-unknown-unknown`.
+
+If you have both installed, remove Homebrew's: `brew uninstall rust`
+
+Verify with: `rustup show` — should show `stable-aarch64-apple-darwin` (or your platform) as active.
+
+## WASM Build
+
+### Prerequisites
 
 ```
 rustup target add wasm32-unknown-unknown
 cargo install wasm-bindgen-cli
 ```
+
+The `wasm-bindgen-cli` version must match the `wasm-bindgen` crate version in `Cargo.lock`. If you get a schema version mismatch, update the CLI:
+
+```
+cargo install -f wasm-bindgen-cli --version <version from error message>
+```
+
+### Build & Serve
+
+```
+just release-wasm     # build only — outputs to out/
+just serve-wasm       # build + serve at http://localhost:8080
+```
+
+The WASM output (~100MB unoptimized) goes to `out/` (gitignored). `index.html` in the project root loads it.
+
+### WASM Notes
+
+- All deps (avian3d, bevy_egui, bevy_firework, bevy-inspector-egui) support WASM
+- `getrandom` requires the `js` feature for WASM — already set in `Cargo.toml`
+- Audio may require a user gesture (click) before playing in the browser
+- Physics runs single-threaded on WASM — expect lower performance than native
 
 ## Troubleshooting
 
