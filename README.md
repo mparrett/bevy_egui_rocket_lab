@@ -44,6 +44,8 @@ This project should be distinct from [OpenRocket](https://openrocket.info/), whi
 
 Based on [bevy-egui-playground](https://github.com/whoisryosuke/bevy-egui-playground) — thanks, whoisryosuke! Big thanks to my bro for inspiring me with his neat Bevy game jam entries ([itch.io](https://euclidean-whale.itch.io/)).
 
+Thanks to [Claude Opus 4.6](https://claude.ai/code) for helping migrate from Bevy 0.13 to 0.18, churning through five major versions of API changes, and getting the WASM build working.
+
 ## References
 
 - [nbody simulation](https://github.com/pjankiewicz/nbody/tree/master/src)
