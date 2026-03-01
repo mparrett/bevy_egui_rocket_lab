@@ -444,34 +444,39 @@ fn ui_system(
                             .text("target Y"),
                     );
 
-                    ui.horizontal(|ui| {
-                        ui.label("Mode:");
-                        ui.radio_value(
-                            &mut camera_properties.follow_mode,
-                            FollowMode::FixedGround,
-                            "Ground",
-                        );
-                        ui.radio_value(
-                            &mut camera_properties.follow_mode,
-                            FollowMode::FollowSide,
-                            "Side",
-                        );
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("");
-                        ui.radio_value(
-                            &mut camera_properties.follow_mode,
-                            FollowMode::FollowAbove,
-                            "Above",
-                        );
-                        ui.radio_value(
-                            &mut camera_properties.follow_mode,
-                            FollowMode::FreeLook,
-                            "Free",
-                        );
-                    });
+                    let mode_label = match camera_properties.follow_mode {
+                        FollowMode::FixedGround => "Ground",
+                        FollowMode::FollowSide => "Side",
+                        FollowMode::FollowAbove => "Above",
+                        FollowMode::FreeLook => "Free Look",
+                    };
+                    egui::ComboBox::from_label("mode")
+                        .selected_text(mode_label)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut camera_properties.follow_mode,
+                                FollowMode::FixedGround,
+                                "Ground",
+                            );
+                            ui.selectable_value(
+                                &mut camera_properties.follow_mode,
+                                FollowMode::FollowSide,
+                                "Side",
+                            );
+                            ui.selectable_value(
+                                &mut camera_properties.follow_mode,
+                                FollowMode::FollowAbove,
+                                "Above",
+                            );
+                            ui.selectable_value(
+                                &mut camera_properties.follow_mode,
+                                FollowMode::FreeLook,
+                                "Free Look",
+                            );
+                        });
                 });
 
+            ui.add_space(6.0);
             egui::CollapsingHeader::new("Rocket Body")
                 .default_open(true)
                 .show(ui, |ui| {
@@ -516,6 +521,7 @@ fn ui_system(
                     }
                 });
 
+            ui.add_space(6.0);
             egui::CollapsingHeader::new("Engine")
                 .default_open(true)
                 .show(ui, |ui| {
