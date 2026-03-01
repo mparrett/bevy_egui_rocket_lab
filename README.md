@@ -1,8 +1,16 @@
+<p align="center">
+  <img src="assets/logo_200.png" alt="Rocket Lab logo">
+</p>
+
 # Bevy Rocket Lab
 
 A model rocketry simulator/game built with [Bevy](https://bevyengine.org/) 0.18. Early stage — currently a sandbox/tech demo.
 
 Why? I recently revisited model rocketry with my children and found myself writing a python script to discern where our first launch might have landed. After that, I thought it might be fun to explore the idea a bit more.
+
+<p align="center">
+  <img src="assets/screenshot_800.png" alt="Screenshot" width="800">
+</p>
 
 ## Quick Start
 
