@@ -10,4 +10,5 @@ src/_*
 .vscode/
 *.psd
 .env*
+/workspace
 
