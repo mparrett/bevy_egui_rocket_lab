@@ -21,9 +21,9 @@ use sky::SkyProperties;
 
 use crate::{
     camera::{
-        set_camera_viewports, update_camera_transform_system,
-        update_camera_zoom_perspective_system, CameraProperties, ControlMode, FollowMode,
-        OccupiedScreenSpace, CAMERA_MODES, INITIAL_CAMERA_POS, ZOOM_LEVELS,
+        update_camera_transform_system, update_camera_zoom_perspective_system, CameraProperties,
+        ControlMode, FollowMode, OccupiedScreenSpace, CAMERA_MODES, INITIAL_CAMERA_POS,
+        ZOOM_LEVELS,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
@@ -122,7 +122,6 @@ fn main() {
         .add_systems(
             Update,
             (
-                set_camera_viewports,
                 update_rocket_dimensions_system,
                 toggle_fog_system,
                 update_forces_system,

@@ -1,9 +1,7 @@
-use bevy::{
-    prelude::*,
-    window::{PrimaryWindow, WindowResized},
-};
+use bevy::prelude::*;
 
 #[derive(Default, Resource)]
+#[allow(dead_code)]
 pub struct OccupiedScreenSpace {
     pub left: f32,
     pub top: f32,
@@ -86,38 +84,16 @@ pub fn update_camera_zoom_perspective_system(
         persp.fov = camera_properties.base_fov / camera_properties.zoom;
     }
 }
-use bevy::camera::Viewport;
 
 pub fn update_camera_transform_system(
     time: Res<Time>,
-    used_screen_space: Res<OccupiedScreenSpace>,
     mut camera_properties: ResMut<CameraProperties>,
-    windows: Query<&Window, With<PrimaryWindow>>,
-    mut camera_query: Query<(&mut Camera, &Projection, &mut Transform)>,
+    mut camera_query: Query<(&Projection, &mut Transform)>,
 ) {
-    let (mut camera, _, mut transform) = match camera_query.single_mut() {
-        Ok((camera, Projection::Perspective(projection), transform)) => {
-            (camera, projection, transform)
-        }
+    let (_, mut transform) = match camera_query.single_mut() {
+        Ok((Projection::Perspective(projection), transform)) => (projection, transform),
         _ => unreachable!(),
     };
-
-    let window = windows.single().unwrap();
-    let sf = window.scale_factor();
-    let left = (used_screen_space.left * sf) as u32;
-    let right = (used_screen_space.right * sf) as u32;
-    let top = (used_screen_space.top * sf) as u32;
-    let bottom = (used_screen_space.bottom * sf) as u32;
-    let size = UVec2::new(
-        window.physical_width() - left - right,
-        window.physical_height() - top - bottom,
-    );
-
-    camera.viewport = Some(Viewport {
-        physical_position: UVec2::new(left, top),
-        physical_size: size,
-        ..default()
-    });
 
     // Update based on camera properties/follow mode
 
@@ -206,37 +182,6 @@ pub fn update_camera_transform_system(
         .looking_at(camera_properties.lagged_target, Vec3::Y);
 }
 
-pub fn set_camera_viewports(
-    windows: Query<&Window>,
-    mut resize_events: MessageReader<WindowResized>,
-    mut query: Query<&mut Camera>,
-    used_screen_space: Res<OccupiedScreenSpace>,
-) {
-    // We need to dynamically resize the camera's viewports whenever the window size changes
-    // so then each camera always takes up half the screen.
-    // A resize_event is sent when the window is first created, allowing us to reuse this system for initial setup.
-    for resize_event in resize_events.read() {
-        let window = windows.get(resize_event.window).unwrap();
-        let sf = window.scale_factor();
-        let left = (used_screen_space.left * sf) as u32;
-        let right = (used_screen_space.right * sf) as u32;
-        let top = (used_screen_space.top * sf) as u32;
-        let bottom = (used_screen_space.bottom * sf) as u32;
-        let size = UVec2::new(
-            window.physical_width() - left - right,
-            window.physical_height() - top - bottom,
-        );
-
-        for mut camera in &mut query {
-            debug!("Resize event with camera");
-            camera.viewport = Some(Viewport {
-                physical_position: UVec2::new(left, top),
-                physical_size: size,
-                ..default()
-            });
-        }
-    }
-}
 
 fn interpolate_to_target(target: &mut Vec3, target_vec: Vec3, spring_mu: f32, delta_t: f32) {
     target.x = target.x - (target.x - target_vec.x) * spring_mu * delta_t;
