@@ -1,0 +1,58 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli --version 0.2.114
+
+      - name: Build WASM
+        run: cargo build --release --target wasm32-unknown-unknown
+
+      - name: Run wasm-bindgen
+        run: wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/release/bevy-rocket-lab.wasm
+
+      - name: Assemble deploy directory
+        run: |
+          mkdir -p staging
+          cp index.html staging/
+          cp -r out/ staging/out/
+          mkdir -p staging/assets
+          cp -r assets/audio/ staging/assets/audio/
+          cp -r assets/textures/ staging/assets/textures/
+          cp -r assets/fonts/ staging/assets/fonts/
+
+      - name: Upload pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: staging
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

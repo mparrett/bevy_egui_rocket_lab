@@ -9,4 +9,5 @@ src/_*
 .cargo/
 .vscode/
 *.psd
+.env*
 

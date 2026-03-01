@@ -43,11 +43,11 @@ Not recommended given the 100MB+ wasm file.
 
 ## Tasks
 
-1. [ ] Create `.github/workflows/deploy-pages.yml`
+1. [x] Create `.github/workflows/deploy-pages.yml`
 2. [ ] Enable GitHub Pages in repo settings (Source: GitHub Actions)
 3. [ ] Optionally add `wasm-opt` step to reduce .wasm size
 4. [ ] Test deploy and verify game loads at the Pages URL
-5. [ ] Add link to live demo in README
+5. [x] Add link to live demo in README
 
 ## References
 

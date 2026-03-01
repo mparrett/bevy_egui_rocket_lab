@@ -6,6 +6,8 @@
 
 A model rocketry simulator/game built with [Bevy](https://bevyengine.org/) 0.18. Early stage — currently a sandbox/tech demo.
 
+[**Play in Browser**](https://mparrett.github.io/bevy_egui_rocket_lab)
+
 Why? I recently revisited model rocketry with my children and found myself writing a python script to discern where our first launch might have landed. After that, I thought it might be fun to explore the idea a bit more.
 
 <p align="center">
@@ -29,7 +31,7 @@ Requires [rustup](https://rustup.rs/)-managed Rust (not Homebrew). See [DEV.md](
   - Rocket building (currency, purchase body/cone/engines/fins/parachute/launch pads)
   - Objectives (landing, elevation, etc.) with constraints (wind, build deficiencies)
   - Title and game over screens
-- Publish to web (WASM build works, needs polish)
+- ~~Publish to web~~ ([live](https://mparrett.github.io/bevy_egui_rocket_lab))
 
 ## Ideas
 
