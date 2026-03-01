@@ -1,5 +1,5 @@
-use bevy::prelude::*;
 use avian3d::prelude::*;
+use bevy::prelude::*;
 
 use std::{
     hash::{Hash, Hasher},
@@ -66,9 +66,7 @@ pub fn update_forces_system(
         } else {
             if let Some(force_vec) = force.force {
                 if force.sync_rotation_with_entity {
-                    forces.apply_force(
-                        ent_transform.rotation.mul_vec3(Vec3::Y) * force_vec,
-                    );
+                    forces.apply_force(ent_transform.rotation.mul_vec3(force_vec));
                 } else {
                     forces.apply_force(force_vec);
                 }

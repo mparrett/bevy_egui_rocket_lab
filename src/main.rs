@@ -2,18 +2,18 @@ use bevy::{
     app::AppExit,
     core_pipeline::Skybox,
     diagnostic::FrameTimeDiagnosticsPlugin,
+    image::{ImageAddressMode, ImageSamplerDescriptor},
     input::common_conditions::input_toggle_active,
     math::primitives::Cylinder,
     post_process::bloom::Bloom,
     prelude::*,
-    image::{ImageAddressMode, ImageSamplerDescriptor},
     render::view::Hdr,
 };
 use bevy_firework::plugin::ParticleSystemPlugin;
 
+use avian3d::prelude::*;
 use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use avian3d::prelude::*;
 
 use egui::Key;
 use particles::RocketParticlesPlugin;
@@ -23,8 +23,7 @@ use crate::{
     camera::{
         set_camera_viewports, update_camera_transform_system,
         update_camera_zoom_perspective_system, CameraProperties, ControlMode, FollowMode,
-        OccupiedScreenSpace, OriginalCameraTransform, CAMERA_MODES, INITIAL_CAMERA_POS,
-        ZOOM_LEVELS,
+        OccupiedScreenSpace, CAMERA_MODES, INITIAL_CAMERA_POS, ZOOM_LEVELS,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
@@ -74,17 +73,14 @@ struct ScoreMarker;
 fn main() {
     let mut app = App::new();
 
-    app.add_plugins(
-        DefaultPlugins
-            .set(ImagePlugin {
-                default_sampler: ImageSamplerDescriptor {
-                    address_mode_u: ImageAddressMode::Repeat,
-                    address_mode_v: ImageAddressMode::Repeat,
-                    address_mode_w: ImageAddressMode::Repeat,
-                    ..default()
-                },
-            }),
-    );
+    app.add_plugins(DefaultPlugins.set(ImagePlugin {
+        default_sampler: ImageSamplerDescriptor {
+            address_mode_u: ImageAddressMode::Repeat,
+            address_mode_v: ImageAddressMode::Repeat,
+            address_mode_w: ImageAddressMode::Repeat,
+            ..default()
+        },
+    }));
 
     app.init_state::<GameState>();
     app.add_message::<LaunchEvent>();
@@ -92,65 +88,61 @@ fn main() {
     app.add_message::<ResetEvent>();
 
     app.add_plugins(ParticleSystemPlugin::default())
-    .add_plugins(PhysicsPlugins::default())
-    .insert_resource(SkyProperties::default())
-    .insert_resource(Gravity(Vec3::NEG_Y * 9.81 * 1.0))
-    .add_plugins(EguiPlugin::default())
-    .add_plugins(RocketParticlesPlugin)
-    .add_plugins(FrameTimeDiagnosticsPlugin::default())
-    .register_type::<ForceTimer>()
-    .add_plugins(
-        WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
-    )
-    .init_resource::<OccupiedScreenSpace>()
-    .init_resource::<RocketDimensions>()
-    .init_resource::<RocketFlightParameters>()
-    .init_resource::<CameraProperties>()
-    .init_resource::<RocketState>()
-    .add_systems(
-        Startup,
-        (
-            setup_ground_system,
-            setup_camera_system,
-            spawn_rocket_system,
-            setup_sky_system,
-            setup_text_system,
-            setup_fps_counter,
-            spawn_music,
-        ),
-    )
-    .add_systems(
-        EguiPrimaryContextPass,
-        (
-            ui_system,
-            init_egui_ui_input_system,
-            do_launch_system,
-        ),
-    )
-    .add_systems(
-        Update,
-        (
-            set_camera_viewports,
-            update_rocket_dimensions_system,
-            toggle_fog_system,
-            update_forces_system,
-            fps_text_update_system,
-            fps_counter_showhide,
-            update_stats_system,
-            on_launch_event,
-            on_crash_event,
-            rocket_position_system,
-        ),
-    )
-    .add_systems(
-        PostUpdate,
-        (
-            update_camera_zoom_perspective_system,
-            update_camera_transform_system,
+        .add_plugins(PhysicsPlugins::default())
+        .insert_resource(SkyProperties::default())
+        .insert_resource(Gravity(Vec3::NEG_Y * 9.81 * 1.0))
+        .add_plugins(EguiPlugin::default())
+        .add_plugins(RocketParticlesPlugin)
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .register_type::<ForceTimer>()
+        .add_plugins(
+            WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
         )
-            .after(PhysicsSystems::Writeback)
-            .before(TransformSystems::Propagate),
-    );
+        .init_resource::<OccupiedScreenSpace>()
+        .init_resource::<RocketDimensions>()
+        .init_resource::<RocketFlightParameters>()
+        .init_resource::<CameraProperties>()
+        .init_resource::<RocketState>()
+        .add_systems(
+            Startup,
+            (
+                setup_ground_system,
+                setup_camera_system,
+                spawn_rocket_system,
+                setup_sky_system,
+                setup_text_system,
+                setup_fps_counter,
+                spawn_music,
+            ),
+        )
+        .add_systems(
+            EguiPrimaryContextPass,
+            (ui_system, init_egui_ui_input_system, do_launch_system),
+        )
+        .add_systems(
+            Update,
+            (
+                set_camera_viewports,
+                update_rocket_dimensions_system,
+                toggle_fog_system,
+                update_forces_system,
+                fps_text_update_system,
+                fps_counter_showhide,
+                update_stats_system,
+                on_launch_event,
+                on_crash_event,
+                rocket_position_system,
+            ),
+        )
+        .add_systems(
+            PostUpdate,
+            (
+                update_camera_zoom_perspective_system,
+                update_camera_transform_system,
+            )
+                .after(PhysicsSystems::Writeback)
+                .before(TransformSystems::Propagate),
+        );
 
     app.add_systems(Startup, spawn_regular_sky_map);
     app.add_systems(Update, (cubemap_asset_loaded, animate_light_direction));
@@ -268,8 +260,11 @@ fn do_launch_system(
     let ctx = contexts.ctx_mut()?;
 
     if ctx.input(|i| i.key_pressed(Key::C)) {
-        let idx = (camera_properties.follow_mode as usize) + 1;
-        camera_properties.follow_mode = CAMERA_MODES[idx % CAMERA_MODES.len()];
+        let idx = CAMERA_MODES
+            .iter()
+            .position(|m| *m == camera_properties.follow_mode)
+            .unwrap_or(0);
+        camera_properties.follow_mode = CAMERA_MODES[(idx + 1) % CAMERA_MODES.len()];
     }
 
     if ctx.input(|i| i.key_pressed(Key::Z)) {
@@ -420,153 +415,145 @@ fn ui_system(
     mut rocket_dims: ResMut<RocketDimensions>,
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<&Transform, With<Camera>>,
     rocket_query: Query<(&Mass, &CenterOfMass), (With<RocketMarker>, Without<Camera>)>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
 
-    if let Ok(_camera_transform) = camera_query.single_mut() {
-        occupied_screen_space.left = egui::SidePanel::left("left_panel")
-            .resizable(true)
-            .show(ctx, |ui| {
-                ui.heading("Camera");
+    occupied_screen_space.left = egui::SidePanel::left("left_panel")
+        .resizable(true)
+        .show(ctx, |ui| {
+            ui.heading("Camera");
 
-                ui.label("Distance");
-                ui.add(egui::Slider::new(
-                    &mut camera_properties.fixed_distance,
-                    -50.0..=50.0,
-                ));
-                ui.label("Orbit");
-                ui.add(egui::Slider::new(
-                    &mut camera_properties.orbit_angle_degrees,
-                    0.0..=360.0,
-                ));
+            ui.label("Distance");
+            ui.add(egui::Slider::new(
+                &mut camera_properties.fixed_distance,
+                -50.0..=50.0,
+            ));
+            ui.label("Orbit");
+            ui.add(egui::Slider::new(
+                &mut camera_properties.orbit_angle_degrees,
+                0.0..=360.0,
+            ));
 
-                ui.label("Elevation");
-                ui.add(egui::Slider::new(
-                    &mut camera_properties.desired_translation.y,
-                    0.1..=20.0,
-                ));
-                ui.label("Zoom");
-                ui.add(egui::Slider::new(&mut camera_properties.zoom, 0.2..=5.0));
-                ui.label("Target Y");
-                ui.add(egui::Slider::new(
-                    &mut camera_properties.target.y,
-                    -50.0..=50.0,
-                ));
+            ui.label("Elevation");
+            ui.add(egui::Slider::new(
+                &mut camera_properties.desired_translation.y,
+                0.1..=20.0,
+            ));
+            ui.label("Zoom");
+            ui.add(egui::Slider::new(&mut camera_properties.zoom, 0.2..=5.0));
+            ui.label("Target Y Offset");
+            ui.add(egui::Slider::new(
+                &mut camera_properties.target_y_offset,
+                -10.0..=10.0,
+            ));
 
-                ui.label("Camera Mode");
+            ui.label("Camera Mode");
 
-                ui.radio_value(
-                    &mut camera_properties.follow_mode,
-                    FollowMode::FreeLook,
-                    "Free Look",
-                );
-                ui.radio_value(
-                    &mut camera_properties.follow_mode,
-                    FollowMode::FixedGround,
-                    "Fixed: Ground",
-                );
-                ui.radio_value(
-                    &mut camera_properties.follow_mode,
-                    FollowMode::FollowSide,
-                    "Follow: Side",
-                );
-                ui.radio_value(
-                    &mut camera_properties.follow_mode,
-                    FollowMode::FollowAbove,
-                    "Follow: Above",
-                );
+            ui.radio_value(
+                &mut camera_properties.follow_mode,
+                FollowMode::FreeLook,
+                "Free Look",
+            );
+            ui.radio_value(
+                &mut camera_properties.follow_mode,
+                FollowMode::FixedGround,
+                "Fixed: Ground",
+            );
+            ui.radio_value(
+                &mut camera_properties.follow_mode,
+                FollowMode::FollowSide,
+                "Follow: Side",
+            );
+            ui.radio_value(
+                &mut camera_properties.follow_mode,
+                FollowMode::FollowAbove,
+                "Follow: Above",
+            );
 
-                ui.label("Control Mode");
+            ui.label("Control Mode");
 
-                ui.radio_value(
-                    &mut camera_properties.control_mode,
-                    ControlMode::Normal,
-                    "Normal",
-                );
+            ui.radio_value(
+                &mut camera_properties.control_mode,
+                ControlMode::Normal,
+                "Normal",
+            );
 
-                ui.radio_value(
-                    &mut camera_properties.control_mode,
-                    ControlMode::SteerRocket,
-                    "Steer Rocket",
-                );
-                ui.heading("Rocket Properties");
-                ui.label("Body");
-                if ui
-                    .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=8.0).text("radius"))
-                    .changed()
-                {
-                    rocket_dims.flag_changed = true;
-                };
-                if ui
-                    .add(egui::Slider::new(&mut rocket_dims.length, 0.025..=20.0).text("length"))
-                    .changed()
-                {
-                    rocket_dims.flag_changed = true;
-                };
-                if ui
-                    .add(
-                        egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=1.5)
-                            .text("cone length"),
-                    )
-                    .changed()
-                {
-                    rocket_dims.flag_changed = true;
-                };
-                if ui
-                    .add(
-                        egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
-                            .step_by(1.0)
-                            .text("num fins"),
-                    )
-                    .changed()
-                {
-                    rocket_dims.flag_changed = true;
-                };
-                if ui
-                    .add(
-                        egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=5.0)
-                            .step_by(0.1)
-                            .text("fin height"),
-                    )
-                    .changed()
-                {
-                    rocket_dims.flag_changed = true;
-                };
-                if ui
-                    .add(
-                        egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=5.0)
-                            .step_by(0.1)
-                            .text("fin length"),
-                    )
-                    .changed()
-                {
-                    rocket_dims.flag_changed = true;
-                };
-                ui.label("Engine");
-                ui.add(
-                    egui::Slider::new(&mut rocket_flight_parameters.force, 0.05..=0.5)
-                        .step_by(0.01)
-                        .text("force"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
-                        .text("duration"),
-                );
-                if let Ok((mass, com)) = rocket_query.single() {
-                    ui.label(format!(
-                        "Mass: {:.2}, CoM: {:?}",
-                        mass.0,
-                        com.0,
-                    ));
-                }
-                ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
-            })
-            .response
-            .rect
-            .width();
-    }
+            ui.radio_value(
+                &mut camera_properties.control_mode,
+                ControlMode::SteerRocket,
+                "Steer Rocket",
+            );
+            ui.heading("Rocket Properties");
+            ui.label("Body");
+            if ui
+                .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=8.0).text("radius"))
+                .changed()
+            {
+                rocket_dims.flag_changed = true;
+            };
+            if ui
+                .add(egui::Slider::new(&mut rocket_dims.length, 0.025..=20.0).text("length"))
+                .changed()
+            {
+                rocket_dims.flag_changed = true;
+            };
+            if ui
+                .add(
+                    egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=1.5).text("cone length"),
+                )
+                .changed()
+            {
+                rocket_dims.flag_changed = true;
+            };
+            if ui
+                .add(
+                    egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
+                        .step_by(1.0)
+                        .text("num fins"),
+                )
+                .changed()
+            {
+                rocket_dims.flag_changed = true;
+            };
+            if ui
+                .add(
+                    egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=5.0)
+                        .step_by(0.1)
+                        .text("fin height"),
+                )
+                .changed()
+            {
+                rocket_dims.flag_changed = true;
+            };
+            if ui
+                .add(
+                    egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=5.0)
+                        .step_by(0.1)
+                        .text("fin length"),
+                )
+                .changed()
+            {
+                rocket_dims.flag_changed = true;
+            };
+            ui.label("Engine");
+            ui.add(
+                egui::Slider::new(&mut rocket_flight_parameters.force, 0.05..=0.5)
+                    .step_by(0.01)
+                    .text("force"),
+            );
+            ui.add(
+                egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
+                    .text("duration"),
+            );
+            if let Ok((mass, com)) = rocket_query.single() {
+                ui.label(format!("Mass: {:.2}, CoM: {:?}", mass.0, com.0,));
+            }
+            ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
+        })
+        .response
+        .rect
+        .width();
 
     occupied_screen_space.bottom = egui::TopBottomPanel::bottom("bottom_panel")
         .resizable(true)
@@ -612,11 +599,13 @@ fn update_rocket_dimensions_system(
     }
 
     for (mut mesh_handle, mut collider, _) in body_query.iter_mut() {
-        *mesh_handle = Mesh3d(meshes.add(
-            Cylinder::new(rocket_dims.radius, rocket_dims.length)
-                .mesh()
-                .resolution(rocket::CIRCLE_RESOLUTION),
-        ));
+        *mesh_handle = Mesh3d(
+            meshes.add(
+                Cylinder::new(rocket_dims.radius, rocket_dims.length)
+                    .mesh()
+                    .resolution(rocket::CIRCLE_RESOLUTION),
+            ),
+        );
         *collider = Collider::cylinder(rocket_dims.radius, rocket_dims.length);
     }
 
@@ -664,8 +653,6 @@ fn setup_camera_system(
     let camera_pos = INITIAL_CAMERA_POS;
     let camera_transform =
         Transform::from_translation(camera_pos).looking_at(camera_properties.target, Vec3::Y);
-
-    commands.insert_resource(OriginalCameraTransform(camera_transform));
 
     let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
 

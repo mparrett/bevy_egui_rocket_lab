@@ -11,9 +11,6 @@ pub struct OccupiedScreenSpace {
     pub bottom: f32,
 }
 
-#[derive(Resource, Deref, DerefMut)]
-pub struct OriginalCameraTransform(pub Transform);
-
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 
@@ -44,10 +41,9 @@ pub enum ControlMode {
 
 #[derive(Resource)]
 pub struct CameraProperties {
-    pub distance_from_target: f32,
     pub orbit_angle_degrees: f32,
-    pub elevation_meters: f32, // TODO: Configure units
     pub target: Vec3,
+    pub target_y_offset: f32,
     pub lagged_target: Vec3,
     pub desired_translation: Vec3,
     pub lagged_translation: Vec3,
@@ -61,11 +57,10 @@ pub struct CameraProperties {
 impl Default for CameraProperties {
     fn default() -> Self {
         CameraProperties {
-            distance_from_target: -25.0,
             orbit_angle_degrees: 20.0,
-            elevation_meters: INITIAL_CAMERA_POS.y,
             desired_translation: INITIAL_CAMERA_POS,
             target: INITIAL_CAMERA_TARGET,
+            target_y_offset: 0.0,
             lagged_target: INITIAL_CAMERA_TARGET,
             lagged_translation: INITIAL_CAMERA_POS,
             zoom: 1.0,
@@ -96,7 +91,6 @@ use bevy::camera::Viewport;
 pub fn update_camera_transform_system(
     time: Res<Time>,
     used_screen_space: Res<OccupiedScreenSpace>,
-    original_camera_transform: Res<OriginalCameraTransform>,
     mut camera_properties: ResMut<CameraProperties>,
     windows: Query<&Window, With<PrimaryWindow>>,
     mut camera_query: Query<(&mut Camera, &Projection, &mut Transform)>,
@@ -123,13 +117,10 @@ pub fn update_camera_transform_system(
 
     // Update based on camera properties/follow mode
 
-    // Using mutable camera target
-    let desired_target = camera_properties.target;
+    let desired_target = camera_properties.target + Vec3::Y * camera_properties.target_y_offset;
     let camera_dist = camera_properties.fixed_distance;
 
     if camera_properties.follow_mode == FollowMode::FixedGround {
-        // Update look-at target
-        // Spring/gimbal following
         let spring_mu = HUMAN_LOOK_SPEED;
         interpolate_to_target(
             &mut camera_properties.lagged_target,
@@ -138,8 +129,33 @@ pub fn update_camera_transform_system(
             time.delta_secs(),
         );
 
-        // Position: Original camera transform
-        camera_properties.lagged_translation = original_camera_transform.translation;
+        // Position from orbit angle and distance around target
+        let angle_rad = camera_properties.orbit_angle_degrees.to_radians();
+        let orbit_pos = Vec3::new(
+            desired_target.x + camera_dist * angle_rad.sin(),
+            camera_properties.desired_translation.y,
+            desired_target.z + camera_dist * angle_rad.cos(),
+        );
+        interpolate_to_target(
+            &mut camera_properties.lagged_translation,
+            orbit_pos,
+            spring_mu,
+            time.delta_secs(),
+        );
+    } else if camera_properties.follow_mode == FollowMode::FreeLook {
+        interpolate_to_target(
+            &mut camera_properties.lagged_target,
+            desired_target,
+            HUMAN_LOOK_SPEED,
+            time.delta_secs(),
+        );
+        let desired = camera_properties.desired_translation;
+        interpolate_to_target(
+            &mut camera_properties.lagged_translation,
+            desired,
+            CAMERA_FOLLOW_SPEED,
+            time.delta_secs(),
+        );
     } else if camera_properties.follow_mode == FollowMode::FollowAbove {
         // Interpolate look target
         interpolate_to_target(
@@ -170,7 +186,7 @@ pub fn update_camera_transform_system(
         );
 
         // Interpolate position
-        interpolate_to_target_alt(
+        interpolate_to_target(
             &mut camera_properties.lagged_translation,
             Vec3::new(
                 desired_target.x + camera_dist,
@@ -224,10 +240,4 @@ fn interpolate_to_target(target: &mut Vec3, target_vec: Vec3, spring_mu: f32, de
     target.x = target.x - (target.x - target_vec.x) * spring_mu * delta_t;
     target.y = target.y - (target.y - target_vec.y) * spring_mu * delta_t;
     target.z = target.z - (target.z - target_vec.z) * spring_mu * delta_t;
-}
-
-fn interpolate_to_target_alt(target: &mut Vec3, target_vec: Vec3, speed: f32, delta_t: f32) {
-    target.x = target.x - (target.x - target_vec.x) * speed * delta_t;
-    target.y = target.y - (target.y - target_vec.y) * speed * delta_t;
-    target.z = target.z - (target.z - target_vec.z) * speed * delta_t;
 }
