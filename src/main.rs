@@ -687,7 +687,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
     ));
 
-    // Scoreboard (top-right, below instructions)
+    // Scoreboard (top-left of 3D canvas, offset past the egui panel)
     commands.spawn((
         Text::new("Max altitude:"),
         TextFont {
@@ -699,8 +699,8 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
         BackgroundColor(Color::srgba(0.1, 0.1, 0.3, 0.6)),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(100.0),
-            right: Val::Px(10.0),
+            top: Val::Px(8.0),
+            left: Val::Px(420.0),
             padding: UiRect::all(Val::Px(6.0)),
             ..default()
         },

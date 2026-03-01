@@ -17,14 +17,14 @@ pub fn setup_fps_counter(mut commands: Commands) {
             FpsRoot,
             Node {
                 position_type: PositionType::Absolute,
-                right: Val::Percent(20.),
-                top: Val::Percent(1.),
+                right: Val::Px(8.),
+                top: Val::Px(8.),
                 bottom: Val::Auto,
                 left: Val::Auto,
-                padding: UiRect::all(Val::Px(4.0)),
+                padding: UiRect::all(Val::Px(3.0)),
                 ..Default::default()
             },
-            BackgroundColor(Color::BLACK.with_alpha(0.5)),
+            BackgroundColor(Color::BLACK.with_alpha(0.4)),
             GlobalZIndex(i32::MAX),
         ))
         .id();
@@ -34,7 +34,7 @@ pub fn setup_fps_counter(mut commands: Commands) {
             FpsText,
             Text::new("FPS: "),
             TextFont {
-                font_size: 16.0,
+                font_size: 12.0,
                 ..default()
             },
             TextColor(Color::WHITE),
@@ -43,7 +43,7 @@ pub fn setup_fps_counter(mut commands: Commands) {
             FpsValue,
             TextSpan::new(" N/A"),
             TextFont {
-                font_size: 16.0,
+                font_size: 12.0,
                 ..default()
             },
             TextColor(Color::WHITE),
@@ -55,7 +55,15 @@ pub fn setup_fps_counter(mut commands: Commands) {
 pub fn fps_text_update_system(
     diagnostics: Res<DiagnosticsStore>,
     mut query: Query<(&mut TextSpan, &mut TextColor), With<FpsValue>>,
+    mut timer: Local<Option<Timer>>,
+    time: Res<Time>,
 ) {
+    let t = timer.get_or_insert_with(|| Timer::from_seconds(0.25, TimerMode::Repeating));
+    t.tick(time.delta());
+    if !t.just_finished() {
+        return;
+    }
+
     for (mut text, mut color) in &mut query {
         if let Some(value) = diagnostics
             .get(&FrameTimeDiagnosticsPlugin::FPS)

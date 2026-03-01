@@ -102,15 +102,19 @@ pub fn update_camera_transform_system(
         _ => unreachable!(),
     };
 
-    // Adjust viewport based on window size and occupied screen space
     let window = windows.single().unwrap();
+    let sf = window.scale_factor();
+    let left = (used_screen_space.left * sf) as u32;
+    let right = (used_screen_space.right * sf) as u32;
+    let top = (used_screen_space.top * sf) as u32;
+    let bottom = (used_screen_space.bottom * sf) as u32;
     let size = UVec2::new(
-        window.physical_width() - used_screen_space.left as u32 - used_screen_space.right as u32,
-        window.physical_height() - used_screen_space.top as u32 - used_screen_space.bottom as u32,
+        window.physical_width() - left - right,
+        window.physical_height() - top - bottom,
     );
 
     camera.viewport = Some(Viewport {
-        physical_position: UVec2::new(used_screen_space.left as u32, used_screen_space.top as u32),
+        physical_position: UVec2::new(left, top),
         physical_size: size,
         ..default()
     });
@@ -213,22 +217,20 @@ pub fn set_camera_viewports(
     // A resize_event is sent when the window is first created, allowing us to reuse this system for initial setup.
     for resize_event in resize_events.read() {
         let window = windows.get(resize_event.window).unwrap();
+        let sf = window.scale_factor();
+        let left = (used_screen_space.left * sf) as u32;
+        let right = (used_screen_space.right * sf) as u32;
+        let top = (used_screen_space.top * sf) as u32;
+        let bottom = (used_screen_space.bottom * sf) as u32;
         let size = UVec2::new(
-            window.physical_width()
-                - used_screen_space.left as u32
-                - used_screen_space.right as u32,
-            window.physical_height()
-                - used_screen_space.top as u32
-                - used_screen_space.bottom as u32,
+            window.physical_width() - left - right,
+            window.physical_height() - top - bottom,
         );
 
         for mut camera in &mut query {
             debug!("Resize event with camera");
             camera.viewport = Some(Viewport {
-                physical_position: UVec2::new(
-                    used_screen_space.left as u32,
-                    used_screen_space.top as u32,
-                ),
+                physical_position: UVec2::new(left, top),
                 physical_size: size,
                 ..default()
             });
