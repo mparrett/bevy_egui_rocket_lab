@@ -421,133 +421,121 @@ fn ui_system(
     occupied_screen_space.left = egui::SidePanel::left("left_panel")
         .resizable(true)
         .show(ctx, |ui| {
-            ui.heading("Camera");
+            ui.add_space(4.0);
 
-            ui.label("Distance");
-            ui.add(egui::Slider::new(
-                &mut camera_properties.fixed_distance,
-                -50.0..=50.0,
-            ));
-            ui.label("Orbit");
-            ui.add(egui::Slider::new(
-                &mut camera_properties.orbit_angle_degrees,
-                0.0..=360.0,
-            ));
+            egui::CollapsingHeader::new("Camera")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::Slider::new(&mut camera_properties.fixed_distance, -50.0..=50.0)
+                            .text("distance"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut camera_properties.orbit_angle_degrees, 0.0..=360.0)
+                            .text("orbit"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut camera_properties.desired_translation.y, 0.1..=20.0)
+                            .text("elevation"),
+                    );
+                    ui.add(egui::Slider::new(&mut camera_properties.zoom, 0.2..=5.0).text("zoom"));
+                    ui.add(
+                        egui::Slider::new(&mut camera_properties.target_y_offset, -10.0..=10.0)
+                            .text("target Y"),
+                    );
 
-            ui.label("Elevation");
-            ui.add(egui::Slider::new(
-                &mut camera_properties.desired_translation.y,
-                0.1..=20.0,
-            ));
-            ui.label("Zoom");
-            ui.add(egui::Slider::new(&mut camera_properties.zoom, 0.2..=5.0));
-            ui.label("Target Y Offset");
-            ui.add(egui::Slider::new(
-                &mut camera_properties.target_y_offset,
-                -10.0..=10.0,
-            ));
+                    ui.horizontal(|ui| {
+                        ui.label("Mode:");
+                        ui.radio_value(
+                            &mut camera_properties.follow_mode,
+                            FollowMode::FixedGround,
+                            "Ground",
+                        );
+                        ui.radio_value(
+                            &mut camera_properties.follow_mode,
+                            FollowMode::FollowSide,
+                            "Side",
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("");
+                        ui.radio_value(
+                            &mut camera_properties.follow_mode,
+                            FollowMode::FollowAbove,
+                            "Above",
+                        );
+                        ui.radio_value(
+                            &mut camera_properties.follow_mode,
+                            FollowMode::FreeLook,
+                            "Free",
+                        );
+                    });
+                });
 
-            ui.label("Camera Mode");
+            egui::CollapsingHeader::new("Rocket Body")
+                .default_open(true)
+                .show(ui, |ui| {
+                    let mut changed = false;
+                    changed |= ui
+                        .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=8.0).text("radius"))
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.length, 0.025..=20.0).text("length"),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=1.5)
+                                .text("cone"),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
+                                .step_by(1.0)
+                                .text("fins"),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=5.0)
+                                .step_by(0.1)
+                                .text("fin H"),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=5.0)
+                                .step_by(0.1)
+                                .text("fin L"),
+                        )
+                        .changed();
+                    if changed {
+                        rocket_dims.flag_changed = true;
+                    }
+                });
 
-            ui.radio_value(
-                &mut camera_properties.follow_mode,
-                FollowMode::FreeLook,
-                "Free Look",
-            );
-            ui.radio_value(
-                &mut camera_properties.follow_mode,
-                FollowMode::FixedGround,
-                "Fixed: Ground",
-            );
-            ui.radio_value(
-                &mut camera_properties.follow_mode,
-                FollowMode::FollowSide,
-                "Follow: Side",
-            );
-            ui.radio_value(
-                &mut camera_properties.follow_mode,
-                FollowMode::FollowAbove,
-                "Follow: Above",
-            );
+            egui::CollapsingHeader::new("Engine")
+                .default_open(true)
+                .show(ui, |ui| {
+                    ui.add(
+                        egui::Slider::new(&mut rocket_flight_parameters.force, 0.05..=0.5)
+                            .step_by(0.01)
+                            .text("force"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
+                            .text("duration"),
+                    );
+                    if let Ok((mass, com)) = rocket_query.single() {
+                        ui.label(format!(
+                            "Mass: {:.3}  CoM: ({:.2}, {:.2}, {:.2})",
+                            mass.0, com.0.x, com.0.y, com.0.z
+                        ));
+                    }
+                });
 
-            ui.label("Control Mode");
-
-            ui.radio_value(
-                &mut camera_properties.control_mode,
-                ControlMode::Normal,
-                "Normal",
-            );
-
-            ui.radio_value(
-                &mut camera_properties.control_mode,
-                ControlMode::SteerRocket,
-                "Steer Rocket",
-            );
-            ui.heading("Rocket Properties");
-            ui.label("Body");
-            if ui
-                .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=8.0).text("radius"))
-                .changed()
-            {
-                rocket_dims.flag_changed = true;
-            };
-            if ui
-                .add(egui::Slider::new(&mut rocket_dims.length, 0.025..=20.0).text("length"))
-                .changed()
-            {
-                rocket_dims.flag_changed = true;
-            };
-            if ui
-                .add(
-                    egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=1.5).text("cone length"),
-                )
-                .changed()
-            {
-                rocket_dims.flag_changed = true;
-            };
-            if ui
-                .add(
-                    egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
-                        .step_by(1.0)
-                        .text("num fins"),
-                )
-                .changed()
-            {
-                rocket_dims.flag_changed = true;
-            };
-            if ui
-                .add(
-                    egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=5.0)
-                        .step_by(0.1)
-                        .text("fin height"),
-                )
-                .changed()
-            {
-                rocket_dims.flag_changed = true;
-            };
-            if ui
-                .add(
-                    egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=5.0)
-                        .step_by(0.1)
-                        .text("fin length"),
-                )
-                .changed()
-            {
-                rocket_dims.flag_changed = true;
-            };
-            ui.label("Engine");
-            ui.add(
-                egui::Slider::new(&mut rocket_flight_parameters.force, 0.05..=0.5)
-                    .step_by(0.01)
-                    .text("force"),
-            );
-            ui.add(
-                egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
-                    .text("duration"),
-            );
-            if let Ok((mass, com)) = rocket_query.single() {
-                ui.label(format!("Mass: {:.2}, CoM: {:?}", mass.0, com.0,));
-            }
             ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
         })
         .response
@@ -686,21 +674,21 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
     ));
 
-    // Scoreboard (top-left of 3D canvas, offset past the egui panel)
+    // Scoreboard (top-left, just past the egui panel)
     commands.spawn((
         Text::new("Max altitude:"),
         TextFont {
             font: asset_server.load("fonts/FiraMono-Medium.ttf"),
-            font_size: 16.0,
+            font_size: 14.0,
             ..default()
         },
         TextColor(Color::srgb(1.0, 1.0, 1.0)),
-        BackgroundColor(Color::srgba(0.1, 0.1, 0.3, 0.6)),
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.4)),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(8.0),
-            left: Val::Px(420.0),
-            padding: UiRect::all(Val::Px(6.0)),
+            top: Val::Px(6.0),
+            left: Val::Px(280.0),
+            padding: UiRect::all(Val::Px(5.0)),
             ..default()
         },
         ScoreMarker,
