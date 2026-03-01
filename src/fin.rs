@@ -1,8 +1,8 @@
-use bevy::math::Vec3;
-use bevy::prelude::Vec2;
-use bevy::mesh::{Indices, Mesh};
 use bevy::asset::RenderAssetUsages;
+use bevy::math::Vec3;
 use bevy::mesh::PrimitiveTopology;
+use bevy::mesh::{Indices, Mesh};
+use bevy::prelude::Vec2;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Fin {
@@ -73,11 +73,8 @@ fn create_fin_geometry(mesh: &mut MeshData, fin: &Fin) {
     mesh.indices.extend_from_slice(&[0, 1, 2]);
     mesh.indices.extend_from_slice(&[3, 5, 4]);
 
-    mesh.indices.extend_from_slice(&[
-        0, 3, 4, 0, 4, 1,
-        1, 4, 5, 1, 5, 2,
-        2, 5, 3, 2, 3, 0,
-    ]);
+    mesh.indices
+        .extend_from_slice(&[0, 3, 4, 0, 4, 1, 1, 4, 5, 1, 5, 2, 2, 5, 3, 2, 3, 0]);
 
     let _front_normal = (front_top_left - front_bottom_left)
         .cross(front_bottom_right - front_bottom_left)

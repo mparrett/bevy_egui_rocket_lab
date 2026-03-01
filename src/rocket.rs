@@ -1,5 +1,5 @@
-use bevy::{math::primitives::Cylinder, prelude::*};
 use avian3d::prelude::*;
+use bevy::{math::primitives::Cylinder, prelude::*};
 
 use crate::cone::Cone;
 use crate::fin::Fin;
@@ -174,11 +174,13 @@ pub fn spawn_rocket_system(
 
     commands.spawn(rocket_bundle).with_children(|parent| {
         parent.spawn((
-            Mesh3d(meshes.add(
-                Cylinder::new(rocket_dims.radius, rocket_dims.length)
-                    .mesh()
-                    .resolution(CIRCLE_RESOLUTION),
-            )),
+            Mesh3d(
+                meshes.add(
+                    Cylinder::new(rocket_dims.radius, rocket_dims.length)
+                        .mesh()
+                        .resolution(CIRCLE_RESOLUTION),
+                ),
+            ),
             MeshMaterial3d(materials.add(rocket_material.clone())),
             Transform::from_xyz(0.0, 0.0, 0.0),
             Collider::cylinder(rocket_dims.radius, rocket_dims.length),

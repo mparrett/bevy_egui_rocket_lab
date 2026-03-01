@@ -1,8 +1,7 @@
 use bevy::prelude::*;
 
 use bevy_firework::core::{
-    BlendMode, EmissionSettings, ParticleSettings, ParticleSpawner,
-    EmissionPacing,
+    BlendMode, EmissionPacing, EmissionSettings, ParticleSettings, ParticleSpawner,
 };
 use bevy_firework::curve::{FireworkCurve, FireworkGradient};
 use bevy_firework::emission_shape::EmissionShape;

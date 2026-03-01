@@ -1,11 +1,11 @@
 use bevy::prelude::*;
 
+use bevy::image::CompressedImageFormats;
+use bevy::light::CascadeShadowConfigBuilder;
 use bevy::{
     core_pipeline::Skybox,
     render::render_resource::{TextureViewDescriptor, TextureViewDimension},
 };
-use bevy::image::CompressedImageFormats;
-use bevy::light::CascadeShadowConfigBuilder;
 use std::f32::consts::PI;
 
 pub const CUBEMAPS: &[(&str, CompressedImageFormats)] = &[
@@ -64,8 +64,7 @@ pub fn setup_sky_system(mut commands: Commands) {
             shadows_enabled: true,
             ..default()
         },
-        Transform::from_xyz(0.0, 2.0, 0.0)
-            .with_rotation(Quat::from_rotation_x(-PI / 4.)),
+        Transform::from_xyz(0.0, 2.0, 0.0).with_rotation(Quat::from_rotation_x(-PI / 4.)),
         cascade_shadow_config,
     ));
 }

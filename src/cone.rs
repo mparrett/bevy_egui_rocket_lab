@@ -1,8 +1,8 @@
-use bevy::math::Vec3;
-use bevy::prelude::Vec2;
-use bevy::mesh::{Indices, Mesh};
 use bevy::asset::RenderAssetUsages;
+use bevy::math::Vec3;
 use bevy::mesh::PrimitiveTopology;
+use bevy::mesh::{Indices, Mesh};
+use bevy::prelude::Vec2;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Cone {
