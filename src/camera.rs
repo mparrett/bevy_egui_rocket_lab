@@ -182,7 +182,6 @@ pub fn update_camera_transform_system(
         .looking_at(camera_properties.lagged_target, Vec3::Y);
 }
 
-
 fn interpolate_to_target(target: &mut Vec3, target_vec: Vec3, spring_mu: f32, delta_t: f32) {
     target.x = target.x - (target.x - target_vec.x) * spring_mu * delta_t;
     target.y = target.y - (target.y - target_vec.y) * spring_mu * delta_t;
