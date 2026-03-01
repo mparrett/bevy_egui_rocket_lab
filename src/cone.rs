@@ -1,11 +1,8 @@
 use bevy::math::Vec3;
 use bevy::prelude::Vec2;
-use bevy::render::mesh::{Indices, Mesh};
-use bevy::render::render_asset::RenderAssetUsages;
-use bevy::render::render_resource::PrimitiveTopology;
-
-// From https://github.com/redpandamonium/bevy_more_shapes/blob/master/src/cone.rs
-//   From https://github.com/ForesightMiningSoftwareCorporation/bevy_transform_gizmo/
+use bevy::mesh::{Indices, Mesh};
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::PrimitiveTopology;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Cone {
@@ -46,13 +43,11 @@ fn add_bottom(mesh: &mut MeshData, cone: &Cone) {
     let angle_step = std::f32::consts::TAU / cone.segments as f32;
     let base_index = mesh.positions.len() as u32;
 
-    // Center
     let center_pos = Vec3::new(0.0, -cone.height * 0.5, 0.0);
     mesh.positions.push(center_pos);
     mesh.uvs.push(Vec2::new(0.5, 0.5));
     mesh.normals.push(-Vec3::Y);
 
-    // Vertices
     for i in 0..=cone.segments {
         let theta = i as f32 * angle_step;
         let x_unit = f32::cos(theta);
@@ -70,7 +65,6 @@ fn add_bottom(mesh: &mut MeshData, cone: &Cone) {
         mesh.normals.push(-Vec3::Y)
     }
 
-    // Indices
     for i in 0..cone.segments {
         mesh.indices.push(base_index + i + 1);
         mesh.indices.push(base_index + i + 2);
@@ -82,7 +76,6 @@ fn add_body(mesh: &mut MeshData, cone: &Cone) {
     let angle_step = std::f32::consts::TAU / cone.segments as f32;
     let base_index = mesh.positions.len() as u32;
 
-    // Add top vertices. We need to add multiple here because their normals differ
     for i in 0..cone.segments {
         let theta = i as f32 * angle_step + angle_step / 2.0;
         let x_unit = f32::cos(theta);
@@ -96,7 +89,6 @@ fn add_body(mesh: &mut MeshData, cone: &Cone) {
         mesh.uvs.push(Vec2::new(0.5, 0.5));
     }
 
-    // Add bottom vertices
     for i in 0..=cone.segments {
         let theta = i as f32 * angle_step;
         let x_unit = f32::cos(theta);
@@ -116,7 +108,6 @@ fn add_body(mesh: &mut MeshData, cone: &Cone) {
         mesh.uvs.push(uv);
     }
 
-    // Add indices
     for i in 0..cone.segments {
         let top = base_index + i;
         let left = base_index + cone.segments + i;
@@ -130,7 +121,6 @@ fn add_body(mesh: &mut MeshData, cone: &Cone) {
 
 impl From<Cone> for Mesh {
     fn from(cone: Cone) -> Self {
-        // Validate input parameters
         assert!(cone.height > 0.0, "Must have positive height");
         assert!(cone.radius > 0.0, "Must have positive radius");
         assert!(
@@ -138,10 +128,6 @@ impl From<Cone> for Mesh {
             "Must have at least 3 subdivisions to close the surface"
         );
 
-        // code adapted from http://apparat-engine.blogspot.com/2013/04/procedural-meshes-torus.html
-        // (source code at https://github.com/SEilers/Apparat)
-
-        // bottom + body
         let n_vertices = (cone.segments + 2) + (cone.segments * 2 + 1);
         let n_triangles = cone.segments * 2;
         let n_indices = n_triangles * 3;

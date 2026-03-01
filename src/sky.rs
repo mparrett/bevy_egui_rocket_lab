@@ -1,13 +1,11 @@
 use bevy::prelude::*;
 
 use bevy::{
-    asset::LoadState,
     core_pipeline::Skybox,
-    render::{
-        render_resource::{TextureViewDescriptor, TextureViewDimension},
-        texture::CompressedImageFormats,
-    },
+    render::render_resource::{TextureViewDescriptor, TextureViewDimension},
 };
+use bevy::image::CompressedImageFormats;
+use bevy::light::CascadeShadowConfigBuilder;
 use std::f32::consts::PI;
 
 pub const CUBEMAPS: &[(&str, CompressedImageFormats)] = &[
@@ -25,7 +23,7 @@ pub const CUBEMAPS: &[(&str, CompressedImageFormats)] = &[
     ),
 ];
 
-pub const CUBEMAP_IDX: usize = 2;
+pub const CUBEMAP_IDX: usize = 0;
 
 #[derive(Resource)]
 pub struct Cubemap {
@@ -33,11 +31,9 @@ pub struct Cubemap {
     index: usize,
     image_handle: Handle<Image>,
 }
-use bevy::pbr::CascadeShadowConfigBuilder;
 
-pub const SKY_BLUE_FOG: Color = Color::rgba(0.35, 0.48, 0.66, 1.0);
-pub const OVERCAST_FOG: Color = Color::rgba(0.8, 0.844, 1.0, 1.0);
-//pub const SKY_DIR_LIGHT_COLOR = Color::rgba(1.0, 0.95, 0.85, 0.5);
+pub const SKY_BLUE_FOG: Color = Color::srgba(0.35, 0.48, 0.66, 1.0);
+pub const OVERCAST_FOG: Color = Color::srgba(0.8, 0.844, 1.0, 1.0);
 pub const SKY_DIR_LIGHT_COLOR: Color = Color::WHITE;
 
 pub static FOG_MODES: &[usize] = &[0, 1, 2];
@@ -48,36 +44,30 @@ pub struct SkyProperties {
 }
 
 pub fn setup_sky_system(mut commands: Commands) {
-    // ambient light, added with skymap
-    // NOTE: The ambient light is used to scale how bright the environment map is so with a bright
-    // environment map, use an appropriate color and brightness to match
-    commands.insert_resource(AmbientLight {
-        color: Color::rgb_u8(210, 220, 240),
-        brightness: 0.9, // 1.0,
+    commands.insert_resource(GlobalAmbientLight {
+        color: Color::srgb_u8(210, 220, 240),
+        brightness: 0.9,
+        affects_lightmapped_meshes: true,
     });
 
-    // Configure a properly scaled cascade shadow map for this scene
-    // (defaults are too large, mesh units are in km)
     let cascade_shadow_config = CascadeShadowConfigBuilder {
-        first_cascade_far_bound: 3.0, // 5.0
-        maximum_distance: 30.0,       // 1000.0
+        first_cascade_far_bound: 3.0,
+        maximum_distance: 30.0,
         ..default()
     }
     .build();
 
-    // directional 'sun' light
-    commands.spawn(DirectionalLightBundle {
-        directional_light: DirectionalLight {
-            color: Color::rgb(0.98, 0.95, 0.82),
+    commands.spawn((
+        DirectionalLight {
+            color: Color::srgb(0.98, 0.95, 0.82),
             illuminance: light_consts::lux::FULL_DAYLIGHT,
             shadows_enabled: true,
             ..default()
         },
-        transform: Transform::from_xyz(0.0, 2.0, 0.0)
+        Transform::from_xyz(0.0, 2.0, 0.0)
             .with_rotation(Quat::from_rotation_x(-PI / 4.)),
         cascade_shadow_config,
-        ..default()
-    });
+    ));
 }
 
 pub fn spawn_regular_sky_map(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -100,13 +90,11 @@ pub fn cubemap_asset_loaded(
     }
     let cubemap = cubemap_opt.as_mut().unwrap();
 
-    if !cubemap.is_loaded && asset_server.load_state(&cubemap.image_handle) == LoadState::Loaded {
+    if !cubemap.is_loaded && asset_server.is_loaded(&cubemap.image_handle) {
         info!("Swapping to {}...", CUBEMAPS[cubemap.index].0);
         let image = images.get_mut(&cubemap.image_handle).unwrap();
-        // NOTE: PNGs do not have any metadata that could indicate they contain a cubemap texture,
-        // so they appear as one texture. The following code reconfigures the texture as necessary.
         if image.texture_descriptor.array_layer_count() == 1 {
-            image.reinterpret_stacked_2d_as_array(image.height() / image.width());
+            let _ = image.reinterpret_stacked_2d_as_array(image.height() / image.width());
             image.texture_view_descriptor = Some(TextureViewDescriptor {
                 dimension: Some(TextureViewDimension::Cube),
                 ..default()
@@ -127,45 +115,46 @@ pub fn animate_light_direction(
 ) {
     let rotate_speed = 0.3;
     for mut transform in &mut query {
-        transform.rotate_y(time.delta_seconds() * rotate_speed);
+        transform.rotate_y(time.delta_secs() * rotate_speed);
     }
 }
 pub fn toggle_fog_system(
     key_code: Res<ButtonInput<KeyCode>>,
     mut sky_props: ResMut<SkyProperties>,
-    mut fog: Query<&mut FogSettings>,
+    mut fog: Query<&mut DistanceFog>,
 ) {
-    if let Ok(mut fog_settings) = fog.get_single_mut() {
+    if let Ok(mut fog_settings) = fog.single_mut() {
         if key_code.just_pressed(KeyCode::KeyF) {
             debug!("Toggle fog alpha");
-            let a = fog_settings.color.a();
-            fog_settings.color.set_a(1.0 - a);
+            let a = fog_settings.color.alpha();
+            fog_settings.color = fog_settings.color.with_alpha(1.0 - a);
         }
 
         if key_code.just_pressed(KeyCode::KeyL) {
             debug!("Toggle fog lighting alpha");
-            let a = fog_settings.directional_light_color.a();
-            fog_settings.directional_light_color.set_a(0.5 - a);
+            let a = fog_settings.directional_light_color.alpha();
+            fog_settings.directional_light_color =
+                fog_settings.directional_light_color.with_alpha(0.5 - a);
         }
 
         if key_code.just_pressed(KeyCode::KeyT) {
             sky_props.fog_mode = (sky_props.fog_mode + 1) % FOG_MODES.len();
             debug!("Toggle fog type to {}", sky_props.fog_mode);
             if sky_props.fog_mode == 0 {
-                *fog_settings = FogSettings::default();
+                *fog_settings = DistanceFog::default();
             } else if sky_props.fog_mode == 1 {
-                *fog_settings = FogSettings {
+                *fog_settings = DistanceFog {
                     color: SKY_BLUE_FOG,
                     directional_light_color: SKY_DIR_LIGHT_COLOR,
                     directional_light_exponent: 30.0,
                     falloff: FogFalloff::from_visibility_colors(
-                        15.0, // distance in world units up to which objects retain visibility (>= 5% contrast)
-                        Color::rgb(0.35, 0.5, 0.66), // atmospheric extinction color (after light is lost due to absorption by atmospheric particles)
-                        Color::rgb(0.8, 0.844, 1.0), // atmospheric inscattering color (light gained due to scattering from the sun)
+                        15.0,
+                        Color::srgb(0.35, 0.5, 0.66),
+                        Color::srgb(0.8, 0.844, 1.0),
                     ),
                 };
             } else if sky_props.fog_mode == 2 {
-                *fog_settings = FogSettings {
+                *fog_settings = DistanceFog {
                     color: OVERCAST_FOG,
                     falloff: FogFalloff::Linear {
                         start: 80.0,

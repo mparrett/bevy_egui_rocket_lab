@@ -1,6 +1,5 @@
 use bevy::{math::primitives::Cylinder, prelude::*};
-use bevy_xpbd_3d::plugins::collision::Collider;
-use bevy_xpbd_3d::prelude::*;
+use avian3d::prelude::*;
 
 use crate::cone::Cone;
 use crate::fin::Fin;
@@ -98,12 +97,11 @@ pub fn create_rocket_fin_pbr_bundles(
     rocket_dims: &RocketDimensions,
     meshes: &mut Assets<Mesh>,
     rocket_color_hex: &str,
-) -> Vec<PbrBundle> {
+) -> Vec<(Mesh3d, MeshMaterial3d<StandardMaterial>, Transform)> {
     let n_fins = rocket_dims.num_fins as usize;
     let degs_per_fin = 360.0 / n_fins as f32;
-    // Position of the central object (e.g., the rocket body)
     let central_position = Vec3::new(0.0, -rocket_dims.total_length() * 0.5, 0.0);
-    let distance_from_center = rocket_dims.radius; // Distance from the center to the base of each fin
+    let distance_from_center = rocket_dims.radius;
 
     let fin_mesh = Mesh::from(Fin {
         height: rocket_dims.fin_height,
@@ -112,37 +110,33 @@ pub fn create_rocket_fin_pbr_bundles(
     });
 
     let fin_material = StandardMaterial {
-        base_color: Color::hex(rocket_color_hex).unwrap(),
+        base_color: Srgba::hex(rocket_color_hex).unwrap().into(),
         metallic: 0.7,
         perceptual_roughness: 0.3,
         reflectance: 0.6,
         ..default()
     };
 
-    // Create and position fins
-    let mut bundles: Vec<PbrBundle> = Vec::new();
+    let mut bundles = Vec::new();
     for i in 0..n_fins {
         let fin_mat_handle = materials.add(fin_material.clone());
-        let angle = i as f32 * degs_per_fin.to_radians(); // x degrees between each fin for 3 fins
+        let angle = i as f32 * degs_per_fin.to_radians();
         let rotation = Quat::from_rotation_y(angle);
 
-        // Calculate the position of each fin's base relative to the central object
         let position_relative =
             central_position + rotation * Vec3::new(0.0, 0.0, distance_from_center);
 
-        // Combine the rotation with an adjustment so the fin points outwards
         let fin_rotation = rotation * Quat::from_rotation_y(-90.0f32.to_radians());
 
-        bundles.push(PbrBundle {
-            mesh: meshes.add(fin_mesh.clone()),
-            material: fin_mat_handle,
-            transform: Transform {
+        bundles.push((
+            Mesh3d(meshes.add(fin_mesh.clone())),
+            MeshMaterial3d(fin_mat_handle),
+            Transform {
                 translation: position_relative,
                 rotation: fin_rotation,
                 ..Default::default()
             },
-            ..Default::default()
-        });
+        ));
     }
     bundles
 }
@@ -154,51 +148,40 @@ pub fn spawn_rocket_system(
     rocket_dims: Res<RocketDimensions>,
     _rocket_state: ResMut<RocketState>,
 ) {
-    // Make sure to set the attached colliders' densities to zero if you want your
-    // explicit values to be the final mass-properties values.
-
     let rocket_color_hex = "#eeeeff";
     let rocket_material = StandardMaterial {
-        base_color: Color::hex(rocket_color_hex).unwrap(),
+        base_color: Srgba::hex(rocket_color_hex).unwrap().into(),
         metallic: 0.4,
         perceptual_roughness: 0.4,
         reflectance: 0.6,
-        emissive: Color::WHITE,
+        emissive: LinearRgba::WHITE,
         ..default()
     };
-
-    // TODO: Verify local forces being calculated correctly
-    // https://docs.rs/bevy_xpbd_3d/0.4.2/bevy_xpbd_3d/components/struct.ExternalForce.html#local-forces
 
     let initial_rocket_pos = Transform::from_xyz(0.0, rocket_dims.total_length() * 0.5, 0.0);
     let rocket_bundle = (
         RigidBody::Dynamic,
         RocketMarker,
-        ExternalForce::ZERO.with_persistence(false),
-        ExternalImpulse::ZERO.with_persistence(false),
-        ExternalTorque::ZERO.with_persistence(false),
         AngularVelocity::ZERO,
         LinearVelocity::ZERO,
         LinearDamping(0.4),
         AngularDamping(1.0),
-        SpatialBundle::from_transform(initial_rocket_pos),
+        initial_rocket_pos,
+        Visibility::default(),
         lock_all_axes(LockedAxes::new()),
         Name::new("Rocket"),
     );
 
     commands.spawn(rocket_bundle).with_children(|parent| {
         parent.spawn((
-            PbrBundle {
-                mesh: meshes.add(
-                    Cylinder::new(rocket_dims.radius, rocket_dims.length)
-                        .mesh()
-                        .resolution(CIRCLE_RESOLUTION),
-                ),
-                transform: Transform::from_xyz(0.0, 0.0, 0.0),
-                material: materials.add(rocket_material.clone()),
-                ..Default::default()
-            },
-            Collider::cylinder(rocket_dims.length, rocket_dims.radius),
+            Mesh3d(meshes.add(
+                Cylinder::new(rocket_dims.radius, rocket_dims.length)
+                    .mesh()
+                    .resolution(CIRCLE_RESOLUTION),
+            )),
+            MeshMaterial3d(materials.add(rocket_material.clone())),
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            Collider::cylinder(rocket_dims.radius, rocket_dims.length),
             RocketBody,
             ColliderDensity(FUSELAGE_DENSITY),
             Friction::new(0.7),
@@ -206,17 +189,14 @@ pub fn spawn_rocket_system(
             Name::new("RocketBody"),
         ));
         parent.spawn((
-            PbrBundle {
-                mesh: meshes.add(Mesh::from(Cone {
-                    radius: rocket_dims.radius,
-                    height: rocket_dims.cone_length,
-                    segments: CIRCLE_RESOLUTION,
-                })),
-                material: materials.add(rocket_material),
-                transform: Transform::from_xyz(0.0, rocket_dims.total_length() * 0.5, 0.0),
-                ..Default::default()
-            },
-            Collider::cone(rocket_dims.cone_length, rocket_dims.radius),
+            Mesh3d(meshes.add(Mesh::from(Cone {
+                radius: rocket_dims.radius,
+                height: rocket_dims.cone_length,
+                segments: CIRCLE_RESOLUTION,
+            }))),
+            MeshMaterial3d(materials.add(rocket_material)),
+            Transform::from_xyz(0.0, rocket_dims.total_length() * 0.5, 0.0),
+            Collider::cone(rocket_dims.radius, rocket_dims.cone_length),
             ColliderDensity(CONE_DENSITY),
             Friction::new(0.7),
             Restitution::new(0.4),
@@ -231,7 +211,7 @@ pub fn spawn_rocket_system(
             rocket_color_hex,
         );
         for bundle in rocket_fin_pbr_bundles {
-            parent.spawn((bundle, FinMarker)); // Spawn the fin entities
+            parent.spawn((bundle, FinMarker));
         }
     });
 }

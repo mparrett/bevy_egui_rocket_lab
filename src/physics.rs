@@ -1,6 +1,5 @@
 use bevy::prelude::*;
-use bevy_xpbd_3d::prelude::LockedAxes;
-use bevy_xpbd_3d::prelude::*;
+use avian3d::prelude::*;
 
 use std::{
     hash::{Hash, Hasher},
@@ -57,33 +56,25 @@ pub fn lock_all_axes(locked_axes: LockedAxes) -> LockedAxes {
 pub fn update_forces_system(
     time: Res<Time>,
     mut commands: Commands,
-    mut query_timers: Query<(
-        Entity,
-        &mut Transform,
-        &mut ForceTimer,
-        &mut ExternalForce,
-        &mut ExternalTorque,
-    )>,
+    mut query_timers: Query<(Entity, &Transform, &mut ForceTimer, Forces)>,
 ) {
-    for (entity, ent_transform, mut force, mut external_force, mut external_torque) in
-        query_timers.iter_mut()
-    {
+    for (entity, ent_transform, mut force, mut forces) in query_timers.iter_mut() {
         force.timer.tick(time.delta());
-        if force.timer.finished() {
+        if force.timer.is_finished() {
             debug!("Timer finished, removing force timer");
             commands.entity(entity).remove::<ForceTimer>();
         } else {
-            if force.force.is_some() {
+            if let Some(force_vec) = force.force {
                 if force.sync_rotation_with_entity {
-                    external_force.apply_force(
-                        ent_transform.rotation.mul_vec3(Vec3::Y) * force.force.unwrap(),
+                    forces.apply_force(
+                        ent_transform.rotation.mul_vec3(Vec3::Y) * force_vec,
                     );
                 } else {
-                    external_force.apply_force(force.force.unwrap());
+                    forces.apply_force(force_vec);
                 }
             }
-            if force.torque.is_some() {
-                external_torque.apply_torque(force.torque.unwrap());
+            if let Some(torque_vec) = force.torque {
+                forces.apply_torque(torque_vec);
             }
         }
     }

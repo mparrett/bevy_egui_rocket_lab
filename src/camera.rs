@@ -1,6 +1,5 @@
 use bevy::{
     prelude::*,
-    render::camera::Projection,
     window::{PrimaryWindow, WindowResized},
 };
 
@@ -84,7 +83,7 @@ pub fn update_camera_zoom_perspective_system(
     camera_properties: ResMut<CameraProperties>,
 ) {
     // assume perspective. do nothing if orthographic.
-    let Projection::Perspective(persp) = query_camera.single_mut().into_inner() else {
+    let Projection::Perspective(persp) = query_camera.single_mut().unwrap().into_inner() else {
         return;
     };
     if camera_properties.is_changed() {
@@ -92,7 +91,7 @@ pub fn update_camera_zoom_perspective_system(
         persp.fov = camera_properties.base_fov / camera_properties.zoom;
     }
 }
-use bevy::render::camera::Viewport;
+use bevy::camera::Viewport;
 
 pub fn update_camera_transform_system(
     time: Res<Time>,
@@ -102,7 +101,7 @@ pub fn update_camera_transform_system(
     windows: Query<&Window, With<PrimaryWindow>>,
     mut camera_query: Query<(&mut Camera, &Projection, &mut Transform)>,
 ) {
-    let (mut camera, _, mut transform) = match camera_query.get_single_mut() {
+    let (mut camera, _, mut transform) = match camera_query.single_mut() {
         Ok((camera, Projection::Perspective(projection), transform)) => {
             (camera, projection, transform)
         }
@@ -110,7 +109,7 @@ pub fn update_camera_transform_system(
     };
 
     // Adjust viewport based on window size and occupied screen space
-    let window = windows.single();
+    let window = windows.single().unwrap();
     let size = UVec2::new(
         window.physical_width() - used_screen_space.left as u32 - used_screen_space.right as u32,
         window.physical_height() - used_screen_space.top as u32 - used_screen_space.bottom as u32,
@@ -136,7 +135,7 @@ pub fn update_camera_transform_system(
             &mut camera_properties.lagged_target,
             desired_target,
             spring_mu,
-            time.delta_seconds(),
+            time.delta_secs(),
         );
 
         // Position: Original camera transform
@@ -147,7 +146,7 @@ pub fn update_camera_transform_system(
             &mut camera_properties.lagged_target,
             desired_target,
             CAMERA_FOLLOW_SPEED,
-            time.delta_seconds(),
+            time.delta_secs(),
         );
         // Position. Actual target will be above the rocket
         interpolate_to_target(
@@ -158,7 +157,7 @@ pub fn update_camera_transform_system(
                 desired_target.z + 0.1,
             ),
             CAMERA_FAST_FOLLOW_SPEED,
-            time.delta_seconds(),
+            time.delta_secs(),
         )
     } else if camera_properties.follow_mode == FollowMode::FollowSide {
         // Interpolate look target
@@ -167,7 +166,7 @@ pub fn update_camera_transform_system(
             &mut camera_properties.lagged_target,
             desired_target,
             HUMAN_LOOK_SPEED,
-            time.delta_seconds(),
+            time.delta_secs(),
         );
 
         // Interpolate position
@@ -179,7 +178,7 @@ pub fn update_camera_transform_system(
                 desired_target.z + 0.1,
             ),
             CAMERA_FOLLOW_SPEED,
-            time.delta_seconds(),
+            time.delta_secs(),
         );
     }
 
@@ -189,7 +188,7 @@ pub fn update_camera_transform_system(
 
 pub fn set_camera_viewports(
     windows: Query<&Window>,
-    mut resize_events: EventReader<WindowResized>,
+    mut resize_events: MessageReader<WindowResized>,
     mut query: Query<&mut Camera>,
     used_screen_space: Res<OccupiedScreenSpace>,
 ) {

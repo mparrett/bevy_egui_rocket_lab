@@ -1,22 +1,19 @@
 use bevy::{
     app::AppExit,
-    core_pipeline::{bloom::BloomSettings, Skybox},
+    core_pipeline::Skybox,
     diagnostic::FrameTimeDiagnosticsPlugin,
     input::common_conditions::input_toggle_active,
     math::primitives::Cylinder,
+    post_process::bloom::Bloom,
     prelude::*,
-    render::{
-        camera::PerspectiveProjection,
-        texture::{ImageAddressMode, ImageSamplerDescriptor},
-    },
-    transform::TransformSystem,
+    image::{ImageAddressMode, ImageSamplerDescriptor},
+    render::view::Hdr,
 };
 use bevy_firework::plugin::ParticleSystemPlugin;
 
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
-use bevy_generative::terrain::TerrainPlugin;
+use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
-use bevy_xpbd_3d::{math::*, prelude::*};
+use avian3d::prelude::*;
 
 use egui::Key;
 use particles::RocketParticlesPlugin;
@@ -62,36 +59,23 @@ enum GameState {
     Initial,
 }
 
-#[derive(Event)]
+#[derive(Message)]
 struct LaunchEvent;
 
-#[derive(Event)]
+#[derive(Message)]
 struct DownedEvent;
 
-#[derive(Event, Default)]
+#[derive(Message, Default)]
 struct ResetEvent;
 
 #[derive(Component, Default)]
 struct ScoreMarker;
 
-#[derive(Bundle)]
-struct EnvironmentBundle {
-    camera_bundle: Camera3dBundle,
-    skybox: Skybox,
-    fog: FogSettings,
-    bloom: BloomSettings,
-}
-
 fn main() {
     let mut app = App::new();
-    app.init_state::<GameState>();
-    app.add_event::<LaunchEvent>();
-    app.add_event::<DownedEvent>();
-    app.add_event::<ResetEvent>();
 
     app.add_plugins(
         DefaultPlugins
-            // This is needed for tiling textures.
             .set(ImagePlugin {
                 default_sampler: ImageSamplerDescriptor {
                     address_mode_u: ImageAddressMode::Repeat,
@@ -100,15 +84,20 @@ fn main() {
                     ..default()
                 },
             }),
-    )
-    .add_plugins(ParticleSystemPlugin)
+    );
+
+    app.init_state::<GameState>();
+    app.add_message::<LaunchEvent>();
+    app.add_message::<DownedEvent>();
+    app.add_message::<ResetEvent>();
+
+    app.add_plugins(ParticleSystemPlugin::default())
     .add_plugins(PhysicsPlugins::default())
     .insert_resource(SkyProperties::default())
-    .insert_resource(Gravity(Vector::NEG_Y * 9.81 * 1.0))
-    .add_plugins(EguiPlugin)
-    .add_plugins(TerrainPlugin)
+    .insert_resource(Gravity(Vec3::NEG_Y * 9.81 * 1.0))
+    .add_plugins(EguiPlugin::default())
     .add_plugins(RocketParticlesPlugin)
-    .add_plugins(FrameTimeDiagnosticsPlugin)
+    .add_plugins(FrameTimeDiagnosticsPlugin::default())
     .register_type::<ForceTimer>()
     .add_plugins(
         WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
@@ -131,14 +120,19 @@ fn main() {
         ),
     )
     .add_systems(
-        Update,
+        EguiPrimaryContextPass,
         (
             ui_system,
+            init_egui_ui_input_system,
+            do_launch_system,
+        ),
+    )
+    .add_systems(
+        Update,
+        (
             set_camera_viewports,
             update_rocket_dimensions_system,
             toggle_fog_system,
-            init_egui_ui_input_system,
-            do_launch_system,
             update_forces_system,
             fps_text_update_system,
             fps_counter_showhide,
@@ -154,19 +148,13 @@ fn main() {
             update_camera_zoom_perspective_system,
             update_camera_transform_system,
         )
-            .after(PhysicsSet::Sync)
-            .before(TransformSystem::TransformPropagate),
+            .after(PhysicsSystems::Writeback)
+            .before(TransformSystems::Propagate),
     );
 
     app.add_systems(Startup, spawn_regular_sky_map);
     app.add_systems(Update, (cubemap_asset_loaded, animate_light_direction));
     app.add_systems(Update, adjust_time_scale);
-
-    #[cfg(target_arch = "wasm32")]
-    app.insert_resource(Msaa::Off);
-
-    #[cfg(not(target_arch = "wasm32"))]
-    app.insert_resource(Msaa::default());
 
     app.run();
 }
@@ -203,16 +191,15 @@ fn init_egui_ui_input_system(
         ),
         (With<RocketMarker>, Without<Camera>),
     >,
-    mut rocket_force_query: Query<(&mut ExternalForce, &mut ExternalTorque), With<RocketMarker>>,
-    mut exit: EventWriter<AppExit>,
+    mut exit: MessageWriter<AppExit>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut reset: EventWriter<ResetEvent>,
-) {
-    let ctx = contexts.ctx_mut();
+    mut reset: MessageWriter<ResetEvent>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
     let (rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
-        rocket_query.single_mut();
+        rocket_query.single_mut()?;
     if ctx.input(|i| i.key_pressed(Key::Q)) {
-        exit.send(AppExit);
+        exit.write(AppExit::Success);
     }
     // Reset
     if ctx.input(|i| i.key_pressed(Key::R)) {
@@ -228,16 +215,15 @@ fn init_egui_ui_input_system(
         *lin_velocity = LinearVelocity::ZERO;
         *ang_velocity = AngularVelocity::ZERO;
 
-        let (mut ext_force, mut ext_torque) = rocket_force_query.get_single_mut().unwrap();
-        ext_force.clear();
-        ext_torque.clear();
+        // Remove any active force timers
+        commands.entity(rocket_ent).remove::<ForceTimer>();
 
         for mut locked_axes in locked_axes.iter_mut() {
             debug!("Lock axes");
             *locked_axes = lock_all_axes(LockedAxes::new());
         }
 
-        reset.send_default();
+        reset.write_default();
     }
     // TODO: Fail mode F
 
@@ -248,8 +234,6 @@ fn init_egui_ui_input_system(
         let destabilize_torque_proba: f32 = 0.7;
         let destabilize_torque_magnitude: f32 = 0.001;
         let destabilize_duration: f32 = 0.5 * rand::random::<f32>();
-
-        let (_ext_force, _ext_torque) = rocket_force_query.get_single_mut().unwrap();
 
         let force = random_vec(destabilize_force_magnitude, destabilize_proba);
         let torque = random_vec(destabilize_torque_magnitude, destabilize_torque_proba);
@@ -271,19 +255,19 @@ fn init_egui_ui_input_system(
         *lin_velocity = LinearVelocity::ZERO;
         *ang_velocity = AngularVelocity::ZERO;
     }
+    Ok(())
 }
 
 fn do_launch_system(
     mut contexts: EguiContexts,
     _rocket_state: ResMut<RocketState>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut launch_event_writer: EventWriter<LaunchEvent>,
+    mut launch_event_writer: MessageWriter<LaunchEvent>,
     _rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
-) {
-    let ctx = contexts.ctx_mut();
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
 
     if ctx.input(|i| i.key_pressed(Key::C)) {
-        // toggle Camera follow mode
         let idx = (camera_properties.follow_mode as usize) + 1;
         camera_properties.follow_mode = CAMERA_MODES[idx % CAMERA_MODES.len()];
     }
@@ -294,11 +278,9 @@ fn do_launch_system(
     }
 
     if ctx.input(|i| i.key_down(Key::ArrowLeft)) {
-        // Steer Rocket
         if camera_properties.control_mode == ControlMode::SteerRocket {
             // TODO: adjust rocket force vector
         } else {
-            // Orbit camera
             camera_properties.orbit_angle_degrees -= 0.5;
             if camera_properties.orbit_angle_degrees < 0.0 {
                 camera_properties.orbit_angle_degrees = 360.0;
@@ -334,21 +316,20 @@ fn do_launch_system(
 
     if ctx.input(|i| i.key_pressed(Key::Enter)) {
         info!("Begin launch sequence!");
-        launch_event_writer.send(LaunchEvent);
+        launch_event_writer.write(LaunchEvent);
     }
+    Ok(())
 }
 
 fn rocket_position_system(
-    mut rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
-    mut crash_events: EventWriter<DownedEvent>,
+    rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
+    mut crash_events: MessageWriter<DownedEvent>,
     mut camera_properties: ResMut<CameraProperties>,
     mut rocket_state: ResMut<RocketState>,
 ) {
-    let (transform, velocity) = rocket_query.single_mut();
-    // Update target to rocket position
+    let (transform, velocity) = rocket_query.single().unwrap();
     camera_properties.target = transform.translation;
 
-    // Handle rocket crash
     if velocity.y.abs() < 1.0
         && velocity.y.abs() > 0.1
         && transform.translation.y < 0.2
@@ -356,9 +337,8 @@ fn rocket_position_system(
     {
         info!("Detected rocket down at {:?}", transform.translation);
         rocket_state.state = RocketStateEnum::Grounded;
-        crash_events.send(DownedEvent);
+        crash_events.write(DownedEvent);
     } else {
-        // Update max stats
         rocket_state.max_height = transform.translation.y.max(rocket_state.max_height);
         rocket_state.max_velocity = velocity.length().max(rocket_state.max_velocity);
     }
@@ -367,20 +347,19 @@ fn rocket_position_system(
 fn on_crash_event(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    mut crash_reader: EventReader<DownedEvent>,
+    mut crash_reader: MessageReader<DownedEvent>,
 ) {
     for _event in crash_reader.read() {
         info!("Crash event");
-        let audio_bundle = AudioBundle {
-            source: asset_server.load("audio/impact_wood.ogg"),
-            settings: PlaybackSettings::DESPAWN,
-        };
-        commands.spawn(audio_bundle);
+        commands.spawn((
+            AudioPlayer::new(asset_server.load("audio/impact_wood.ogg")),
+            PlaybackSettings::DESPAWN,
+        ));
     }
 }
 
 fn on_launch_event(
-    mut launch_events: EventReader<LaunchEvent>,
+    mut launch_events: MessageReader<LaunchEvent>,
     mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
     mut rocket_state: ResMut<RocketState>,
     mut commands: Commands,
@@ -398,7 +377,6 @@ fn on_launch_event(
             return;
         }
 
-        // Unlock physics body
         for mut locked_axes in locked_axes.iter_mut() {
             debug!("Unlock axes");
             *locked_axes = LockedAxes::new();
@@ -406,7 +384,7 @@ fn on_launch_event(
 
         rocket_state.state = RocketStateEnum::Launched;
 
-        let (rocket_ent, _, _transform, _) = rocket_query.single_mut();
+        let (rocket_ent, _, _transform, _) = rocket_query.single_mut().unwrap();
 
         let force_timer = ForceTimer {
             id: get_timer_id(),
@@ -417,11 +395,10 @@ fn on_launch_event(
         };
         commands.entity(rocket_ent).insert(force_timer);
 
-        let audio_bundle = AudioBundle {
-            source: asset_server.load("audio/air-rushes-out-fast-long.ogg"),
-            settings: PlaybackSettings::DESPAWN,
-        };
-        commands.spawn(audio_bundle);
+        commands.spawn((
+            AudioPlayer::new(asset_server.load("audio/air-rushes-out-fast-long.ogg")),
+            PlaybackSettings::DESPAWN,
+        ));
     }
 }
 
@@ -429,8 +406,8 @@ fn update_stats_system(
     rocket_state: Res<RocketState>,
     mut text_query: Query<&mut Text, With<ScoreMarker>>,
 ) {
-    if let Ok(mut score_text) = text_query.get_single_mut() {
-        score_text.sections[0].value = format!(
+    if let Ok(mut score_text) = text_query.single_mut() {
+        **score_text = format!(
             "Max altitude: {:.1}\nMax speed: {:.1}",
             rocket_state.max_height, rocket_state.max_velocity
         );
@@ -444,11 +421,11 @@ fn ui_system(
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<&Transform, With<Camera>>,
-    rocket_query: Query<&ColliderMassProperties, (With<RocketMarker>, Without<Camera>)>,
-) {
-    let ctx = contexts.ctx_mut();
+    rocket_query: Query<(&Mass, &CenterOfMass), (With<RocketMarker>, Without<Camera>)>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
 
-    if let Ok(_camera_transform) = camera_query.get_single_mut() {
+    if let Ok(_camera_transform) = camera_query.single_mut() {
         occupied_screen_space.left = egui::SidePanel::left("left_panel")
             .resizable(true)
             .show(ctx, |ui| {
@@ -577,13 +554,11 @@ fn ui_system(
                     egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
                         .text("duration"),
                 );
-                if let Ok(mass) = rocket_query.get_single() {
+                if let Ok((mass, com)) = rocket_query.single() {
                     ui.label(format!(
-                        "Mass: {:.2}, ...: {:.2} {:.2} {:.2}",
-                        mass.mass.0,
-                        mass.center_of_mass.x,
-                        mass.center_of_mass.y,
-                        mass.center_of_mass.z
+                        "Mass: {:.2}, CoM: {:?}",
+                        mass.0,
+                        com.0,
                     ));
                 }
                 ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
@@ -603,6 +578,7 @@ fn ui_system(
         .response
         .rect
         .height();
+    Ok(())
 }
 
 fn update_rocket_dimensions_system(
@@ -611,11 +587,11 @@ fn update_rocket_dimensions_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut rocket_dims: ResMut<RocketDimensions>,
     mut body_query: Query<
-        (&mut Handle<Mesh>, &mut Collider, &mut Transform),
+        (&mut Mesh3d, &mut Collider, &mut Transform),
         (With<RocketBody>, Without<RocketCone>),
     >,
     mut cone_query: Query<
-        (&mut Handle<Mesh>, &mut Collider, &mut Transform),
+        (&mut Mesh3d, &mut Collider, &mut Transform),
         (With<RocketCone>, Without<RocketBody>),
     >,
     mut rb_query: Query<
@@ -631,43 +607,39 @@ fn update_rocket_dimensions_system(
 
     debug!("Updating rocket dimensions");
 
-    // Adjust the Rigid Body position
     for mut rb_transform in rb_query.iter_mut() {
         rb_transform.translation.y = rocket_dims.total_length() * 0.5;
     }
 
-    // Update the mesh and collider to match the new dimensions
     for (mut mesh_handle, mut collider, _) in body_query.iter_mut() {
-        *mesh_handle = meshes.add(
+        *mesh_handle = Mesh3d(meshes.add(
             Cylinder::new(rocket_dims.radius, rocket_dims.length)
                 .mesh()
                 .resolution(rocket::CIRCLE_RESOLUTION),
-        );
-        *collider = Collider::cylinder(rocket_dims.length, rocket_dims.radius);
+        ));
+        *collider = Collider::cylinder(rocket_dims.radius, rocket_dims.length);
     }
 
     for (mut mesh_handle, mut collider, mut transform) in cone_query.iter_mut() {
-        *mesh_handle = meshes.add(Mesh::from(Cone {
+        *mesh_handle = Mesh3d(meshes.add(Mesh::from(Cone {
             radius: rocket_dims.radius,
             height: rocket_dims.cone_length,
             segments: rocket::CIRCLE_RESOLUTION,
-        }));
-        *collider = Collider::cone(rocket_dims.cone_length, rocket_dims.radius);
+        })));
+        *collider = Collider::cone(rocket_dims.radius, rocket_dims.cone_length);
         transform.translation.y = rocket_dims.total_length() * 0.5;
     }
 
     // Remove fins
-    // TODO: Only do this if fins changed.
     for fin in fins_query.iter_mut() {
         debug!("Removing fins");
-        commands.entity(fin).despawn_recursive();
+        commands.entity(fin).despawn();
     }
     // Add fins
-    let rocket = rocket_query.single();
+    let rocket = rocket_query.single().unwrap();
     let rocket_fin_pbr_bundles =
         create_rocket_fin_pbr_bundles(materials, rocket_dims.as_ref(), meshes.as_mut(), "#339933");
     for bundle in rocket_fin_pbr_bundles {
-        // Spawn the fin entities
         commands.entity(rocket).with_children(|parent| {
             parent.spawn((bundle, FinMarker));
         });
@@ -676,10 +648,10 @@ fn update_rocket_dimensions_system(
 }
 
 fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn(AudioBundle {
-        source: asset_server.load("audio/Welcome_to_the_Lab_v1.ogg"),
-        settings: PlaybackSettings::LOOP,
-    });
+    commands.spawn((
+        AudioPlayer::new(asset_server.load("audio/Welcome_to_the_Lab_v1.ogg")),
+        PlaybackSettings::LOOP,
+    ));
 }
 
 const DEFAULT_FOV_DEGREES: f32 = 45.0;
@@ -689,7 +661,6 @@ fn setup_camera_system(
     camera_properties: ResMut<CameraProperties>,
     asset_server: Res<AssetServer>,
 ) {
-    // Set and save original camera position
     let camera_pos = INITIAL_CAMERA_POS;
     let camera_transform =
         Transform::from_translation(camera_pos).looking_at(camera_properties.target, Vec3::Y);
@@ -698,36 +669,29 @@ fn setup_camera_system(
 
     let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
 
-    commands.spawn(EnvironmentBundle {
-        camera_bundle: Camera3dBundle {
-            transform: camera_transform,
-            camera: Camera {
-                hdr: true, // 1. HDR is required for bloom
-                ..default()
-            },
-            projection: PerspectiveProjection {
-                fov: DEFAULT_FOV_DEGREES.to_radians(),
-                ..default()
-            }
-            .into(),
-            ..Default::default()
-        },
-        skybox: Skybox {
+    commands.spawn((
+        Camera3d::default(),
+        camera_transform,
+        Camera::default(),
+        Hdr,
+        Projection::Perspective(PerspectiveProjection {
+            fov: DEFAULT_FOV_DEGREES.to_radians(),
+            ..default()
+        }),
+        Skybox {
             image: skybox_handle,
             brightness: 150.0,
+            ..default()
         },
-        bloom: BloomSettings::default(),
-        fog: FogSettings::default(),
-    });
+        Bloom::default(),
+        DistanceFog::default(),
+    ));
 }
 
 fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // See: https://docs.rs/bevy/latest/src/alien_cake_addict/alien_cake_addict.rs.html#235
-
-    // example instructions
-    // TODO: game states to hide/show this?
-    commands.spawn(
-        TextBundle::from_section(
+    // Instructions
+    commands.spawn((
+        Text::new(
             "Press 'R' to reset\n\
             Press 'Enter' to launch!\n\
             Press 'C' to toggle camera mode\n\
@@ -738,38 +702,37 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
             Press 'T' to toggle fog type\n\
             Press 'Space' to toggle slowmo\n\
             Use arrow keys to move camera (wip)\n",
-            TextStyle {
-                font_size: 16.,
-                ..default()
-            },
-        )
-        .with_style(Style {
+        ),
+        TextFont {
+            font_size: 16.,
+            ..default()
+        },
+        Node {
             position_type: PositionType::Absolute,
             top: Val::Px(85.0),
             left: Val::Px(220.0),
             ..default()
-        }),
-    );
+        },
+    ));
 
-    // scoreboard
+    // Scoreboard
     commands.spawn((
-        TextBundle::from_section(
-            "Max altitude:",
-            TextStyle {
-                font: asset_server.load("fonts/FiraMono-Medium.ttf"), // Sans-Bold
-                font_size: 30.0,
-                color: Color::rgb(1.0, 1.0, 1.0),
-            },
-        )
-        .with_text_justify(JustifyText::Right)
-        .with_background_color(Color::rgba(0.3, 0.3, 1.0, 0.7))
-        .with_style(Style {
+        Text::new("Max altitude:"),
+        TextFont {
+            font: asset_server.load("fonts/FiraMono-Medium.ttf"),
+            font_size: 30.0,
+            ..default()
+        },
+        TextColor(Color::srgb(1.0, 1.0, 1.0)),
+        TextLayout::new_with_justify(Justify::Right),
+        BackgroundColor(Color::srgba(0.3, 0.3, 1.0, 0.7)),
+        Node {
             position_type: PositionType::Relative,
             top: Val::Px(20.0),
             left: Val::Px(200.0),
             width: Val::Px(300.0),
             ..default()
-        }),
+        },
         ScoreMarker,
     ));
 }

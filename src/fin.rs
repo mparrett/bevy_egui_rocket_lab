@@ -1,19 +1,18 @@
 use bevy::math::Vec3;
 use bevy::prelude::Vec2;
-use bevy::render::mesh::{Indices, Mesh};
-use bevy::render::render_asset::RenderAssetUsages;
-use bevy::render::render_resource::PrimitiveTopology;
+use bevy::mesh::{Indices, Mesh};
+use bevy::asset::RenderAssetUsages;
+use bevy::mesh::PrimitiveTopology;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Fin {
-    pub height: f32, // Height of the fin
-    pub length: f32, // Length of the fin
-    pub width: f32,  // Thickness, orthogonal to height and length
+    pub height: f32,
+    pub length: f32,
+    pub width: f32,
 }
 
 impl Default for Fin {
     fn default() -> Self {
-        // Default for a fin that is 2x taller than it is long, and is 0.2 wide
         Fin {
             height: 1.0,
             length: 0.5,
@@ -41,28 +40,17 @@ impl MeshData {
 }
 
 fn create_fin_geometry(mesh: &mut MeshData, fin: &Fin) {
-    // Each fin is a right triangle with a thickness (width) extending radially from the rocket
-    // The fin is defined by its height, length, and width
-    //
-    //   +-
-    //   |\\
-    // h | \\ w
-    //   |  \\
-    //   +---++
-    //     l
-    let half_width = fin.width * 0.5; // Half of the fin's thickness, adding depth
-    let height = fin.height; // The height of the fin
-    let length = fin.length; // The length of the fin extending radially
+    let half_width = fin.width * 0.5;
+    let height = fin.height;
+    let length = fin.length;
 
-    // Vertices for the right triangle (front face)
-    let front_bottom_left = Vec3::new(0.0, 0.0, -half_width); // Bottom left point
-    let front_top_left = Vec3::new(0.0, height, -half_width); // Top left point, making the right angle
-    let front_bottom_right = Vec3::new(length, 0.0, -half_width); // Bottom right point
+    let front_bottom_left = Vec3::new(0.0, 0.0, -half_width);
+    let front_top_left = Vec3::new(0.0, height, -half_width);
+    let front_bottom_right = Vec3::new(length, 0.0, -half_width);
 
-    // Vertices for the right triangle (back face, mirrored along the Z-axis)
-    let back_bottom_left = Vec3::new(0.0, 0.0, half_width); // Mirrored bottom left point
-    let back_top_left = Vec3::new(0.0, height, half_width); // Mirrored top left point
-    let back_bottom_right = Vec3::new(length, 0.0, half_width); // Mirrored bottom right point
+    let back_bottom_left = Vec3::new(0.0, 0.0, half_width);
+    let back_top_left = Vec3::new(0.0, height, half_width);
+    let back_bottom_right = Vec3::new(length, 0.0, half_width);
 
     mesh.positions.extend_from_slice(&[
         front_bottom_left,
@@ -73,7 +61,6 @@ fn create_fin_geometry(mesh: &mut MeshData, fin: &Fin) {
         back_bottom_right,
     ]);
 
-    // UVs (simplified for this example)
     mesh.uvs.extend_from_slice(&[
         Vec2::new(0.0, 0.0),
         Vec2::new(0.0, 1.0),
@@ -83,18 +70,15 @@ fn create_fin_geometry(mesh: &mut MeshData, fin: &Fin) {
         Vec2::new(1.0, 0.0),
     ]);
 
-    // Indices to form the triangles for each face
-    mesh.indices.extend_from_slice(&[0, 1, 2]); // Front face
-    mesh.indices.extend_from_slice(&[3, 5, 4]); // Back face
+    mesh.indices.extend_from_slice(&[0, 1, 2]);
+    mesh.indices.extend_from_slice(&[3, 5, 4]);
 
-    // Side faces to create thickness (width) for the fin
     mesh.indices.extend_from_slice(&[
-        0, 3, 4, 0, 4, 1, // Left side
-        1, 4, 5, 1, 5, 2, // Diagonal side
-        2, 5, 3, 2, 3, 0, // Bottom side
+        0, 3, 4, 0, 4, 1,
+        1, 4, 5, 1, 5, 2,
+        2, 5, 3, 2, 3, 0,
     ]);
 
-    // Calculate normals
     let _front_normal = (front_top_left - front_bottom_left)
         .cross(front_bottom_right - front_bottom_left)
         .normalize();
@@ -112,20 +96,20 @@ fn create_fin_geometry(mesh: &mut MeshData, fin: &Fin) {
         .normalize();
 
     mesh.normals.extend_from_slice(&[
-        bottom_normal,     // front_bottom_left
-        left_side_normal,  // front_top_left
-        right_side_normal, // front_bottom_right
-        bottom_normal,     // back_bottom_left
-        left_side_normal,  // back_top_left
-        right_side_normal, // back_bottom_right
+        bottom_normal,
+        left_side_normal,
+        right_side_normal,
+        bottom_normal,
+        left_side_normal,
+        right_side_normal,
     ]);
 }
 
 impl From<Fin> for Mesh {
     fn from(fin: Fin) -> Self {
-        let num_vertices = 6; // 3 vertices for each face, front and back
-        let num_faces = 4; // 2 for the front and back, 2 for the sides, bottom is created by the sides
-        let num_indices = num_faces * 3; // 3 indices per triangle
+        let num_vertices = 6;
+        let num_faces = 4;
+        let num_indices = num_faces * 3;
 
         let mut mesh_data = MeshData::new(num_vertices, num_indices);
 
