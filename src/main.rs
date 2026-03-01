@@ -482,16 +482,16 @@ fn ui_system(
                 .show(ui, |ui| {
                     let mut changed = false;
                     changed |= ui
-                        .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=8.0).text("radius"))
+                        .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5).text("radius"))
                         .changed();
                     changed |= ui
                         .add(
-                            egui::Slider::new(&mut rocket_dims.length, 0.025..=20.0).text("length"),
+                            egui::Slider::new(&mut rocket_dims.length, 0.2..=2.0).step_by(0.05).text("length"),
                         )
                         .changed();
                     changed |= ui
                         .add(
-                            egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=1.5)
+                            egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=0.8)
                                 .text("cone"),
                         )
                         .changed();
@@ -504,14 +504,14 @@ fn ui_system(
                         .changed();
                     changed |= ui
                         .add(
-                            egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=5.0)
+                            egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=1.5)
                                 .step_by(0.1)
                                 .text("fin H"),
                         )
                         .changed();
                     changed |= ui
                         .add(
-                            egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=5.0)
+                            egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=1.0)
                                 .step_by(0.1)
                                 .text("fin L"),
                         )
