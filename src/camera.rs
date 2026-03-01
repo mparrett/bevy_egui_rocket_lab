@@ -1,14 +1,5 @@
 use bevy::prelude::*;
 
-#[derive(Default, Resource)]
-#[allow(dead_code)]
-pub struct OccupiedScreenSpace {
-    pub left: f32,
-    pub top: f32,
-    pub right: f32,
-    pub bottom: f32,
-}
-
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 
@@ -31,12 +22,6 @@ pub enum FollowMode {
     FollowSide,
 }
 
-#[derive(PartialEq, Copy, Clone)]
-pub enum ControlMode {
-    Normal,
-    SteerRocket,
-}
-
 #[derive(Resource)]
 pub struct CameraProperties {
     pub orbit_angle_degrees: f32,
@@ -49,7 +34,6 @@ pub struct CameraProperties {
     pub zoom_index: usize,
     pub base_fov: f32,
     pub follow_mode: FollowMode,
-    pub control_mode: ControlMode,
     pub fixed_distance: f32,
 }
 impl Default for CameraProperties {
@@ -65,7 +49,6 @@ impl Default for CameraProperties {
             zoom_index: 1,
             base_fov: 60.0_f32.to_radians(),
             follow_mode: FollowMode::FixedGround,
-            control_mode: ControlMode::Normal,
             fixed_distance: 6.0,
         }
     }

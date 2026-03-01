@@ -22,8 +22,7 @@ use sky::SkyProperties;
 use crate::{
     camera::{
         update_camera_transform_system, update_camera_zoom_perspective_system, CameraProperties,
-        ControlMode, FollowMode, OccupiedScreenSpace, CAMERA_MODES, INITIAL_CAMERA_POS,
-        ZOOM_LEVELS,
+        FollowMode, CAMERA_MODES, INITIAL_CAMERA_POS, ZOOM_LEVELS,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
@@ -52,12 +51,6 @@ mod rocket;
 mod sky;
 mod util;
 
-#[derive(Clone, Eq, PartialEq, Debug, Hash, Default, States)]
-enum GameState {
-    #[default]
-    Initial,
-}
-
 #[derive(Message)]
 struct LaunchEvent;
 
@@ -82,7 +75,6 @@ fn main() {
         },
     }));
 
-    app.init_state::<GameState>();
     app.add_message::<LaunchEvent>();
     app.add_message::<DownedEvent>();
     app.add_message::<ResetEvent>();
@@ -98,7 +90,6 @@ fn main() {
         .add_plugins(
             WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
         )
-        .init_resource::<OccupiedScreenSpace>()
         .init_resource::<RocketDimensions>()
         .init_resource::<RocketFlightParameters>()
         .init_resource::<CameraProperties>()
@@ -272,22 +263,14 @@ fn do_launch_system(
     }
 
     if ctx.input(|i| i.key_down(Key::ArrowLeft)) {
-        if camera_properties.control_mode == ControlMode::SteerRocket {
-            // TODO: adjust rocket force vector
-        } else {
-            camera_properties.orbit_angle_degrees -= 0.5;
-            if camera_properties.orbit_angle_degrees < 0.0 {
-                camera_properties.orbit_angle_degrees = 360.0;
-            }
+        camera_properties.orbit_angle_degrees -= 0.5;
+        if camera_properties.orbit_angle_degrees < 0.0 {
+            camera_properties.orbit_angle_degrees = 360.0;
         }
     } else if ctx.input(|i| i.key_down(Key::ArrowRight)) {
-        if camera_properties.control_mode == ControlMode::SteerRocket {
-            // TODO: adjust rocket force vector
-        } else {
-            camera_properties.orbit_angle_degrees += 0.5;
-            if camera_properties.orbit_angle_degrees > 360.0 {
-                camera_properties.orbit_angle_degrees = 0.0;
-            }
+        camera_properties.orbit_angle_degrees += 0.5;
+        if camera_properties.orbit_angle_degrees > 360.0 {
+            camera_properties.orbit_angle_degrees = 0.0;
         }
     } else if ctx.input(|i| i.key_down(Key::ArrowUp)) {
         camera_properties.fixed_distance -= 0.1;
@@ -410,7 +393,6 @@ fn update_stats_system(
 
 fn ui_system(
     mut contexts: EguiContexts,
-    mut occupied_screen_space: ResMut<OccupiedScreenSpace>,
     mut rocket_dims: ResMut<RocketDimensions>,
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
@@ -418,7 +400,7 @@ fn ui_system(
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
 
-    occupied_screen_space.left = egui::SidePanel::left("left_panel")
+    egui::SidePanel::left("left_panel")
         .resizable(true)
         .show(ctx, |ui| {
             ui.add_space(4.0);
@@ -480,45 +462,29 @@ fn ui_system(
             egui::CollapsingHeader::new("Rocket Body")
                 .default_open(true)
                 .show(ui, |ui| {
-                    let mut changed = false;
-                    changed |= ui
-                        .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5).text("radius"))
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.length, 0.2..=2.0).step_by(0.05).text("length"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=0.8)
-                                .text("cone"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
-                                .step_by(1.0)
-                                .text("fins"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=1.5)
-                                .step_by(0.1)
-                                .text("fin H"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=1.0)
-                                .step_by(0.1)
-                                .text("fin L"),
-                        )
-                        .changed();
-                    if changed {
-                        rocket_dims.flag_changed = true;
-                    }
+                    ui.add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5).text("radius"));
+                    ui.add(
+                        egui::Slider::new(&mut rocket_dims.length, 0.2..=2.0).step_by(0.05).text("length"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=0.8)
+                            .text("cone"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
+                            .step_by(1.0)
+                            .text("fins"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=1.5)
+                            .step_by(0.1)
+                            .text("fin H"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=1.0)
+                            .step_by(0.1)
+                            .text("fin L"),
+                    );
                 });
 
             ui.add_space(6.0);
@@ -543,10 +509,7 @@ fn ui_system(
                 });
 
             ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
-        })
-        .response
-        .rect
-        .width();
+        });
 
     Ok(())
 }
@@ -555,7 +518,7 @@ fn update_rocket_dimensions_system(
     mut commands: Commands,
     materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut rocket_dims: ResMut<RocketDimensions>,
+    rocket_dims: Res<RocketDimensions>,
     mut body_query: Query<
         (&mut Mesh3d, &mut Collider, &mut Transform),
         (With<RocketBody>, Without<RocketCone>),
@@ -571,7 +534,7 @@ fn update_rocket_dimensions_system(
     rocket_query: Query<Entity, With<RocketMarker>>,
     mut fins_query: Query<Entity, With<FinMarker>>,
 ) {
-    if !rocket_dims.flag_changed {
+    if !rocket_dims.is_changed() {
         return;
     }
 
@@ -616,7 +579,6 @@ fn update_rocket_dimensions_system(
             parent.spawn((bundle, FinMarker));
         });
     }
-    rocket_dims.flag_changed = false;
 }
 
 fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {
