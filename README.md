@@ -1,18 +1,19 @@
 # Bevy Rocket Lab
 
-A model rocketry simulator/game built with [Bevy](https://bevyengine.org/) 0.13. Early stage — currently a sandbox/tech demo.
+A model rocketry simulator/game built with [Bevy](https://bevyengine.org/) 0.18. Early stage — currently a sandbox/tech demo.
 
 Why? I recently revisited model rocketry with my children and found myself writing a python script to discern where our first launch might have landed. After that, I thought it might be fun to explore the idea a bit more.
 
 ## Quick Start
 
 ```bash
-just run        # dev build + run
-just fmt        # format code
-just release    # optimized build
+just run          # dev build + run
+just fmt          # format code
+just release      # optimized build
+just serve-wasm   # build WASM + serve at localhost:8080
 ```
 
-See [DEV.md](DEV.md) for module overview, WASM builds, and troubleshooting.
+Requires [rustup](https://rustup.rs/)-managed Rust (not Homebrew). See [DEV.md](DEV.md) for module overview, toolchain setup, WASM builds, and troubleshooting.
 
 ## TODO
 
@@ -20,7 +21,7 @@ See [DEV.md](DEV.md) for module overview, WASM builds, and troubleshooting.
   - Rocket building (currency, purchase body/cone/engines/fins/parachute/launch pads)
   - Objectives (landing, elevation, etc.) with constraints (wind, build deficiencies)
   - Title and game over screens
-- Build and publish to web
+- Publish to web (WASM build works, needs polish)
 
 ## Ideas
 
@@ -38,5 +39,5 @@ Based on [bevy-egui-playground](https://github.com/whoisryosuke/bevy-egui-playgr
 ## References
 
 - [nbody simulation](https://github.com/pjankiewicz/nbody/tree/master/src)
-- [bevy_xpbd 3D chain example](https://github.com/Jondolf/bevy_xpbd/blob/main/crates/bevy_xpbd_3d/examples/chain_3d.rs)
+- [avian3d](https://github.com/Jondolf/avian) (formerly bevy_xpbd_3d)
 - [bevy_firework pitch/yaw](https://github.com/mbrea-c/bevy_firework/blob/master/src/emission_shape.rs)
