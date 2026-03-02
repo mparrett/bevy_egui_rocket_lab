@@ -385,7 +385,7 @@ fn update_stats_system(
 ) {
     if let Ok(mut score_text) = text_query.single_mut() {
         **score_text = format!(
-            "Max altitude: {:.1}\nMax speed: {:.1}",
+            "Alt: {:.1} m  Vel: {:.1} m/s",
             rocket_state.max_height, rocket_state.max_velocity
         );
     }
@@ -637,7 +637,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
             "R: reset  Enter: launch  C: camera mode\n\
              Z: zoom  Q: quit  D/S: destabilize/stabilize\n\
              F: fog  T: fog type  Space: slowmo\n\
-             Arrow keys: move camera",
+             Esc: world inspector  Arrow keys: move camera",
         ),
         TextFont {
             font_size: 13.,
@@ -654,19 +654,19 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     // Scoreboard (top-left, just past the egui panel)
     commands.spawn((
-        Text::new("Max altitude:"),
+        Text::new(""),
         TextFont {
             font: asset_server.load("fonts/FiraMono-Medium.ttf"),
-            font_size: 14.0,
+            font_size: 13.0,
             ..default()
         },
-        TextColor(Color::srgb(1.0, 1.0, 1.0)),
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.4)),
+        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(6.0),
+            top: Val::Px(8.0),
             left: Val::Px(280.0),
-            padding: UiRect::all(Val::Px(5.0)),
+            padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
             ..default()
         },
         ScoreMarker,
