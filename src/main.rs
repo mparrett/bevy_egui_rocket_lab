@@ -462,29 +462,28 @@ fn ui_system(
             egui::CollapsingHeader::new("Rocket Body")
                 .default_open(true)
                 .show(ui, |ui| {
-                    ui.add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5).text("radius"));
-                    ui.add(
-                        egui::Slider::new(&mut rocket_dims.length, 0.2..=2.0).step_by(0.05).text("length"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=0.8)
-                            .text("cone"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
-                            .step_by(1.0)
-                            .text("fins"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=1.5)
-                            .step_by(0.1)
-                            .text("fin H"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=1.0)
-                            .step_by(0.1)
-                            .text("fin L"),
-                    );
+                    let mut changed = false;
+                    changed |= ui
+                        .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5).text("radius"))
+                        .changed();
+                    changed |= ui
+                        .add(egui::Slider::new(&mut rocket_dims.length, 0.2..=2.0).step_by(0.05).text("length"))
+                        .changed();
+                    changed |= ui
+                        .add(egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=0.8).text("cone"))
+                        .changed();
+                    changed |= ui
+                        .add(egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0).step_by(1.0).text("fins"))
+                        .changed();
+                    changed |= ui
+                        .add(egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=1.5).step_by(0.1).text("fin H"))
+                        .changed();
+                    changed |= ui
+                        .add(egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=1.0).step_by(0.1).text("fin L"))
+                        .changed();
+                    if changed {
+                        rocket_dims.flag_changed = true;
+                    }
                 });
 
             ui.add_space(6.0);
@@ -518,7 +517,7 @@ fn update_rocket_dimensions_system(
     mut commands: Commands,
     materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    rocket_dims: Res<RocketDimensions>,
+    mut rocket_dims: ResMut<RocketDimensions>,
     mut body_query: Query<
         (&mut Mesh3d, &mut Collider, &mut Transform),
         (With<RocketBody>, Without<RocketCone>),
@@ -534,7 +533,7 @@ fn update_rocket_dimensions_system(
     rocket_query: Query<Entity, With<RocketMarker>>,
     mut fins_query: Query<Entity, With<FinMarker>>,
 ) {
-    if !rocket_dims.is_changed() {
+    if !rocket_dims.flag_changed {
         return;
     }
 
@@ -579,6 +578,7 @@ fn update_rocket_dimensions_system(
             parent.spawn((bundle, FinMarker));
         });
     }
+    rocket_dims.flag_changed = false;
 }
 
 fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {

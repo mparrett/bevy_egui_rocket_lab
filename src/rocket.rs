@@ -30,6 +30,7 @@ pub struct RocketDimensions {
     pub num_fins: f32,
     pub fin_height: f32,
     pub fin_length: f32,
+    pub flag_changed: bool,
 }
 
 impl RocketDimensions {
@@ -41,6 +42,7 @@ impl RocketDimensions {
             num_fins: 3.0,
             fin_height: 0.2,
             fin_length: 0.1,
+            flag_changed: false,
         }
     }
     pub fn total_length(&self) -> f32 {
