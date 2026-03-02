@@ -10,15 +10,15 @@ use std::f32::consts::PI;
 
 pub const CUBEMAPS: &[(&str, CompressedImageFormats)] = &[
     (
-        "textures/Ryfjallet_cubemap_astc4x4.ktx2",
+        "textures/grasslands_sunset_cubemap_astc4x4.ktx2",
         CompressedImageFormats::ASTC_LDR,
     ),
     (
-        "textures/Ryfjallet_cubemap_etc2.ktx2",
+        "textures/grasslands_sunset_cubemap_etc2.ktx2",
         CompressedImageFormats::ETC2,
     ),
     (
-        "textures/Ryfjallet_cubemap.png",
+        "textures/grasslands_sunset_cubemap.png",
         CompressedImageFormats::NONE,
     ),
 ];
