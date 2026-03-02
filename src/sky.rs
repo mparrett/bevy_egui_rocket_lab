@@ -8,25 +8,85 @@ use bevy::{
 };
 use std::f32::consts::PI;
 
-pub const CUBEMAPS: &[(&str, CompressedImageFormats)] = &[
-    (
-        "textures/grasslands_sunset_cubemap_astc4x4.ktx2",
-        CompressedImageFormats::ASTC_LDR,
-    ),
-    (
-        "textures/grasslands_sunset_cubemap_etc2.ktx2",
-        CompressedImageFormats::ETC2,
-    ),
-    (
-        "textures/grasslands_sunset_cubemap.png",
-        CompressedImageFormats::NONE,
-    ),
+pub struct SkyboxEntry {
+    pub name: &'static str,
+    pub variants: &'static [(&'static str, CompressedImageFormats)],
+}
+
+pub const SKYBOXES: &[SkyboxEntry] = &[
+    SkyboxEntry {
+        name: "Grasslands Sunset",
+        variants: &[
+            (
+                "textures/grasslands_sunset_cubemap_astc4x4.ktx2",
+                CompressedImageFormats::ASTC_LDR,
+            ),
+            (
+                "textures/grasslands_sunset_cubemap_etc2.ktx2",
+                CompressedImageFormats::ETC2,
+            ),
+            (
+                "textures/grasslands_sunset_cubemap.png",
+                CompressedImageFormats::NONE,
+            ),
+        ],
+    },
+    SkyboxEntry {
+        name: "Belfast Sunset",
+        variants: &[
+            (
+                "textures/belfast_sunset_cubemap_astc4x4.ktx2",
+                CompressedImageFormats::ASTC_LDR,
+            ),
+            (
+                "textures/belfast_sunset_cubemap_etc2.ktx2",
+                CompressedImageFormats::ETC2,
+            ),
+            (
+                "textures/belfast_sunset_cubemap.png",
+                CompressedImageFormats::NONE,
+            ),
+        ],
+    },
+    SkyboxEntry {
+        name: "Citrus Orchard",
+        variants: &[
+            (
+                "textures/citrus_orchard_cubemap_astc4x4.ktx2",
+                CompressedImageFormats::ASTC_LDR,
+            ),
+            (
+                "textures/citrus_orchard_cubemap_etc2.ktx2",
+                CompressedImageFormats::ETC2,
+            ),
+            (
+                "textures/citrus_orchard_cubemap.png",
+                CompressedImageFormats::NONE,
+            ),
+        ],
+    },
+    SkyboxEntry {
+        name: "Bambanani Sunset",
+        variants: &[
+            (
+                "textures/bambanani_sunset_cubemap_astc4x4.ktx2",
+                CompressedImageFormats::ASTC_LDR,
+            ),
+            (
+                "textures/bambanani_sunset_cubemap_etc2.ktx2",
+                CompressedImageFormats::ETC2,
+            ),
+            (
+                "textures/bambanani_sunset_cubemap.png",
+                CompressedImageFormats::NONE,
+            ),
+        ],
+    },
 ];
 
 #[derive(Resource)]
 pub struct Cubemap {
     pub is_loaded: bool,
-    index: usize,
     image_handle: Handle<Image>,
 }
 
@@ -39,6 +99,8 @@ pub static FOG_MODES: &[usize] = &[0, 1, 2];
 #[derive(Resource, Default)]
 pub struct SkyProperties {
     pub fog_mode: usize,
+    pub skybox_index: usize,
+    pub skybox_changed: bool,
 }
 
 pub fn setup_sky_system(mut commands: Commands) {
@@ -67,26 +129,38 @@ pub fn setup_sky_system(mut commands: Commands) {
     ));
 }
 
+pub fn pick_best_variant<'a>(
+    variants: &'a [(&'a str, CompressedImageFormats)],
+    supported: CompressedImageFormats,
+) -> &'a str {
+    variants
+        .iter()
+        .find(|(_, fmt)| *fmt == CompressedImageFormats::NONE || supported.contains(*fmt))
+        .map(|(path, _)| *path)
+        .unwrap()
+}
+
+fn detect_supported_formats(
+    render_device: &Option<Res<bevy::render::renderer::RenderDevice>>,
+) -> CompressedImageFormats {
+    render_device
+        .as_ref()
+        .map(|d| CompressedImageFormats::from_features(d.features()))
+        .unwrap_or(CompressedImageFormats::NONE)
+}
+
 pub fn spawn_regular_sky_map(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     render_device: Option<Res<bevy::render::renderer::RenderDevice>>,
 ) {
-    let supported = render_device
-        .map(|d| CompressedImageFormats::from_features(d.features()))
-        .unwrap_or(CompressedImageFormats::NONE);
-
-    let (idx, (path, _)) = CUBEMAPS
-        .iter()
-        .enumerate()
-        .find(|(_, (_, fmt))| *fmt == CompressedImageFormats::NONE || supported.contains(*fmt))
-        .unwrap();
+    let supported = detect_supported_formats(&render_device);
+    let path = pick_best_variant(SKYBOXES[0].variants, supported);
 
     info!("Loading skybox: {path}");
-    let skybox_handle = asset_server.load(*path);
+    let skybox_handle = asset_server.load(path);
     commands.insert_resource(Cubemap {
         is_loaded: false,
-        index: idx,
         image_handle: skybox_handle.clone(),
     });
 }
@@ -95,15 +169,29 @@ pub fn cubemap_asset_loaded(
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
     mut cubemap_opt: Option<ResMut<Cubemap>>,
-    mut skyboxes: Query<&mut Skybox>,
+    mut skybox_query: Query<&mut Skybox>,
+    mut sky_props: ResMut<SkyProperties>,
+    render_device: Option<Res<bevy::render::renderer::RenderDevice>>,
 ) {
     if cubemap_opt.is_none() {
         return;
     }
     let cubemap = cubemap_opt.as_mut().unwrap();
 
+    if sky_props.skybox_changed {
+        let supported = detect_supported_formats(&render_device);
+        let path = pick_best_variant(SKYBOXES[sky_props.skybox_index].variants, supported);
+        info!("Loading skybox: {path}");
+        cubemap.image_handle = asset_server.load(path);
+        cubemap.is_loaded = false;
+        sky_props.skybox_changed = false;
+    }
+
     if !cubemap.is_loaded && asset_server.is_loaded(&cubemap.image_handle) {
-        info!("Swapping to {}...", CUBEMAPS[cubemap.index].0);
+        info!(
+            "Skybox ready: {}",
+            SKYBOXES[sky_props.skybox_index].name
+        );
         let image = images.get_mut(&cubemap.image_handle).unwrap();
         if image.texture_descriptor.array_layer_count() == 1 {
             let _ = image.reinterpret_stacked_2d_as_array(image.height() / image.width());
@@ -113,7 +201,7 @@ pub fn cubemap_asset_loaded(
             });
         }
 
-        for mut skybox in &mut skyboxes {
+        for mut skybox in &mut skybox_query {
             skybox.image = cubemap.image_handle.clone();
         }
 

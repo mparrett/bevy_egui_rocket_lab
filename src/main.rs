@@ -21,8 +21,9 @@ use sky::SkyProperties;
 
 use crate::{
     camera::{
-        update_camera_transform_system, update_camera_zoom_perspective_system, CameraProperties,
-        FollowMode, CAMERA_MODES, INITIAL_CAMERA_POS, ZOOM_LEVELS,
+        mouse_orbit_system, update_camera_transform_system,
+        update_camera_zoom_perspective_system, CameraProperties, FollowMode, CAMERA_MODES,
+        INITIAL_CAMERA_POS, ZOOM_LEVELS,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
@@ -33,8 +34,8 @@ use crate::{
         RocketDimensions, RocketFlightParameters, RocketMarker, RocketState, RocketStateEnum,
     },
     sky::{
-        animate_light_direction, cubemap_asset_loaded, setup_sky_system, spawn_regular_sky_map,
-        toggle_fog_system, Cubemap, CUBEMAPS,
+        animate_light_direction, cubemap_asset_loaded, pick_best_variant, setup_sky_system,
+        spawn_regular_sky_map, toggle_fog_system, Cubemap, SKYBOXES,
     },
     util::random_vec,
 };
@@ -169,7 +170,7 @@ fn main() {
         Update,
         (cubemap_asset_loaded, animate_light_direction, check_loading_complete),
     );
-    app.add_systems(Update, adjust_time_scale);
+    app.add_systems(Update, (adjust_time_scale, mouse_orbit_system));
 
     app.run();
 }
@@ -429,9 +430,11 @@ fn ui_system(
     mut rocket_dims: ResMut<RocketDimensions>,
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
+    mut sky_props: ResMut<SkyProperties>,
     rocket_query: Query<(&Mass, &CenterOfMass), (With<RocketMarker>, Without<Camera>)>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
+    camera_properties.egui_has_pointer = ctx.is_pointer_over_area();
 
     egui::SidePanel::left("left_panel")
         .resizable(true)
@@ -540,6 +543,29 @@ fn ui_system(
                     }
                 });
 
+            ui.add_space(6.0);
+            egui::CollapsingHeader::new("Sky")
+                .default_open(false)
+                .show(ui, |ui| {
+                    let current_name = SKYBOXES[sky_props.skybox_index].name;
+                    let mut changed = false;
+                    egui::ComboBox::from_label("skybox")
+                        .selected_text(current_name)
+                        .show_ui(ui, |ui| {
+                            for (i, entry) in SKYBOXES.iter().enumerate() {
+                                if ui
+                                    .selectable_value(&mut sky_props.skybox_index, i, entry.name)
+                                    .changed()
+                                {
+                                    changed = true;
+                                }
+                            }
+                        });
+                    if changed {
+                        sky_props.skybox_changed = true;
+                    }
+                });
+
             ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
         });
 
@@ -637,12 +663,8 @@ fn setup_camera_system(
         .map(|d| CompressedImageFormats::from_features(d.features()))
         .unwrap_or(CompressedImageFormats::NONE);
 
-    let (path, _) = CUBEMAPS
-        .iter()
-        .find(|(_, fmt)| *fmt == CompressedImageFormats::NONE || supported.contains(*fmt))
-        .unwrap();
-
-    let skybox_handle = asset_server.load(*path);
+    let path = pick_best_variant(SKYBOXES[0].variants, supported);
+    let skybox_handle = asset_server.load(path);
 
     commands.spawn((
         Camera3d::default(),

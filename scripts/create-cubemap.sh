@@ -4,7 +4,7 @@
 SOURCE=$1
 DEST=$(basename $SOURCE .png).ktx2
 
-ktx create --encode uastc --zstd 18 --format R8G8B8_SRGB \
+ktx create --format ASTC_4x4_SRGB_BLOCK \
 	--assign-oetf srgb --assign-primaries bt709 --generate-mipmap \
 	$SOURCE $DEST
 
