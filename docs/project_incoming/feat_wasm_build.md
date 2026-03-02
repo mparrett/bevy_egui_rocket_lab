@@ -16,7 +16,7 @@ Build pipeline works. Basic browser testing confirmed.
 
 ## Remaining polish
 
-- [ ] Optimize WASM size with `wasm-opt` (currently ~100MB)
-- [ ] Audio autoplay — may need user gesture before first sound plays
+- [x] Optimize WASM size with `wasm-opt` — ~33MB after `-Oz` (was ~100MB)
+- [ ] Audio autoplay — tracked in bug_wasm_audio_autoplay.md
 - [ ] Performance profiling — physics is single-threaded on WASM
-- [ ] Test KTX2 compressed cubemaps (currently using PNG, which is safe)
+- [x] KTX2 compressed cubemaps — ASTC/ETC2/PNG fallback chain in place
