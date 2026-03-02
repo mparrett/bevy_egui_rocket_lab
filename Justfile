@@ -17,6 +17,12 @@ release-wasm:
 serve-wasm: release-wasm
     python3 -m http.server 8080
 
+opt-wasm: release-wasm
+    wasm-opt -Oz --all-features -o out/bevy-rocket-lab_bg.wasm out/bevy-rocket-lab_bg.wasm
+
+serve-opt-wasm: opt-wasm
+    python3 -m http.server 8080
+
 server:
     python3 -m http.server 8080
 
