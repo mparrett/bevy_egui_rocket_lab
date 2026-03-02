@@ -681,7 +681,10 @@ fn setup_camera_system(
             ..default()
         },
         Bloom::default(),
-        DistanceFog::default(),
+        DistanceFog {
+            color: Color::srgba(0.0, 0.0, 0.0, 0.0),
+            ..default()
+        },
     ));
 }
 
