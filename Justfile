@@ -14,6 +14,13 @@ release-wasm:
     cargo build --release --target wasm32-unknown-unknown
     wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/release/bevy-rocket-lab.wasm
 
+dev-wasm:
+    cargo build --target wasm32-unknown-unknown
+    wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/debug/bevy-rocket-lab.wasm
+
+serve-dev-wasm: dev-wasm
+    python3 -m http.server 8080
+
 serve-wasm: release-wasm
     python3 -m http.server 8080
 

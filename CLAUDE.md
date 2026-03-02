@@ -13,13 +13,15 @@ just run              # cargo run (dev: opt-level=1, deps: opt-level=3)
 just debug            # cargo run with RUST_BACKTRACE=full
 just fmt              # rustfmt ./src/*.rs
 just release          # cargo build --release
-just release-wasm     # wasm32-unknown-unknown + wasm-bindgen
+just dev-wasm         # fast WASM build (dev profile, no LTO)
+just serve-dev-wasm   # dev-wasm + serve on :8080
+just release-wasm     # wasm32-unknown-unknown + wasm-bindgen (release, slow)
 just serve-wasm       # release-wasm + serve on :8080
 just serve-opt-wasm   # release-wasm + wasm-opt -Oz + serve on :8080
 just deps             # cargo tree
 ```
 
-No test suite exists yet. Use the webapp-testing skill to verify WASM builds in a browser before pushing.
+No test suite exists yet. Use `just serve-dev-wasm` + the webapp-testing skill to verify WASM builds in a browser before pushing. Use `just serve-wasm` (release) only for final size-optimized builds.
 
 ## Workflow
 
