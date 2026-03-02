@@ -1,3 +1,4 @@
+use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
 
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
@@ -35,6 +36,7 @@ pub struct CameraProperties {
     pub base_fov: f32,
     pub follow_mode: FollowMode,
     pub fixed_distance: f32,
+    pub egui_has_pointer: bool,
 }
 impl Default for CameraProperties {
     fn default() -> Self {
@@ -50,6 +52,7 @@ impl Default for CameraProperties {
             base_fov: 60.0_f32.to_radians(),
             follow_mode: FollowMode::FixedGround,
             fixed_distance: 6.0,
+            egui_has_pointer: false,
         }
     }
 }
@@ -169,4 +172,29 @@ fn interpolate_to_target(target: &mut Vec3, target_vec: Vec3, spring_mu: f32, de
     target.x = target.x - (target.x - target_vec.x) * spring_mu * delta_t;
     target.y = target.y - (target.y - target_vec.y) * spring_mu * delta_t;
     target.z = target.z - (target.z - target_vec.z) * spring_mu * delta_t;
+}
+
+pub fn mouse_orbit_system(
+    mouse_button: Res<ButtonInput<MouseButton>>,
+    accumulated_motion: Res<AccumulatedMouseMotion>,
+    accumulated_scroll: Res<AccumulatedMouseScroll>,
+    mut camera_properties: ResMut<CameraProperties>,
+) {
+    if camera_properties.egui_has_pointer {
+        return;
+    }
+
+    if mouse_button.pressed(MouseButton::Left) {
+        let delta = accumulated_motion.delta;
+        camera_properties.orbit_angle_degrees -= delta.x * 0.2;
+        camera_properties.desired_translation.y -= delta.y * 0.01;
+        camera_properties.desired_translation.y =
+            camera_properties.desired_translation.y.clamp(0.1, 50.0);
+    }
+
+    let scroll_y = accumulated_scroll.delta.y;
+    if scroll_y != 0.0 {
+        camera_properties.fixed_distance -= scroll_y * 0.5;
+        camera_properties.fixed_distance = camera_properties.fixed_distance.clamp(1.0, 50.0);
+    }
 }
