@@ -38,6 +38,14 @@ jobs:
       - name: Run wasm-bindgen
         run: wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/release/bevy-rocket-lab.wasm
 
+      - name: Install wasm-opt
+        run: |
+          curl -L https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz | tar xz
+          echo "$PWD/binaryen-version_121/bin" >> $GITHUB_PATH
+
+      - name: Optimize WASM binary
+        run: wasm-opt -Oz --enable-simd -o out/bevy-rocket-lab_bg.wasm out/bevy-rocket-lab_bg.wasm
+
       - name: Assemble deploy directory
         run: |
           mkdir -p staging
