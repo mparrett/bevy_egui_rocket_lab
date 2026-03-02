@@ -13,15 +13,21 @@ just run              # cargo run (dev: opt-level=1, deps: opt-level=3)
 just debug            # cargo run with RUST_BACKTRACE=full
 just fmt              # rustfmt ./src/*.rs
 just release          # cargo build --release
-just release-wasm     # wasm32-unknown-unknown + wasm-bindgen (see DEV.md for prereqs)
+just release-wasm     # wasm32-unknown-unknown + wasm-bindgen
+just serve-wasm       # release-wasm + serve on :8080
+just serve-opt-wasm   # release-wasm + wasm-opt -Oz + serve on :8080
 just deps             # cargo tree
 ```
 
-No test suite exists yet.
+No test suite exists yet. Use the webapp-testing skill to verify WASM builds in a browser before pushing.
+
+## Workflow
+
+**Always test locally before pushing.** This project auto-deploys to GitHub Pages on push to main. Run `just run` for native or `just serve-wasm` for WASM, and verify behavior before committing/pushing. Don't batch untested changes into a push.
 
 ## Architecture
 
-**State & Messages:** `GameState` enum (currently just `Initial`), plus `LaunchEvent`, `DownedEvent`, `ResetEvent` messages for rocket lifecycle. `RocketStateEnum` tracks `Initial → Launched → Grounded`.
+**State & Messages:** `LaunchEvent`, `DownedEvent`, `ResetEvent` messages for rocket lifecycle. `RocketStateEnum` tracks `Initial → Launched → Grounded`.
 
 **Resources as config:** `RocketDimensions`, `RocketFlightParameters`, `CameraProperties`, `SkyProperties` are Bevy resources modified via the egui panel and read by systems.
 
