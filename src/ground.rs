@@ -5,6 +5,10 @@ const GROUND_SIZE: f32 = 200.0;
 const GROUND_TILE_REPEAT: f32 = 8.0;
 const GROUND_HEIGHT: f32 = 0.01;
 
+// NOTE: The existing KTX2 uses ASTC 6x6, but 1024x1024 is not a multiple of 6,
+// causing wgpu validation errors. Re-encode as ASTC 4x4 or ETC2 to enable.
+const GROUND_TEXTURE: &str = "textures/GroundGrassGreen002_COL_4K_1024.png";
+
 use crate::rendering::update_mesh_uvs_for_number_of_tiles;
 
 pub fn setup_ground_system(
@@ -14,7 +18,7 @@ pub fn setup_ground_system(
     asset_server: Res<AssetServer>,
 ) {
     let ground_material_handle = materials.add(StandardMaterial {
-        base_color_texture: Some(asset_server.load("textures/GroundGrassGreen002_COL_4K_1024.png")),
+        base_color_texture: Some(asset_server.load(GROUND_TEXTURE)),
         base_color: Color::srgb(0.3, 0.5, 0.2),
         reflectance: 0.01,
         alpha_mode: AlphaMode::Opaque,

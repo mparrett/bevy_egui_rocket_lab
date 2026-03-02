@@ -10,20 +10,18 @@ use std::f32::consts::PI;
 
 pub const CUBEMAPS: &[(&str, CompressedImageFormats)] = &[
     (
-        "textures/Ryfjallet_cubemap.png",
-        CompressedImageFormats::NONE,
+        "textures/Ryfjallet_cubemap_astc4x4.ktx2",
+        CompressedImageFormats::ASTC_LDR,
     ),
     (
         "textures/Ryfjallet_cubemap_etc2.ktx2",
         CompressedImageFormats::ETC2,
     ),
     (
-        "textures/Ryfjallet_cubemap_astc4x4.ktx2",
-        CompressedImageFormats::ASTC_LDR,
+        "textures/Ryfjallet_cubemap.png",
+        CompressedImageFormats::NONE,
     ),
 ];
-
-pub const CUBEMAP_IDX: usize = 0;
 
 #[derive(Resource)]
 pub struct Cubemap {
@@ -69,11 +67,26 @@ pub fn setup_sky_system(mut commands: Commands) {
     ));
 }
 
-pub fn spawn_regular_sky_map(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
+pub fn spawn_regular_sky_map(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    render_device: Option<Res<bevy::render::renderer::RenderDevice>>,
+) {
+    let supported = render_device
+        .map(|d| CompressedImageFormats::from_features(d.features()))
+        .unwrap_or(CompressedImageFormats::NONE);
+
+    let (idx, (path, _)) = CUBEMAPS
+        .iter()
+        .enumerate()
+        .find(|(_, (_, fmt))| *fmt == CompressedImageFormats::NONE || supported.contains(*fmt))
+        .unwrap();
+
+    info!("Loading skybox: {path}");
+    let skybox_handle = asset_server.load(*path);
     commands.insert_resource(Cubemap {
         is_loaded: false,
-        index: CUBEMAP_IDX,
+        index: idx,
         image_handle: skybox_handle.clone(),
     });
 }

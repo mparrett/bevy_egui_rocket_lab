@@ -2,7 +2,7 @@ use bevy::{
     app::AppExit,
     core_pipeline::Skybox,
     diagnostic::FrameTimeDiagnosticsPlugin,
-    image::{ImageAddressMode, ImageSamplerDescriptor},
+    image::{CompressedImageFormats, ImageAddressMode, ImageSamplerDescriptor},
     input::common_conditions::input_toggle_active,
     math::primitives::Cylinder,
     post_process::bloom::Bloom,
@@ -34,7 +34,7 @@ use crate::{
     },
     sky::{
         animate_light_direction, cubemap_asset_loaded, setup_sky_system, spawn_regular_sky_map,
-        toggle_fog_system, CUBEMAPS, CUBEMAP_IDX,
+        toggle_fog_system, CUBEMAPS,
     },
     util::random_vec,
 };
@@ -594,12 +594,22 @@ fn setup_camera_system(
     mut commands: Commands,
     camera_properties: ResMut<CameraProperties>,
     asset_server: Res<AssetServer>,
+    render_device: Option<Res<bevy::render::renderer::RenderDevice>>,
 ) {
     let camera_pos = INITIAL_CAMERA_POS;
     let camera_transform =
         Transform::from_translation(camera_pos).looking_at(camera_properties.target, Vec3::Y);
 
-    let skybox_handle = asset_server.load(CUBEMAPS[CUBEMAP_IDX].0);
+    let supported = render_device
+        .map(|d| CompressedImageFormats::from_features(d.features()))
+        .unwrap_or(CompressedImageFormats::NONE);
+
+    let (path, _) = CUBEMAPS
+        .iter()
+        .find(|(_, fmt)| *fmt == CompressedImageFormats::NONE || supported.contains(*fmt))
+        .unwrap();
+
+    let skybox_handle = asset_server.load(*path);
 
     commands.spawn((
         Camera3d::default(),
