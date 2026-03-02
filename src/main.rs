@@ -34,7 +34,7 @@ use crate::{
     },
     sky::{
         animate_light_direction, cubemap_asset_loaded, setup_sky_system, spawn_regular_sky_map,
-        toggle_fog_system, CUBEMAPS,
+        toggle_fog_system, Cubemap, CUBEMAPS,
     },
     util::random_vec,
 };
@@ -62,6 +62,35 @@ struct ResetEvent;
 
 #[derive(Component, Default)]
 struct ScoreMarker;
+
+#[derive(Component)]
+struct LoadingOverlay;
+
+fn setup_loading_overlay(mut commands: Commands) {
+    commands.spawn((
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            position_type: PositionType::Absolute,
+            ..default()
+        },
+        BackgroundColor(Color::BLACK),
+        GlobalZIndex(i32::MAX - 1),
+        LoadingOverlay,
+    ));
+}
+
+fn check_loading_complete(
+    mut commands: Commands,
+    cubemap: Option<Res<Cubemap>>,
+    overlay: Query<Entity, With<LoadingOverlay>>,
+) {
+    if cubemap.is_some_and(|c| c.is_loaded) {
+        for entity in &overlay {
+            commands.entity(entity).despawn();
+        }
+    }
+}
 
 fn main() {
     let mut app = App::new();
@@ -104,6 +133,7 @@ fn main() {
                 setup_text_system,
                 setup_fps_counter,
                 spawn_music,
+                setup_loading_overlay,
             ),
         )
         .add_systems(
@@ -135,7 +165,10 @@ fn main() {
         );
 
     app.add_systems(Startup, spawn_regular_sky_map);
-    app.add_systems(Update, (cubemap_asset_loaded, animate_light_direction));
+    app.add_systems(
+        Update,
+        (cubemap_asset_loaded, animate_light_direction, check_loading_complete),
+    );
     app.add_systems(Update, adjust_time_scale);
 
     app.run();

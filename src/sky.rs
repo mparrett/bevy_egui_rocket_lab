@@ -25,7 +25,7 @@ pub const CUBEMAPS: &[(&str, CompressedImageFormats)] = &[
 
 #[derive(Resource)]
 pub struct Cubemap {
-    is_loaded: bool,
+    pub is_loaded: bool,
     index: usize,
     image_handle: Handle<Image>,
 }
