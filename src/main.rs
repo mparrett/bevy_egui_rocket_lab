@@ -189,21 +189,10 @@ fn main() {
     app.run();
 }
 
-fn adjust_time_scale(
-    mut slowmo: Local<bool>,
-    mut time: ResMut<Time<Virtual>>,
-    input: Res<ButtonInput<KeyCode>>,
-) {
-    if input.just_pressed(KeyCode::Space) {
-        *slowmo = !*slowmo;
-        info!("Slowmo is {}", *slowmo);
-    }
-
-    if *slowmo {
-        time.set_relative_speed(0.05);
-    } else {
-        time.set_relative_speed(1.0);
-    }
+fn adjust_time_scale(mut time: ResMut<Time<Virtual>>, input: Res<ButtonInput<KeyCode>>) {
+    // Hold backquote (`/~) for temporary slow motion.
+    let slowmo_active = input.pressed(KeyCode::Backquote);
+    time.set_relative_speed(if slowmo_active { 0.05 } else { 1.0 });
 }
 
 fn init_egui_ui_input_system(
@@ -326,7 +315,7 @@ fn do_launch_system(
         }
     }
 
-    if ctx.input(|i| i.key_pressed(Key::Enter)) {
+    if ctx.input(|i| i.key_pressed(Key::Enter) || i.key_pressed(Key::Space)) {
         info!("Begin launch sequence!");
         launch_event_writer.write(LaunchEvent);
     }
@@ -425,6 +414,7 @@ fn on_reset_event(
     mut reset_events: MessageReader<ResetEvent>,
     rocket_dims: Res<RocketDimensions>,
     mut camera_properties: ResMut<CameraProperties>,
+    virtual_time: Option<ResMut<Time<Virtual>>>,
     mut rocket_state: ResMut<RocketState>,
     mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
     mut rocket_query: Query<
@@ -441,7 +431,10 @@ fn on_reset_event(
         return;
     }
 
-    camera_properties.desired_translation = INITIAL_CAMERA_POS;
+    *camera_properties = CameraProperties::default();
+    if let Some(mut time) = virtual_time {
+        time.set_relative_speed(1.0);
+    }
     rocket_state.state = RocketStateEnum::Initial;
     rocket_state.max_height = 0.0;
     rocket_state.max_velocity = 0.0;
@@ -459,6 +452,8 @@ fn on_reset_event(
         *ang_velocity = AngularVelocity::ZERO;
         rocket_state.launch_origin_y = rocket_transform.translation.y;
         camera_properties.target = rocket_transform.translation;
+        camera_properties.lagged_target = rocket_transform.translation;
+        camera_properties.lagged_translation = camera_properties.desired_translation;
         commands.entity(rocket_ent).remove::<ForceTimer>();
     }
 }
@@ -867,9 +862,9 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
     // Instructions (top-right, below FPS)
     commands.spawn((
         Text::new(
-            "R: reset  Enter: launch  C: camera mode\n\
+            "R: reset  Enter/Space: launch  C: camera mode\n\
              Z: zoom  Q: quit  D/S: destabilize/stabilize\n\
-             Space: slowmo  Fog: use Sky panel controls\n\
+             Hold `/~: slowmo  Fog: use Sky panel controls\n\
              Esc: world inspector  Arrows: orbit/dist  Shift+Up/Down: truck",
         ),
         TextFont {
