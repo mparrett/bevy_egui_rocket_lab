@@ -35,6 +35,9 @@ serve-opt-wasm: opt-wasm
 check:
     cargo check
 
+test:
+    cargo test
+
 clippy:
     cargo clippy
 
