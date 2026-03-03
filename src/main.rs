@@ -161,13 +161,13 @@ fn main() {
                 on_reset_event,
                 detect_landing_from_collision_system,
                 on_crash_event,
-                rocket_position_system,
                 update_stats_system,
             ),
         )
         .add_systems(
             PostUpdate,
             (
+                rocket_position_system,
                 update_camera_zoom_perspective_system,
                 update_camera_transform_system,
             )
