@@ -34,7 +34,7 @@ use crate::{
     },
     sky::{
         Cubemap, SKYBOXES, animate_light_direction, apply_fog_mode, cubemap_asset_loaded,
-        pick_best_variant, setup_sky_system, spawn_regular_sky_map,
+        pick_best_variant, setup_sky_system, spawn_regular_sky_map, sync_volumetrics_system,
     },
     util::random_vec,
 };
@@ -180,6 +180,7 @@ fn main() {
         (
             cubemap_asset_loaded,
             animate_light_direction,
+            sync_volumetrics_system,
             check_loading_complete,
         ),
     );
@@ -679,6 +680,12 @@ fn ui_system(
                             }
                         }
                     }
+
+                    ui.separator();
+                    ui.checkbox(
+                        &mut sky_props.volumetrics_enabled,
+                        "Volumetrics (opt-in, GPU heavy)",
+                    );
 
                     ui.separator();
                     let mut fog_changed = false;

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use bevy::image::CompressedImageFormats;
-use bevy::light::CascadeShadowConfigBuilder;
+use bevy::light::{CascadeShadowConfigBuilder, FogVolume, VolumetricFog, VolumetricLight};
 use bevy::{
     core_pipeline::Skybox,
     render::render_resource::{TextureViewDescriptor, TextureViewDimension},
@@ -129,6 +129,7 @@ pub struct SkyProperties {
     pub skybox_changed: bool,
     pub fog_enabled: bool,
     pub fog_visibility: f32,
+    pub volumetrics_enabled: bool,
 }
 
 impl Default for SkyProperties {
@@ -139,9 +140,13 @@ impl Default for SkyProperties {
             skybox_changed: false,
             fog_enabled: false,
             fog_visibility: 150.0,
+            volumetrics_enabled: false,
         }
     }
 }
+
+#[derive(Component)]
+pub struct VolumetricFogMarker;
 
 pub fn setup_sky_system(mut commands: Commands) {
     commands.insert_resource(GlobalAmbientLight {
@@ -167,6 +172,56 @@ pub fn setup_sky_system(mut commands: Commands) {
         Transform::from_xyz(0.0, 2.0, 0.0).with_rotation(Quat::from_rotation_x(-PI / 4.)),
         cascade_shadow_config,
     ));
+}
+
+pub fn sync_volumetrics_system(
+    mut commands: Commands,
+    sky_props: Res<SkyProperties>,
+    camera_query: Query<(Entity, Option<&VolumetricFog>), With<Camera3d>>,
+    light_query: Query<(Entity, Option<&VolumetricLight>), With<DirectionalLight>>,
+    volume_query: Query<Entity, With<VolumetricFogMarker>>,
+) {
+    if !sky_props.is_changed() {
+        return;
+    }
+
+    let enable = sky_props.volumetrics_enabled;
+
+    if let Ok((camera_entity, volumetric_fog)) = camera_query.single() {
+        if enable && volumetric_fog.is_none() {
+            commands.entity(camera_entity).insert(VolumetricFog {
+                ambient_intensity: 0.0,
+                ..default()
+            });
+        } else if !enable && volumetric_fog.is_some() {
+            commands.entity(camera_entity).remove::<VolumetricFog>();
+        }
+    }
+
+    for (light_entity, volumetric_light) in &light_query {
+        if enable && volumetric_light.is_none() {
+            commands.entity(light_entity).insert(VolumetricLight);
+        } else if !enable && volumetric_light.is_some() {
+            commands.entity(light_entity).remove::<VolumetricLight>();
+        }
+    }
+
+    if enable {
+        if volume_query.is_empty() {
+            commands.spawn((
+                FogVolume {
+                    density_factor: 0.02,
+                    ..default()
+                },
+                Transform::from_scale(Vec3::splat(200.0)),
+                VolumetricFogMarker,
+            ));
+        }
+    } else {
+        for entity in &volume_query {
+            commands.entity(entity).despawn();
+        }
+    }
 }
 
 pub fn pick_best_variant<'a>(
