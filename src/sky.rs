@@ -8,9 +8,17 @@ use bevy::{
 };
 use std::f32::consts::PI;
 
+pub struct FogColors {
+    pub base: Color,
+    pub extinction: Color,
+    pub inscattering: Color,
+    pub directional: Color,
+}
+
 pub struct SkyboxEntry {
     pub name: &'static str,
     pub variants: &'static [(&'static str, CompressedImageFormats)],
+    pub fog: FogColors,
 }
 
 pub const SKYBOXES: &[SkyboxEntry] = &[
@@ -30,6 +38,12 @@ pub const SKYBOXES: &[SkyboxEntry] = &[
                 CompressedImageFormats::NONE,
             ),
         ],
+        fog: FogColors {
+            base: Color::srgba(0.4, 0.45, 0.35, 1.0),
+            extinction: Color::srgb(0.4, 0.45, 0.35),
+            inscattering: Color::srgb(0.85, 0.75, 0.55),
+            directional: Color::srgba(1.0, 0.85, 0.6, 0.3),
+        },
     },
     SkyboxEntry {
         name: "Belfast Sunset",
@@ -47,6 +61,12 @@ pub const SKYBOXES: &[SkyboxEntry] = &[
                 CompressedImageFormats::NONE,
             ),
         ],
+        fog: FogColors {
+            base: Color::srgba(0.45, 0.38, 0.42, 1.0),
+            extinction: Color::srgb(0.45, 0.38, 0.42),
+            inscattering: Color::srgb(0.9, 0.65, 0.5),
+            directional: Color::srgba(1.0, 0.8, 0.55, 0.3),
+        },
     },
     SkyboxEntry {
         name: "Citrus Orchard",
@@ -64,6 +84,12 @@ pub const SKYBOXES: &[SkyboxEntry] = &[
                 CompressedImageFormats::NONE,
             ),
         ],
+        fog: FogColors {
+            base: Color::srgba(0.5, 0.55, 0.45, 1.0),
+            extinction: Color::srgb(0.45, 0.5, 0.4),
+            inscattering: Color::srgb(0.8, 0.82, 0.7),
+            directional: Color::srgba(1.0, 0.95, 0.8, 0.3),
+        },
     },
     SkyboxEntry {
         name: "Bambanani Sunset",
@@ -81,6 +107,12 @@ pub const SKYBOXES: &[SkyboxEntry] = &[
                 CompressedImageFormats::NONE,
             ),
         ],
+        fog: FogColors {
+            base: Color::srgba(0.5, 0.4, 0.35, 1.0),
+            extinction: Color::srgb(0.5, 0.4, 0.35),
+            inscattering: Color::srgb(0.9, 0.7, 0.5),
+            directional: Color::srgba(1.0, 0.8, 0.5, 0.3),
+        },
     },
 ];
 
@@ -89,8 +121,6 @@ pub struct Cubemap {
     pub is_loaded: bool,
     image_handle: Handle<Image>,
 }
-
-pub const FOG_MODE_COUNT: usize = 3;
 
 #[derive(Resource)]
 pub struct SkyProperties {
@@ -108,7 +138,7 @@ impl Default for SkyProperties {
             skybox_index: 0,
             skybox_changed: false,
             fog_enabled: false,
-            fog_visibility: 80.0,
+            fog_visibility: 150.0,
         }
     }
 }
@@ -229,28 +259,30 @@ pub fn animate_light_direction(
     time: Res<Time>,
     mut query: Query<&mut Transform, With<DirectionalLight>>,
 ) {
-    let rotate_speed = 0.3;
+    let rotate_speed = 0.03;
     for mut transform in &mut query {
         transform.rotate_y(time.delta_secs() * rotate_speed);
     }
 }
-pub fn make_atmospheric_fog(visibility: f32) -> DistanceFog {
+pub fn make_atmospheric_fog(visibility: f32, skybox_index: usize) -> DistanceFog {
+    let fog = &SKYBOXES[skybox_index].fog;
     DistanceFog {
-        color: Color::srgba(0.35, 0.48, 0.66, 1.0),
-        directional_light_color: Color::srgba(1.0, 0.95, 0.85, 0.5),
+        color: fog.base,
+        directional_light_color: fog.directional,
         directional_light_exponent: 30.0,
-        falloff: FogFalloff::from_visibility_colors(
-            visibility,
-            Color::srgb(0.35, 0.5, 0.66),
-            Color::srgb(0.8, 0.844, 1.0),
-        ),
+        falloff: FogFalloff::from_visibility_colors(visibility, fog.extinction, fog.inscattering),
     }
 }
 
-pub fn apply_fog_mode(fog_settings: &mut DistanceFog, mode: usize, visibility: f32) {
+pub fn apply_fog_mode(
+    fog_settings: &mut DistanceFog,
+    mode: usize,
+    visibility: f32,
+    skybox_index: usize,
+) {
     match mode {
-        1 => *fog_settings = make_atmospheric_fog(visibility),
-        2 => *fog_settings = make_atmospheric_fog(visibility * 0.375),
+        1 => *fog_settings = make_atmospheric_fog(visibility, skybox_index),
+        2 => *fog_settings = make_atmospheric_fog(visibility * 0.375, skybox_index),
         _ => {
             fog_settings.color = fog_settings.color.with_alpha(0.0);
             fog_settings.directional_light_color =
@@ -259,35 +291,3 @@ pub fn apply_fog_mode(fog_settings: &mut DistanceFog, mode: usize, visibility: f
     }
 }
 
-pub fn toggle_fog_system(
-    key_code: Res<ButtonInput<KeyCode>>,
-    mut sky_props: ResMut<SkyProperties>,
-    mut fog: Query<&mut DistanceFog>,
-) {
-    if let Ok(mut fog_settings) = fog.single_mut() {
-        if key_code.just_pressed(KeyCode::KeyF) {
-            sky_props.fog_enabled = !sky_props.fog_enabled;
-            if sky_props.fog_enabled {
-                if sky_props.fog_mode == 0 {
-                    sky_props.fog_mode = 1;
-                }
-                apply_fog_mode(
-                    &mut fog_settings,
-                    sky_props.fog_mode,
-                    sky_props.fog_visibility,
-                );
-            } else {
-                apply_fog_mode(&mut fog_settings, 0, sky_props.fog_visibility);
-            }
-        }
-
-        if key_code.just_pressed(KeyCode::KeyT) && sky_props.fog_enabled {
-            sky_props.fog_mode = (sky_props.fog_mode % (FOG_MODE_COUNT - 1)) + 1;
-            apply_fog_mode(
-                &mut fog_settings,
-                sky_props.fog_mode,
-                sky_props.fog_visibility,
-            );
-        }
-    }
-}
