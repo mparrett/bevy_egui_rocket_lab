@@ -102,6 +102,7 @@ fn main() {
             address_mode_u: ImageAddressMode::Repeat,
             address_mode_v: ImageAddressMode::Repeat,
             address_mode_w: ImageAddressMode::Repeat,
+            anisotropy_clamp: 16,
             ..default()
         },
     }));
