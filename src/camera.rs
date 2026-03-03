@@ -1,6 +1,9 @@
+use avian3d::prelude::LinearVelocity;
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
 use std::f32::consts::PI;
+
+use crate::rocket::RocketMarker;
 
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
@@ -86,6 +89,7 @@ pub fn update_camera_transform_system(
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<(&Projection, &mut Transform)>,
     mut last_follow_mode: Local<Option<FollowMode>>,
+    rocket_velocity_query: Query<&LinearVelocity, With<RocketMarker>>,
 ) {
     let Ok((projection, mut transform)) = camera_query.single_mut() else {
         return;
@@ -104,12 +108,16 @@ pub fn update_camera_transform_system(
 
     // Re-seed spring state on mode switches so chase modes immediately acquire the rocket.
     if last_follow_mode.map_or(true, |prev| prev != follow_mode) {
-        camera_properties.lagged_target_velocity = Vec3::ZERO;
-        camera_properties.lagged_translation_velocity = Vec3::ZERO;
+        let rocket_velocity = rocket_velocity_query
+            .single()
+            .map(|v| v.0)
+            .unwrap_or(Vec3::ZERO);
         camera_properties.lagged_target = desired_target;
 
         match follow_mode {
             FollowMode::FollowAbove => {
+                camera_properties.lagged_target_velocity = rocket_velocity;
+                camera_properties.lagged_translation_velocity = rocket_velocity;
                 camera_properties.lagged_translation = Vec3::new(
                     desired_target.x + 0.1,
                     desired_target.y + camera_dist,
@@ -117,6 +125,8 @@ pub fn update_camera_transform_system(
                 );
             }
             FollowMode::FollowSide => {
+                camera_properties.lagged_target_velocity = rocket_velocity;
+                camera_properties.lagged_translation_velocity = rocket_velocity;
                 camera_properties.lagged_translation = Vec3::new(
                     desired_target.x + camera_dist,
                     desired_target.y + 0.5,
@@ -124,6 +134,8 @@ pub fn update_camera_transform_system(
                 );
             }
             FollowMode::FixedGround => {
+                camera_properties.lagged_target_velocity = Vec3::ZERO;
+                camera_properties.lagged_translation_velocity = Vec3::ZERO;
                 let angle_rad = camera_properties.orbit_angle_degrees.to_radians();
                 camera_properties.lagged_translation = Vec3::new(
                     desired_target.x + camera_dist * angle_rad.sin(),
@@ -132,6 +144,8 @@ pub fn update_camera_transform_system(
                 );
             }
             FollowMode::FreeLook => {
+                camera_properties.lagged_target_velocity = Vec3::ZERO;
+                camera_properties.lagged_translation_velocity = Vec3::ZERO;
                 camera_properties.lagged_translation = camera_properties.desired_translation;
             }
         }
