@@ -421,11 +421,7 @@ fn on_reset_event(
         (With<RocketMarker>, Without<Camera>),
     >,
 ) {
-    let mut saw_reset = false;
-    for _ in reset_events.read() {
-        saw_reset = true;
-    }
-    if !saw_reset {
+    if reset_events.read().next().is_none() {
         return;
     }
 

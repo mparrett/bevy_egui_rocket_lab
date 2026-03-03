@@ -113,7 +113,7 @@ pub fn create_rocket_fin_pbr_bundles(
 
     let fin_material = StandardMaterial {
         base_color: Srgba::hex(rocket_color_hex)
-            .unwrap_or(Srgba::new(0.2, 0.6, 0.2, 1.0))
+            .expect("rocket_color_hex must be a valid hex literal")
             .into(),
         metallic: 0.7,
         perceptual_roughness: 0.3,
@@ -155,7 +155,7 @@ pub fn spawn_rocket_system(
     let rocket_color_hex = "#eeeeff";
     let rocket_material = StandardMaterial {
         base_color: Srgba::hex(rocket_color_hex)
-            .unwrap_or(Srgba::new(0.93, 0.93, 1.0, 1.0))
+            .expect("rocket_color_hex must be a valid hex literal")
             .into(),
         metallic: 0.4,
         perceptual_roughness: 0.4,

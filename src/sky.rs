@@ -182,12 +182,22 @@ pub fn pick_best_variant<'a>(
     variants: &'a [(&'a str, CompressedImageFormats)],
     supported: CompressedImageFormats,
 ) -> &'a str {
-    variants
+    let Some((fallback_path, _)) = variants.first() else {
+        panic!("Skybox variant list must not be empty");
+    };
+
+    if let Some((path, _)) = variants
         .iter()
         .find(|(_, fmt)| *fmt == CompressedImageFormats::NONE || supported.contains(*fmt))
-        .or_else(|| variants.first())
-        .map(|(path, _)| *path)
-        .unwrap_or_default()
+    {
+        *path
+    } else {
+        warn!(
+            "No supported compressed skybox format found; falling back to {}",
+            fallback_path
+        );
+        *fallback_path
+    }
 }
 
 fn detect_supported_formats(
