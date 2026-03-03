@@ -39,5 +39,6 @@
 - Fog: use Sky panel controls (no keyboard toggle)
 - Space: Toggle slow-mo
 - Arrow keys: Camera orbit/distance
+- Shift+Arrow Up/Down: Camera truck/dolly in/out
 - Escape: World inspector
 - F12: FPS counter

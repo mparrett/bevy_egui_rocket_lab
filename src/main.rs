@@ -267,6 +267,11 @@ fn do_launch_system(
     mut launch_event_writer: MessageWriter<LaunchEvent>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
+    let shift_held = ctx.input(|i| i.modifiers.shift);
+    let arrow_left = ctx.input(|i| i.key_down(Key::ArrowLeft));
+    let arrow_right = ctx.input(|i| i.key_down(Key::ArrowRight));
+    let arrow_up = ctx.input(|i| i.key_down(Key::ArrowUp));
+    let arrow_down = ctx.input(|i| i.key_down(Key::ArrowDown));
 
     if ctx.input(|i| i.key_pressed(Key::C)) {
         let idx = CAMERA_MODES
@@ -281,33 +286,40 @@ fn do_launch_system(
         camera_properties.zoom = ZOOM_LEVELS[camera_properties.zoom_index];
     }
 
-    if ctx.input(|i| i.key_down(Key::ArrowLeft)) {
+    if arrow_left {
         camera_properties.orbit_angle_degrees -= 0.5;
         if camera_properties.orbit_angle_degrees < 0.0 {
             camera_properties.orbit_angle_degrees = 360.0;
         }
-    } else if ctx.input(|i| i.key_down(Key::ArrowRight)) {
+    } else if arrow_right {
         camera_properties.orbit_angle_degrees += 0.5;
         if camera_properties.orbit_angle_degrees > 360.0 {
             camera_properties.orbit_angle_degrees = 0.0;
         }
-    } else if ctx.input(|i| i.key_down(Key::ArrowUp)) {
-        camera_properties.fixed_distance -= 0.1;
-    } else if ctx.input(|i| i.key_down(Key::ArrowDown)) {
-        camera_properties.fixed_distance += 0.1;
     }
 
-    // Camera truck/dolly movement
-    if ctx.input(|i| i.key_down(Key::ArrowUp)) {
-        let delta_to_target = camera_properties.desired_translation - camera_properties.target;
-        let increment = 0.05;
-        camera_properties.desired_translation.x -= increment * delta_to_target.x;
-        camera_properties.desired_translation.z -= increment * delta_to_target.z;
-    } else if ctx.input(|i| i.key_down(Key::ArrowDown)) {
-        let delta_to_target = camera_properties.desired_translation - camera_properties.target;
-        let increment = 0.05;
-        camera_properties.desired_translation.x += increment * delta_to_target.x;
-        camera_properties.desired_translation.z += increment * delta_to_target.z;
+    if arrow_up {
+        if shift_held {
+            // Camera truck/dolly movement in toward target.
+            let delta_to_target = camera_properties.desired_translation - camera_properties.target;
+            let increment = 0.05;
+            camera_properties.desired_translation.x -= increment * delta_to_target.x;
+            camera_properties.desired_translation.z -= increment * delta_to_target.z;
+        } else {
+            camera_properties.fixed_distance =
+                (camera_properties.fixed_distance - 0.1).clamp(1.0, 50.0);
+        }
+    } else if arrow_down {
+        if shift_held {
+            // Camera truck/dolly movement out away from target.
+            let delta_to_target = camera_properties.desired_translation - camera_properties.target;
+            let increment = 0.05;
+            camera_properties.desired_translation.x += increment * delta_to_target.x;
+            camera_properties.desired_translation.z += increment * delta_to_target.z;
+        } else {
+            camera_properties.fixed_distance =
+                (camera_properties.fixed_distance + 0.1).clamp(1.0, 50.0);
+        }
     }
 
     if ctx.input(|i| i.key_pressed(Key::Enter)) {
@@ -848,7 +860,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
             "R: reset  Enter: launch  C: camera mode\n\
              Z: zoom  Q: quit  D/S: destabilize/stabilize\n\
              Space: slowmo  Fog: use Sky panel controls\n\
-             Esc: world inspector  Arrow keys: camera move",
+             Esc: world inspector  Arrows: orbit/dist  Shift+Up/Down: truck",
         ),
         TextFont {
             font_size: 13.,
