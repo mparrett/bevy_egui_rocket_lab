@@ -54,7 +54,7 @@ pub fn lock_all_axes(locked_axes: LockedAxes) -> LockedAxes {
 }
 
 pub fn update_forces_system(
-    time: Res<Time>,
+    time: Res<Time<Fixed>>,
     mut commands: Commands,
     mut query_timers: Query<(Entity, &Transform, &mut ForceTimer, Forces)>,
 ) {

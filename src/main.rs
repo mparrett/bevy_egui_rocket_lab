@@ -152,7 +152,6 @@ fn main() {
             Update,
             (
                 update_rocket_dimensions_system,
-                update_forces_system,
                 fps_text_update_system,
                 fps_counter_showhide,
                 on_launch_event,
@@ -173,6 +172,10 @@ fn main() {
                 .after(PhysicsSystems::Writeback)
                 .before(TransformSystems::Propagate),
         );
+    app.add_systems(
+        FixedPostUpdate,
+        update_forces_system.in_set(PhysicsSystems::First),
+    );
 
     app.add_systems(Startup, spawn_regular_sky_map);
     app.add_systems(

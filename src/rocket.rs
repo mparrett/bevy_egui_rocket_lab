@@ -169,6 +169,7 @@ pub fn spawn_rocket_system(
     let initial_rocket_pos = Transform::from_xyz(0.0, rocket_dims.total_length() * 0.5, 0.0);
     let rocket_bundle = (
         RigidBody::Dynamic,
+        TransformInterpolation,
         RocketMarker,
         AngularVelocity::ZERO,
         LinearVelocity::ZERO,
@@ -241,8 +242,7 @@ mod tests {
             ..RocketDimensions::default()
         };
 
-        let bundles =
-            create_rocket_fin_pbr_bundles(&mut materials, &dims, &mut meshes, "#eeeeff");
+        let bundles = create_rocket_fin_pbr_bundles(&mut materials, &dims, &mut meshes, "#eeeeff");
         assert_eq!(bundles.len(), 4);
 
         let first_mesh = &bundles[0].0.0;
