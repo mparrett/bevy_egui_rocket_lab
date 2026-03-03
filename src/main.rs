@@ -1,10 +1,10 @@
 use bevy::{
     app::AppExit,
-    light::VolumetricFog,
     core_pipeline::Skybox,
     diagnostic::FrameTimeDiagnosticsPlugin,
     image::{CompressedImageFormats, ImageAddressMode, ImageSamplerDescriptor},
     input::common_conditions::input_toggle_active,
+    light::VolumetricFog,
     math::primitives::Cylinder,
     post_process::bloom::Bloom,
     prelude::*,
@@ -35,8 +35,7 @@ use crate::{
     },
     sky::{
         animate_light_direction, apply_fog_mode, cubemap_asset_loaded, pick_best_variant,
-        setup_sky_system, spawn_regular_sky_map, toggle_fog_system, Cubemap, FOG_MODE_COUNT,
-        SKYBOXES,
+        setup_sky_system, spawn_regular_sky_map, Cubemap, SKYBOXES,
     },
     util::random_vec,
 };
@@ -102,6 +101,9 @@ fn main() {
             address_mode_u: ImageAddressMode::Repeat,
             address_mode_v: ImageAddressMode::Repeat,
             address_mode_w: ImageAddressMode::Repeat,
+            min_filter: bevy::image::ImageFilterMode::Linear,
+            mag_filter: bevy::image::ImageFilterMode::Linear,
+            mipmap_filter: bevy::image::ImageFilterMode::Linear,
             anisotropy_clamp: 16,
             ..default()
         },
@@ -147,7 +149,6 @@ fn main() {
             Update,
             (
                 update_rocket_dimensions_system,
-                toggle_fog_system,
                 update_forces_system,
                 fps_text_update_system,
                 fps_counter_showhide,
@@ -594,41 +595,42 @@ fn ui_system(
                         });
                     if changed {
                         sky_props.skybox_changed = true;
+                        if sky_props.fog_enabled {
+                            if let Ok(mut fog_settings) = fog_query.single_mut() {
+                                apply_fog_mode(
+                                    &mut fog_settings,
+                                    sky_props.fog_mode,
+                                    sky_props.fog_visibility,
+                                    sky_props.skybox_index,
+                                );
+                            }
+                        }
                     }
 
                     ui.separator();
                     let mut fog_changed = false;
-                    if ui.checkbox(&mut sky_props.fog_enabled, "Fog").changed() {
-                        if sky_props.fog_enabled && sky_props.fog_mode == 0 {
-                            sky_props.fog_mode = 1;
-                        }
-                        fog_changed = true;
-                    }
+                    let fog_label = match sky_props.fog_mode {
+                        1 => "Atmospheric",
+                        2 => "Dense",
+                        _ => "Off",
+                    };
+                    egui::ComboBox::from_label("Fog")
+                        .selected_text(fog_label)
+                        .show_ui(ui, |ui| {
+                            for (m, label) in
+                                [(0, "Off"), (1, "Atmospheric"), (2, "Dense")]
+                            {
+                                if ui
+                                    .selectable_value(&mut sky_props.fog_mode, m, label)
+                                    .changed()
+                                {
+                                    sky_props.fog_enabled = m > 0;
+                                    fog_changed = true;
+                                }
+                            }
+                        });
 
                     if sky_props.fog_enabled {
-                        let mode_label = match sky_props.fog_mode {
-                            1 => "Atmospheric",
-                            2 => "Dense",
-                            _ => "Off",
-                        };
-                        egui::ComboBox::from_label("fog mode")
-                            .selected_text(mode_label)
-                            .show_ui(ui, |ui| {
-                                for m in 1..FOG_MODE_COUNT {
-                                    let label = match m {
-                                        1 => "Atmospheric",
-                                        2 => "Dense",
-                                        _ => "?",
-                                    };
-                                    if ui
-                                        .selectable_value(&mut sky_props.fog_mode, m, label)
-                                        .changed()
-                                    {
-                                        fog_changed = true;
-                                    }
-                                }
-                            });
-
                         if ui
                             .add(
                                 egui::Slider::new(&mut sky_props.fog_visibility, 10.0..=200.0)
@@ -642,12 +644,12 @@ fn ui_system(
 
                     if fog_changed {
                         if let Ok(mut fog_settings) = fog_query.single_mut() {
-                            let mode = if sky_props.fog_enabled {
-                                sky_props.fog_mode
-                            } else {
-                                0
-                            };
-                            apply_fog_mode(&mut fog_settings, mode, sky_props.fog_visibility);
+                            apply_fog_mode(
+                                &mut fog_settings,
+                                sky_props.fog_mode,
+                                sky_props.fog_visibility,
+                                sky_props.skybox_index,
+                            );
                         }
                     }
                 });
