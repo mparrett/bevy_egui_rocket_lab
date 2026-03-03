@@ -152,10 +152,13 @@ fn main() {
                 update_forces_system,
                 fps_text_update_system,
                 fps_counter_showhide,
-                update_stats_system,
                 on_launch_event,
+                on_launch_audio_event,
+                on_reset_event,
+                detect_landing_from_collision_system,
                 on_crash_event,
                 rocket_position_system,
+                update_stats_system,
             ),
         )
         .add_systems(
@@ -202,9 +205,6 @@ fn adjust_time_scale(
 fn init_egui_ui_input_system(
     mut commands: Commands,
     mut contexts: EguiContexts,
-    rocket_dims: Res<RocketDimensions>,
-    mut rocket_state: ResMut<RocketState>,
-    mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
     mut rocket_query: Query<
         (
             Entity,
@@ -215,7 +215,6 @@ fn init_egui_ui_input_system(
         (With<RocketMarker>, Without<Camera>),
     >,
     mut exit: MessageWriter<AppExit>,
-    mut camera_properties: ResMut<CameraProperties>,
     mut reset: MessageWriter<ResetEvent>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -227,25 +226,6 @@ fn init_egui_ui_input_system(
     // Reset
     if ctx.input(|i| i.key_pressed(Key::R)) {
         info!("Resetting rocket state");
-
-        camera_properties.desired_translation = INITIAL_CAMERA_POS;
-
-        rocket_state.state = RocketStateEnum::Initial;
-
-        // Position and velocity
-        rocket_transform.translation = Vec3::new(0.0, rocket_dims.total_length() * 0.5, 0.0);
-        rocket_transform.rotation = Quat::IDENTITY;
-        *lin_velocity = LinearVelocity::ZERO;
-        *ang_velocity = AngularVelocity::ZERO;
-
-        // Remove any active force timers
-        commands.entity(rocket_ent).remove::<ForceTimer>();
-
-        for mut locked_axes in locked_axes.iter_mut() {
-            debug!("Lock axes");
-            *locked_axes = lock_all_axes(LockedAxes::new());
-        }
-
         reset.write_default();
     }
     // TODO: Fail mode F
@@ -283,10 +263,8 @@ fn init_egui_ui_input_system(
 
 fn do_launch_system(
     mut contexts: EguiContexts,
-    _rocket_state: ResMut<RocketState>,
     mut camera_properties: ResMut<CameraProperties>,
     mut launch_event_writer: MessageWriter<LaunchEvent>,
-    _rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
 
@@ -341,23 +319,20 @@ fn do_launch_system(
 
 fn rocket_position_system(
     rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
-    mut crash_events: MessageWriter<DownedEvent>,
     mut camera_properties: ResMut<CameraProperties>,
     mut rocket_state: ResMut<RocketState>,
 ) {
-    let (transform, velocity) = rocket_query.single().unwrap();
+    let Ok((transform, velocity)) = rocket_query.single() else {
+        return;
+    };
     camera_properties.target = transform.translation;
+    if rocket_state.state == RocketStateEnum::Initial {
+        rocket_state.launch_origin_y = transform.translation.y;
+    }
 
-    if velocity.y.abs() < 1.0
-        && velocity.y.abs() > 0.1
-        && transform.translation.y < 0.2
-        && rocket_state.state == RocketStateEnum::Launched
-    {
-        info!("Detected rocket down at {:?}", transform.translation);
-        rocket_state.state = RocketStateEnum::Grounded;
-        crash_events.write(DownedEvent);
-    } else {
-        rocket_state.max_height = transform.translation.y.max(rocket_state.max_height);
+    if rocket_state.state == RocketStateEnum::Launched {
+        let current_altitude = (transform.translation.y - rocket_state.launch_origin_y).max(0.0);
+        rocket_state.max_height = current_altitude.max(rocket_state.max_height);
         rocket_state.max_velocity = velocity.length().max(rocket_state.max_velocity);
     }
 }
@@ -381,12 +356,8 @@ fn on_launch_event(
     mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
     mut rocket_state: ResMut<RocketState>,
     mut commands: Commands,
-    rocket_flight_parameters: ResMut<RocketFlightParameters>,
-    mut rocket_query: Query<
-        (Entity, &RigidBody, &Transform, &LinearVelocity),
-        (With<RocketMarker>, Without<Camera>),
-    >,
-    asset_server: Res<AssetServer>,
+    rocket_flight_parameters: Res<RocketFlightParameters>,
+    mut rocket_query: Query<(Entity, &Transform), (With<RocketMarker>, Without<Camera>)>,
 ) {
     for _ in launch_events.read() {
         info!("Launch event");
@@ -400,9 +371,14 @@ fn on_launch_event(
             *locked_axes = LockedAxes::new();
         }
 
+        let Ok((rocket_ent, transform)) = rocket_query.single_mut() else {
+            warn!("Launch requested but no rocket entity is available");
+            continue;
+        };
         rocket_state.state = RocketStateEnum::Launched;
-
-        let (rocket_ent, _, _transform, _) = rocket_query.single_mut().unwrap();
+        rocket_state.max_height = 0.0;
+        rocket_state.max_velocity = 0.0;
+        rocket_state.launch_origin_y = transform.translation.y;
 
         let force_timer = ForceTimer {
             id: get_timer_id(),
@@ -412,11 +388,93 @@ fn on_launch_event(
             sync_rotation_with_entity: true,
         };
         commands.entity(rocket_ent).insert(force_timer);
+    }
+}
 
+fn on_launch_audio_event(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut launch_events: MessageReader<LaunchEvent>,
+) {
+    for _ in launch_events.read() {
         commands.spawn((
             AudioPlayer::new(asset_server.load("audio/air-rushes-out-fast-long.ogg")),
             PlaybackSettings::DESPAWN,
         ));
+    }
+}
+
+fn on_reset_event(
+    mut commands: Commands,
+    mut reset_events: MessageReader<ResetEvent>,
+    rocket_dims: Res<RocketDimensions>,
+    mut camera_properties: ResMut<CameraProperties>,
+    mut rocket_state: ResMut<RocketState>,
+    mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
+    mut rocket_query: Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut LinearVelocity,
+            &mut AngularVelocity,
+        ),
+        (With<RocketMarker>, Without<Camera>),
+    >,
+) {
+    let mut saw_reset = false;
+    for _ in reset_events.read() {
+        saw_reset = true;
+    }
+    if !saw_reset {
+        return;
+    }
+
+    camera_properties.desired_translation = INITIAL_CAMERA_POS;
+    rocket_state.state = RocketStateEnum::Initial;
+    rocket_state.max_height = 0.0;
+    rocket_state.max_velocity = 0.0;
+
+    for mut axes in &mut locked_axes {
+        *axes = lock_all_axes(LockedAxes::new());
+    }
+
+    if let Ok((rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity)) =
+        rocket_query.single_mut()
+    {
+        rocket_transform.translation = Vec3::new(0.0, rocket_dims.total_length() * 0.5, 0.0);
+        rocket_transform.rotation = Quat::IDENTITY;
+        *lin_velocity = LinearVelocity::ZERO;
+        *ang_velocity = AngularVelocity::ZERO;
+        rocket_state.launch_origin_y = rocket_transform.translation.y;
+        camera_properties.target = rocket_transform.translation;
+        commands.entity(rocket_ent).remove::<ForceTimer>();
+    }
+}
+
+fn detect_landing_from_collision_system(
+    mut collision_events: MessageReader<CollisionStart>,
+    rocket_query: Query<(Entity, &LinearVelocity), With<RocketMarker>>,
+    mut rocket_state: ResMut<RocketState>,
+    mut crash_events: MessageWriter<DownedEvent>,
+) {
+    if rocket_state.state != RocketStateEnum::Launched {
+        return;
+    }
+
+    let Ok((rocket_entity, velocity)) = rocket_query.single() else {
+        return;
+    };
+    if velocity.y > 0.25 {
+        return;
+    }
+
+    let touched_ground = collision_events
+        .read()
+        .any(|event| event.body1 == Some(rocket_entity) || event.body2 == Some(rocket_entity));
+    if touched_ground {
+        info!("Rocket touchdown detected via collision event");
+        rocket_state.state = RocketStateEnum::Grounded;
+        crash_events.write(DownedEvent);
     }
 }
 
@@ -425,16 +483,20 @@ fn update_stats_system(
     mut text_query: Query<&mut Text, With<ScoreMarker>>,
     rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
 ) {
-    if let Ok(mut score_text) = text_query.single_mut() {
-        let (transform, velocity) = rocket_query.single().unwrap();
-        **score_text = format!(
-            "Alt: {:.1} / {:.1} m  Vel: {:.1} / {:.1} m/s",
-            transform.translation.y,
-            rocket_state.max_height,
-            velocity.length(),
-            rocket_state.max_velocity
-        );
-    }
+    let Ok(mut score_text) = text_query.single_mut() else {
+        return;
+    };
+    let Ok((transform, velocity)) = rocket_query.single() else {
+        return;
+    };
+    let altitude = (transform.translation.y - rocket_state.launch_origin_y).max(0.0);
+    **score_text = format!(
+        "Alt: {:.1} / {:.1} m  Vel: {:.1} / {:.1} m/s",
+        altitude,
+        rocket_state.max_height,
+        velocity.length(),
+        rocket_state.max_velocity
+    );
 }
 
 fn ui_system(
@@ -717,7 +779,10 @@ fn update_rocket_dimensions_system(
         commands.entity(fin).despawn();
     }
     // Add fins
-    let rocket = rocket_query.single().unwrap();
+    let Ok(rocket) = rocket_query.single() else {
+        warn!("Rocket dimension update requested but no rocket entity exists");
+        return;
+    };
     let rocket_fin_pbr_bundles =
         create_rocket_fin_pbr_bundles(materials, rocket_dims.as_ref(), meshes.as_mut(), "#339933");
     for bundle in rocket_fin_pbr_bundles {
@@ -821,4 +886,270 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         ScoreMarker,
     ));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::ecs::message::Messages;
+
+    fn write_message<M: Message>(app: &mut App, message: M) {
+        app.world_mut()
+            .resource_mut::<Messages<M>>()
+            .write(message);
+    }
+
+    fn setup_core_app() -> App {
+        let mut app = App::new();
+        app.add_message::<LaunchEvent>()
+            .add_message::<ResetEvent>()
+            .add_message::<DownedEvent>()
+            .add_message::<CollisionStart>();
+        app.insert_resource(RocketDimensions::default());
+        app.insert_resource(RocketFlightParameters::default());
+        app.insert_resource(CameraProperties::default());
+        app.insert_resource(RocketState::default());
+        app
+    }
+
+    fn spawn_test_rocket(world: &mut World, y: f32) -> Entity {
+        world
+            .spawn((
+                RocketMarker,
+                Transform::from_xyz(0.0, y, 0.0),
+                GlobalTransform::default(),
+                LinearVelocity::ZERO,
+                AngularVelocity::ZERO,
+                LockedAxes::new(),
+            ))
+            .id()
+    }
+
+    fn approx_eq(a: f32, b: f32) {
+        assert!((a - b).abs() < 1e-5, "left={a}, right={b}");
+    }
+
+    #[test]
+    fn launch_event_sets_state_and_force_timer() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, on_launch_event);
+        let rocket = spawn_test_rocket(app.world_mut(), 0.75);
+
+        write_message(&mut app, LaunchEvent);
+        app.update();
+
+        let state = app.world().resource::<RocketState>();
+        assert!(matches!(state.state, RocketStateEnum::Launched));
+        approx_eq(state.launch_origin_y, 0.75);
+        approx_eq(state.max_height, 0.0);
+        approx_eq(state.max_velocity, 0.0);
+
+        let timer = app
+            .world()
+            .entity(rocket)
+            .get::<ForceTimer>()
+            .expect("ForceTimer should be inserted on launch");
+        assert!(timer.sync_rotation_with_entity);
+
+        let locked_axes = app
+            .world()
+            .entity(rocket)
+            .get::<LockedAxes>()
+            .expect("rocket should keep LockedAxes");
+        assert_eq!(locked_axes.to_bits(), LockedAxes::new().to_bits());
+    }
+
+    #[test]
+    fn launch_event_ignored_when_already_launched() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, on_launch_event);
+        let rocket = spawn_test_rocket(app.world_mut(), 0.75);
+
+        write_message(&mut app, LaunchEvent);
+        app.update();
+        let first_id = app
+            .world()
+            .entity(rocket)
+            .get::<ForceTimer>()
+            .expect("timer should exist after first launch")
+            .id;
+
+        write_message(&mut app, LaunchEvent);
+        app.update();
+        let second_id = app
+            .world()
+            .entity(rocket)
+            .get::<ForceTimer>()
+            .expect("timer should still exist after duplicate launch")
+            .id;
+
+        assert_eq!(first_id, second_id);
+    }
+
+    #[test]
+    fn launch_without_rocket_is_safe() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, on_launch_event);
+
+        write_message(&mut app, LaunchEvent);
+        app.update();
+
+        let state = app.world().resource::<RocketState>();
+        assert!(matches!(state.state, RocketStateEnum::Initial));
+    }
+
+    #[test]
+    fn reset_event_restores_per_run_state() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, on_reset_event);
+        let rocket = spawn_test_rocket(app.world_mut(), 9.0);
+
+        {
+            let mut entity = app.world_mut().entity_mut(rocket);
+            entity.insert(ForceTimer::default());
+            entity.insert(LinearVelocity(Vec3::new(1.0, 2.0, 3.0)));
+            entity.insert(AngularVelocity(Vec3::new(0.5, 0.0, -0.25)));
+            entity.insert(LockedAxes::new());
+            entity.insert(Transform::from_xyz(3.0, 9.0, -2.0));
+        }
+
+        {
+            let mut state = app.world_mut().resource_mut::<RocketState>();
+            state.state = RocketStateEnum::Launched;
+            state.max_height = 42.0;
+            state.max_velocity = 99.0;
+            state.launch_origin_y = 10.0;
+        }
+
+        write_message(&mut app, ResetEvent);
+        app.update();
+
+        let dims = app.world().resource::<RocketDimensions>();
+        let expected_y = dims.total_length() * 0.5;
+        let expected_locked_bits = lock_all_axes(LockedAxes::new()).to_bits();
+
+        let entity = app.world().entity(rocket);
+        let transform = entity
+            .get::<Transform>()
+            .expect("rocket should still have a transform");
+        let lin = entity
+            .get::<LinearVelocity>()
+            .expect("rocket should still have linear velocity");
+        let ang = entity
+            .get::<AngularVelocity>()
+            .expect("rocket should still have angular velocity");
+        let locked = entity
+            .get::<LockedAxes>()
+            .expect("rocket should still have locked axes");
+
+        approx_eq(transform.translation.x, 0.0);
+        approx_eq(transform.translation.y, expected_y);
+        approx_eq(transform.translation.z, 0.0);
+        assert_eq!(*lin, LinearVelocity::ZERO);
+        assert_eq!(*ang, AngularVelocity::ZERO);
+        assert_eq!(locked.to_bits(), expected_locked_bits);
+        assert!(!entity.contains::<ForceTimer>());
+
+        let state = app.world().resource::<RocketState>();
+        assert!(matches!(state.state, RocketStateEnum::Initial));
+        approx_eq(state.max_height, 0.0);
+        approx_eq(state.max_velocity, 0.0);
+        approx_eq(state.launch_origin_y, expected_y);
+
+        let camera = app.world().resource::<CameraProperties>();
+        assert_eq!(camera.desired_translation, INITIAL_CAMERA_POS);
+        approx_eq(camera.target.y, expected_y);
+    }
+
+    #[test]
+    fn collision_start_marks_touchdown_when_descending() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, detect_landing_from_collision_system);
+        let rocket = spawn_test_rocket(app.world_mut(), 2.0);
+        let other = app.world_mut().spawn_empty().id();
+
+        app.world_mut()
+            .entity_mut(rocket)
+            .insert(LinearVelocity(Vec3::new(0.0, -2.0, 0.0)));
+        app.world_mut().resource_mut::<RocketState>().state = RocketStateEnum::Launched;
+
+        write_message(
+            &mut app,
+            CollisionStart {
+                collider1: rocket,
+                collider2: other,
+                body1: Some(rocket),
+                body2: None,
+            },
+        );
+        app.update();
+
+        let state = app.world().resource::<RocketState>();
+        assert!(matches!(state.state, RocketStateEnum::Grounded));
+        assert_eq!(app.world().resource::<Messages<DownedEvent>>().len(), 1);
+    }
+
+    #[test]
+    fn collision_start_ignored_while_ascending() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, detect_landing_from_collision_system);
+        let rocket = spawn_test_rocket(app.world_mut(), 2.0);
+        let other = app.world_mut().spawn_empty().id();
+
+        app.world_mut()
+            .entity_mut(rocket)
+            .insert(LinearVelocity(Vec3::new(0.0, 1.0, 0.0)));
+        app.world_mut().resource_mut::<RocketState>().state = RocketStateEnum::Launched;
+
+        write_message(
+            &mut app,
+            CollisionStart {
+                collider1: rocket,
+                collider2: other,
+                body1: Some(rocket),
+                body2: None,
+            },
+        );
+        app.update();
+
+        let state = app.world().resource::<RocketState>();
+        assert!(matches!(state.state, RocketStateEnum::Launched));
+        assert_eq!(app.world().resource::<Messages<DownedEvent>>().len(), 0);
+    }
+
+    #[test]
+    fn rocket_position_tracks_max_metrics_relative_to_launch_origin() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, rocket_position_system);
+        let rocket = spawn_test_rocket(app.world_mut(), 12.0);
+        app.world_mut()
+            .entity_mut(rocket)
+            .insert(LinearVelocity(Vec3::new(0.0, 4.0, 3.0)));
+
+        {
+            let mut state = app.world_mut().resource_mut::<RocketState>();
+            state.state = RocketStateEnum::Launched;
+            state.launch_origin_y = 2.0;
+            state.max_height = 0.0;
+            state.max_velocity = 0.0;
+        }
+
+        app.update();
+
+        let state = app.world().resource::<RocketState>();
+        approx_eq(state.max_height, 10.0);
+        approx_eq(state.max_velocity, 5.0);
+        let camera = app.world().resource::<CameraProperties>();
+        approx_eq(camera.target.y, 12.0);
+    }
+
+    #[test]
+    fn rocket_position_system_is_safe_without_rocket() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, rocket_position_system);
+        app.update();
+
+        let state = app.world().resource::<RocketState>();
+        assert!(matches!(state.state, RocketStateEnum::Initial));
+    }
 }

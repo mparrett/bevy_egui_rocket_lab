@@ -185,8 +185,9 @@ pub fn pick_best_variant<'a>(
     variants
         .iter()
         .find(|(_, fmt)| *fmt == CompressedImageFormats::NONE || supported.contains(*fmt))
+        .or_else(|| variants.first())
         .map(|(path, _)| *path)
-        .unwrap()
+        .unwrap_or_default()
 }
 
 fn detect_supported_formats(
@@ -222,10 +223,9 @@ pub fn cubemap_asset_loaded(
     mut sky_props: ResMut<SkyProperties>,
     render_device: Option<Res<bevy::render::renderer::RenderDevice>>,
 ) {
-    if cubemap_opt.is_none() {
+    let Some(cubemap) = cubemap_opt.as_mut() else {
         return;
-    }
-    let cubemap = cubemap_opt.as_mut().unwrap();
+    };
 
     if sky_props.skybox_changed {
         let supported = detect_supported_formats(&render_device);
@@ -238,7 +238,9 @@ pub fn cubemap_asset_loaded(
 
     if !cubemap.is_loaded && asset_server.is_loaded(&cubemap.image_handle) {
         info!("Skybox ready: {}", SKYBOXES[sky_props.skybox_index].name);
-        let image = images.get_mut(&cubemap.image_handle).unwrap();
+        let Some(image) = images.get_mut(&cubemap.image_handle) else {
+            return;
+        };
         if image.texture_descriptor.array_layer_count() == 1 {
             let _ = image.reinterpret_stacked_2d_as_array(image.height() / image.width());
             image.texture_view_descriptor = Some(TextureViewDescriptor {
@@ -290,4 +292,3 @@ pub fn apply_fog_mode(
         }
     }
 }
-

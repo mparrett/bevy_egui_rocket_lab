@@ -66,6 +66,7 @@ pub enum RocketStateEnum {
 pub struct RocketState {
     pub max_height: f32,
     pub max_velocity: f32,
+    pub launch_origin_y: f32,
     pub state: RocketStateEnum,
 }
 impl Default for RocketState {
@@ -73,7 +74,8 @@ impl Default for RocketState {
         RocketState {
             max_height: 0.0,
             max_velocity: 0.0,
-            state: RocketStateEnum::Grounded,
+            launch_origin_y: 0.0,
+            state: RocketStateEnum::Initial,
         }
     }
 }
@@ -110,7 +112,9 @@ pub fn create_rocket_fin_pbr_bundles(
     });
 
     let fin_material = StandardMaterial {
-        base_color: Srgba::hex(rocket_color_hex).unwrap().into(),
+        base_color: Srgba::hex(rocket_color_hex)
+            .unwrap_or(Srgba::new(0.2, 0.6, 0.2, 1.0))
+            .into(),
         metallic: 0.7,
         perceptual_roughness: 0.3,
         reflectance: 0.6,
@@ -150,7 +154,9 @@ pub fn spawn_rocket_system(
 ) {
     let rocket_color_hex = "#eeeeff";
     let rocket_material = StandardMaterial {
-        base_color: Srgba::hex(rocket_color_hex).unwrap().into(),
+        base_color: Srgba::hex(rocket_color_hex)
+            .unwrap_or(Srgba::new(0.93, 0.93, 1.0, 1.0))
+            .into(),
         metallic: 0.4,
         perceptual_roughness: 0.4,
         reflectance: 0.6,
@@ -185,6 +191,7 @@ pub fn spawn_rocket_system(
             Transform::from_xyz(0.0, 0.0, 0.0),
             Collider::cylinder(rocket_dims.radius, rocket_dims.length),
             RocketBody,
+            CollisionEventsEnabled,
             ColliderDensity(FUSELAGE_DENSITY),
             Friction::new(0.7),
             Restitution::new(0.4),
@@ -203,6 +210,7 @@ pub fn spawn_rocket_system(
             Friction::new(0.7),
             Restitution::new(0.4),
             RocketCone,
+            CollisionEventsEnabled,
             Name::new("RocketCone"),
         ));
 

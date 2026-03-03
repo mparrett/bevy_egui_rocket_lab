@@ -59,14 +59,17 @@ impl Default for CameraProperties {
 
 pub fn update_camera_zoom_perspective_system(
     mut query_camera: Query<&mut Projection>,
-    camera_properties: ResMut<CameraProperties>,
+    camera_properties: Res<CameraProperties>,
 ) {
-    // assume perspective. do nothing if orthographic.
-    let Projection::Perspective(persp) = query_camera.single_mut().unwrap().into_inner() else {
+    let Ok(projection) = query_camera.single_mut() else {
+        return;
+    };
+    // Assume perspective and skip orthographic cameras.
+    let Projection::Perspective(persp) = projection.into_inner() else {
         return;
     };
     if camera_properties.is_changed() {
-        // zoom in, zoom out by changing base FOV; e.g. 0.5 .. 2.0
+        // Zoom by changing base FOV; e.g. 0.5 .. 2.0.
         persp.fov = camera_properties.base_fov / camera_properties.zoom;
     }
 }
@@ -76,9 +79,11 @@ pub fn update_camera_transform_system(
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<(&Projection, &mut Transform)>,
 ) {
-    let (_, mut transform) = match camera_query.single_mut() {
-        Ok((Projection::Perspective(projection), transform)) => (projection, transform),
-        _ => unreachable!(),
+    let Ok((projection, mut transform)) = camera_query.single_mut() else {
+        return;
+    };
+    if !matches!(projection, Projection::Perspective(_)) {
+        return;
     };
 
     // Update based on camera properties/follow mode
