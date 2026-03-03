@@ -1,4 +1,5 @@
 use bevy::{
+    light::VolumetricFog,
     app::AppExit,
     core_pipeline::Skybox,
     diagnostic::FrameTimeDiagnosticsPlugin,
@@ -21,9 +22,8 @@ use sky::SkyProperties;
 
 use crate::{
     camera::{
-        mouse_orbit_system, update_camera_transform_system,
-        update_camera_zoom_perspective_system, CameraProperties, FollowMode, CAMERA_MODES,
-        INITIAL_CAMERA_POS, ZOOM_LEVELS,
+        mouse_orbit_system, update_camera_transform_system, update_camera_zoom_perspective_system,
+        CameraProperties, FollowMode, CAMERA_MODES, INITIAL_CAMERA_POS, ZOOM_LEVELS,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
@@ -34,8 +34,9 @@ use crate::{
         RocketDimensions, RocketFlightParameters, RocketMarker, RocketState, RocketStateEnum,
     },
     sky::{
-        animate_light_direction, cubemap_asset_loaded, pick_best_variant, setup_sky_system,
-        spawn_regular_sky_map, toggle_fog_system, Cubemap, SKYBOXES,
+        animate_light_direction, apply_fog_mode, cubemap_asset_loaded, pick_best_variant,
+        setup_sky_system, spawn_regular_sky_map, toggle_fog_system, Cubemap, FOG_MODE_COUNT,
+        SKYBOXES,
     },
     util::random_vec,
 };
@@ -168,7 +169,11 @@ fn main() {
     app.add_systems(Startup, spawn_regular_sky_map);
     app.add_systems(
         Update,
-        (cubemap_asset_loaded, animate_light_direction, check_loading_complete),
+        (
+            cubemap_asset_loaded,
+            animate_light_direction,
+            check_loading_complete,
+        ),
     );
     app.add_systems(Update, (adjust_time_scale, mouse_orbit_system));
 
@@ -432,6 +437,7 @@ fn ui_system(
     mut camera_properties: ResMut<CameraProperties>,
     mut sky_props: ResMut<SkyProperties>,
     rocket_query: Query<(&Mass, &CenterOfMass), (With<RocketMarker>, Without<Camera>)>,
+    mut fog_query: Query<&mut DistanceFog>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     camera_properties.egui_has_pointer = ctx.is_pointer_over_area();
@@ -503,19 +509,38 @@ fn ui_system(
                         .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5).text("radius"))
                         .changed();
                     changed |= ui
-                        .add(egui::Slider::new(&mut rocket_dims.length, 0.2..=2.0).step_by(0.05).text("length"))
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.length, 0.2..=2.0)
+                                .step_by(0.05)
+                                .text("length"),
+                        )
                         .changed();
                     changed |= ui
-                        .add(egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=0.8).text("cone"))
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=0.8)
+                                .text("cone"),
+                        )
                         .changed();
                     changed |= ui
-                        .add(egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0).step_by(1.0).text("fins"))
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
+                                .step_by(1.0)
+                                .text("fins"),
+                        )
                         .changed();
                     changed |= ui
-                        .add(egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=1.5).step_by(0.1).text("fin H"))
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=1.5)
+                                .step_by(0.1)
+                                .text("fin H"),
+                        )
                         .changed();
                     changed |= ui
-                        .add(egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=1.0).step_by(0.1).text("fin L"))
+                        .add(
+                            egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=1.0)
+                                .step_by(0.1)
+                                .text("fin L"),
+                        )
                         .changed();
                     if changed {
                         rocket_dims.flag_changed = true;
@@ -563,6 +588,61 @@ fn ui_system(
                         });
                     if changed {
                         sky_props.skybox_changed = true;
+                    }
+
+                    ui.separator();
+                    let mut fog_changed = false;
+                    if ui.checkbox(&mut sky_props.fog_enabled, "Fog").changed() {
+                        if sky_props.fog_enabled && sky_props.fog_mode == 0 {
+                            sky_props.fog_mode = 1;
+                        }
+                        fog_changed = true;
+                    }
+
+                    if sky_props.fog_enabled {
+                        let mode_label = match sky_props.fog_mode {
+                            1 => "Atmospheric",
+                            2 => "Dense",
+                            _ => "Off",
+                        };
+                        egui::ComboBox::from_label("fog mode")
+                            .selected_text(mode_label)
+                            .show_ui(ui, |ui| {
+                                for m in 1..FOG_MODE_COUNT {
+                                    let label = match m {
+                                        1 => "Atmospheric",
+                                        2 => "Dense",
+                                        _ => "?",
+                                    };
+                                    if ui
+                                        .selectable_value(&mut sky_props.fog_mode, m, label)
+                                        .changed()
+                                    {
+                                        fog_changed = true;
+                                    }
+                                }
+                            });
+
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut sky_props.fog_visibility, 10.0..=200.0)
+                                    .text("visibility"),
+                            )
+                            .changed()
+                        {
+                            fog_changed = true;
+                        }
+                    }
+
+                    if fog_changed {
+                        if let Ok(mut fog_settings) = fog_query.single_mut() {
+                            let mode = if sky_props.fog_enabled {
+                                sky_props.fog_mode
+                            } else {
+                                0
+                            };
+                            apply_fog_mode(&mut fog_settings, mode, sky_props.fog_visibility);
+                        }
                     }
                 });
 
@@ -685,6 +765,10 @@ fn setup_camera_system(
             color: Color::srgba(0.0, 0.0, 0.0, 0.0),
             ..default()
         },
+        VolumetricFog {
+            ambient_intensity: 0.0,
+            ..default()
+        },
     ));
 }
 
@@ -694,7 +778,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
         Text::new(
             "R: reset  Enter: launch  C: camera mode\n\
              Z: zoom  Q: quit  D/S: destabilize/stabilize\n\
-             F: fog  T: fog type  Space: slowmo\n\
+             F: fog toggle  T: fog mode  Space: slowmo\n\
              Esc: world inspector  Arrow keys: move camera",
         ),
         TextFont {

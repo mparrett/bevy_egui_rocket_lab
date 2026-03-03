@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use bevy::image::CompressedImageFormats;
-use bevy::light::CascadeShadowConfigBuilder;
+use bevy::light::{CascadeShadowConfigBuilder, FogVolume, VolumetricLight};
 use bevy::{
     core_pipeline::Skybox,
     render::render_resource::{TextureViewDescriptor, TextureViewDimension},
@@ -90,17 +90,27 @@ pub struct Cubemap {
     image_handle: Handle<Image>,
 }
 
-pub const SKY_BLUE_FOG: Color = Color::srgba(0.35, 0.48, 0.66, 1.0);
-pub const OVERCAST_FOG: Color = Color::srgba(0.8, 0.844, 1.0, 1.0);
-pub const SKY_DIR_LIGHT_COLOR: Color = Color::WHITE;
+pub const FOG_MODE_COUNT: usize = 3;
 
-pub static FOG_MODES: &[usize] = &[0, 1, 2];
-
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub struct SkyProperties {
     pub fog_mode: usize,
     pub skybox_index: usize,
     pub skybox_changed: bool,
+    pub fog_enabled: bool,
+    pub fog_visibility: f32,
+}
+
+impl Default for SkyProperties {
+    fn default() -> Self {
+        Self {
+            fog_mode: 0,
+            skybox_index: 0,
+            skybox_changed: false,
+            fog_enabled: false,
+            fog_visibility: 80.0,
+        }
+    }
 }
 
 pub fn setup_sky_system(mut commands: Commands) {
@@ -126,6 +136,15 @@ pub fn setup_sky_system(mut commands: Commands) {
         },
         Transform::from_xyz(0.0, 2.0, 0.0).with_rotation(Quat::from_rotation_x(-PI / 4.)),
         cascade_shadow_config,
+        VolumetricLight,
+    ));
+
+    commands.spawn((
+        FogVolume {
+            density_factor: 0.02,
+            ..default()
+        },
+        Transform::from_scale(Vec3::splat(200.0)),
     ));
 }
 
@@ -188,10 +207,7 @@ pub fn cubemap_asset_loaded(
     }
 
     if !cubemap.is_loaded && asset_server.is_loaded(&cubemap.image_handle) {
-        info!(
-            "Skybox ready: {}",
-            SKYBOXES[sky_props.skybox_index].name
-        );
+        info!("Skybox ready: {}", SKYBOXES[sky_props.skybox_index].name);
         let image = images.get_mut(&cubemap.image_handle).unwrap();
         if image.texture_descriptor.array_layer_count() == 1 {
             let _ = image.reinterpret_stacked_2d_as_array(image.height() / image.width());
@@ -218,6 +234,31 @@ pub fn animate_light_direction(
         transform.rotate_y(time.delta_secs() * rotate_speed);
     }
 }
+pub fn make_atmospheric_fog(visibility: f32) -> DistanceFog {
+    DistanceFog {
+        color: Color::srgba(0.35, 0.48, 0.66, 1.0),
+        directional_light_color: Color::srgba(1.0, 0.95, 0.85, 0.5),
+        directional_light_exponent: 30.0,
+        falloff: FogFalloff::from_visibility_colors(
+            visibility,
+            Color::srgb(0.35, 0.5, 0.66),
+            Color::srgb(0.8, 0.844, 1.0),
+        ),
+    }
+}
+
+pub fn apply_fog_mode(fog_settings: &mut DistanceFog, mode: usize, visibility: f32) {
+    match mode {
+        1 => *fog_settings = make_atmospheric_fog(visibility),
+        2 => *fog_settings = make_atmospheric_fog(visibility * 0.375),
+        _ => {
+            fog_settings.color = fog_settings.color.with_alpha(0.0);
+            fog_settings.directional_light_color =
+                fog_settings.directional_light_color.with_alpha(0.0);
+        }
+    }
+}
+
 pub fn toggle_fog_system(
     key_code: Res<ButtonInput<KeyCode>>,
     mut sky_props: ResMut<SkyProperties>,
@@ -225,44 +266,28 @@ pub fn toggle_fog_system(
 ) {
     if let Ok(mut fog_settings) = fog.single_mut() {
         if key_code.just_pressed(KeyCode::KeyF) {
-            debug!("Toggle fog alpha");
-            let a = fog_settings.color.alpha();
-            fog_settings.color = fog_settings.color.with_alpha(1.0 - a);
-        }
-
-        if key_code.just_pressed(KeyCode::KeyL) {
-            debug!("Toggle fog lighting alpha");
-            let a = fog_settings.directional_light_color.alpha();
-            fog_settings.directional_light_color =
-                fog_settings.directional_light_color.with_alpha(0.5 - a);
-        }
-
-        if key_code.just_pressed(KeyCode::KeyT) {
-            sky_props.fog_mode = (sky_props.fog_mode + 1) % FOG_MODES.len();
-            debug!("Toggle fog type to {}", sky_props.fog_mode);
-            if sky_props.fog_mode == 0 {
-                *fog_settings = DistanceFog::default();
-            } else if sky_props.fog_mode == 1 {
-                *fog_settings = DistanceFog {
-                    color: SKY_BLUE_FOG,
-                    directional_light_color: SKY_DIR_LIGHT_COLOR,
-                    directional_light_exponent: 30.0,
-                    falloff: FogFalloff::from_visibility_colors(
-                        15.0,
-                        Color::srgb(0.35, 0.5, 0.66),
-                        Color::srgb(0.8, 0.844, 1.0),
-                    ),
-                };
-            } else if sky_props.fog_mode == 2 {
-                *fog_settings = DistanceFog {
-                    color: OVERCAST_FOG,
-                    falloff: FogFalloff::Linear {
-                        start: 80.0,
-                        end: 160.0,
-                    },
-                    ..default()
-                };
+            sky_props.fog_enabled = !sky_props.fog_enabled;
+            if sky_props.fog_enabled {
+                if sky_props.fog_mode == 0 {
+                    sky_props.fog_mode = 1;
+                }
+                apply_fog_mode(
+                    &mut fog_settings,
+                    sky_props.fog_mode,
+                    sky_props.fog_visibility,
+                );
+            } else {
+                apply_fog_mode(&mut fog_settings, 0, sky_props.fog_visibility);
             }
+        }
+
+        if key_code.just_pressed(KeyCode::KeyT) && sky_props.fog_enabled {
+            sky_props.fog_mode = (sky_props.fog_mode % (FOG_MODE_COUNT - 1)) + 1;
+            apply_fog_mode(
+                &mut fog_settings,
+                sky_props.fog_mode,
+                sky_props.fog_visibility,
+            );
         }
     }
 }

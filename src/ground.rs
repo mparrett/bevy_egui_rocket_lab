@@ -1,8 +1,8 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
-const GROUND_SIZE: f32 = 200.0;
-const GROUND_TILE_REPEAT: f32 = 8.0;
+const GROUND_SIZE: f32 = 1000.0;
+const GROUND_TILE_REPEAT: f32 = 40.0;
 const GROUND_HEIGHT: f32 = 0.01;
 
 // NOTE: The existing KTX2 uses ASTC 6x6, but 1024x1024 is not a multiple of 6,
