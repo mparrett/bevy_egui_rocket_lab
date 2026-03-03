@@ -10,8 +10,8 @@ use bevy_utilitarian::prelude::*;
 use std::f32::consts::PI;
 
 use crate::{
-    rocket::{RocketDimensions, RocketFlightParameters, RocketMarker},
     LaunchEvent, ResetEvent, RocketGeometryChangedEvent,
+    rocket::{RocketDimensions, RocketFlightParameters, RocketMarker},
 };
 
 pub struct RocketParticlesPlugin;
@@ -81,7 +81,7 @@ impl Particle {
                 },
                 EmissionSettings {
                     emission_pacing: EmissionPacing::CountOverDuration {
-                        count: 250.0,
+                        count: 120.0,
                         duration: 1.0,
                         offset_start: 0.,
                         offset_end: 0.,
@@ -101,15 +101,15 @@ impl Particle {
             ),
             Particle::ActiveSmoke => (
                 ParticleSettings {
-                    lifetime: RandF32 { min: 8., max: 12. },
+                    lifetime: RandF32 { min: 5., max: 8. },
                     initial_scale: RandF32 {
                         min: 0.04,
                         max: 0.05,
                     },
                     scale_curve: FireworkCurve::uneven_samples(vec![
                         (0., 1.),
-                        (0.05, 10.),
-                        (1., 50.),
+                        (0.05, 8.),
+                        (1., 30.),
                     ]),
                     base_color: FireworkGradient::uneven_samples(vec![
                         (0., LinearRgba::new(1.0, 1.0, 1.0, 0.0)),
@@ -124,7 +124,7 @@ impl Particle {
                 },
                 EmissionSettings {
                     emission_pacing: EmissionPacing::CountOverDuration {
-                        count: 100.0,
+                        count: 40.0,
                         duration: 1.0,
                         offset_start: 0.,
                         offset_end: 0.,
@@ -144,15 +144,15 @@ impl Particle {
             ),
             Particle::ResidualSmoke => (
                 ParticleSettings {
-                    lifetime: RandF32 { min: 4., max: 8. },
+                    lifetime: RandF32 { min: 2.5, max: 4.0 },
                     initial_scale: RandF32 {
                         min: 0.04,
                         max: 0.05,
                     },
                     scale_curve: FireworkCurve::uneven_samples(vec![
                         (0., 1.),
-                        (0.05, 10.),
-                        (1., 50.),
+                        (0.05, 8.),
+                        (1., 24.),
                     ]),
                     base_color: FireworkGradient::uneven_samples(vec![
                         (0., LinearRgba::new(1.0, 1.0, 1.0, 0.0)),
@@ -167,7 +167,7 @@ impl Particle {
                 },
                 EmissionSettings {
                     emission_pacing: EmissionPacing::CountOverDuration {
-                        count: 50.0,
+                        count: 18.0,
                         duration: 1.0,
                         offset_start: 0.,
                         offset_end: 0.,
@@ -306,9 +306,7 @@ mod tests {
     use bevy::ecs::message::Messages;
 
     fn write_message<M: Message>(app: &mut App, message: M) {
-        app.world_mut()
-            .resource_mut::<Messages<M>>()
-            .write(message);
+        app.world_mut().resource_mut::<Messages<M>>().write(message);
     }
 
     #[test]

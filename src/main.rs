@@ -4,7 +4,6 @@ use bevy::{
     diagnostic::FrameTimeDiagnosticsPlugin,
     image::{CompressedImageFormats, ImageAddressMode, ImageSamplerDescriptor},
     input::common_conditions::input_toggle_active,
-    light::VolumetricFog,
     math::primitives::Cylinder,
     post_process::bloom::Bloom,
     prelude::*,
@@ -13,7 +12,7 @@ use bevy::{
 use bevy_firework::plugin::ParticleSystemPlugin;
 
 use avian3d::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use egui::Key;
@@ -22,20 +21,20 @@ use sky::SkyProperties;
 
 use crate::{
     camera::{
+        CAMERA_MODES, CameraProperties, FollowMode, INITIAL_CAMERA_POS, ZOOM_LEVELS,
         mouse_orbit_system, update_camera_transform_system, update_camera_zoom_perspective_system,
-        CameraProperties, FollowMode, CAMERA_MODES, INITIAL_CAMERA_POS, ZOOM_LEVELS,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
     ground::setup_ground_system,
-    physics::{get_timer_id, lock_all_axes, update_forces_system, ForceTimer},
+    physics::{ForceTimer, get_timer_id, lock_all_axes, update_forces_system},
     rocket::{
-        create_rocket_fin_pbr_bundles, spawn_rocket_system, FinMarker, RocketBody, RocketCone,
-        RocketDimensions, RocketFlightParameters, RocketMarker, RocketState, RocketStateEnum,
+        FinMarker, RocketBody, RocketCone, RocketDimensions, RocketFlightParameters, RocketMarker,
+        RocketState, RocketStateEnum, create_rocket_fin_pbr_bundles, spawn_rocket_system,
     },
     sky::{
-        animate_light_direction, apply_fog_mode, cubemap_asset_loaded, pick_best_variant,
-        setup_sky_system, spawn_regular_sky_map, Cubemap, SKYBOXES,
+        Cubemap, SKYBOXES, animate_light_direction, apply_fog_mode, cubemap_asset_loaded,
+        pick_best_variant, setup_sky_system, spawn_regular_sky_map,
     },
     util::random_vec,
 };
@@ -107,7 +106,7 @@ fn main() {
             min_filter: bevy::image::ImageFilterMode::Linear,
             mag_filter: bevy::image::ImageFilterMode::Linear,
             mipmap_filter: bevy::image::ImageFilterMode::Linear,
-            anisotropy_clamp: 16,
+            anisotropy_clamp: 4,
             ..default()
         },
     }));
@@ -691,9 +690,7 @@ fn ui_system(
                     egui::ComboBox::from_label("Fog")
                         .selected_text(fog_label)
                         .show_ui(ui, |ui| {
-                            for (m, label) in
-                                [(0, "Off"), (1, "Atmospheric"), (2, "Dense")]
-                            {
+                            for (m, label) in [(0, "Off"), (1, "Atmospheric"), (2, "Dense")] {
                                 if ui
                                     .selectable_value(&mut sky_props.fog_mode, m, label)
                                     .changed()
@@ -856,10 +853,6 @@ fn setup_camera_system(
             color: Color::srgba(0.0, 0.0, 0.0, 0.0),
             ..default()
         },
-        VolumetricFog {
-            ambient_intensity: 0.0,
-            ..default()
-        },
     ));
 }
 
@@ -912,9 +905,7 @@ mod tests {
     use bevy::ecs::message::Messages;
 
     fn write_message<M: Message>(app: &mut App, message: M) {
-        app.world_mut()
-            .resource_mut::<Messages<M>>()
-            .write(message);
+        app.world_mut().resource_mut::<Messages<M>>().write(message);
     }
 
     fn setup_core_app() -> App {

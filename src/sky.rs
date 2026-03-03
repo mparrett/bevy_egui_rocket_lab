@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use bevy::image::CompressedImageFormats;
-use bevy::light::{CascadeShadowConfigBuilder, FogVolume, VolumetricLight};
+use bevy::light::CascadeShadowConfigBuilder;
 use bevy::{
     core_pipeline::Skybox,
     render::render_resource::{TextureViewDescriptor, TextureViewDimension},
@@ -166,15 +166,6 @@ pub fn setup_sky_system(mut commands: Commands) {
         },
         Transform::from_xyz(0.0, 2.0, 0.0).with_rotation(Quat::from_rotation_x(-PI / 4.)),
         cascade_shadow_config,
-        VolumetricLight,
-    ));
-
-    commands.spawn((
-        FogVolume {
-            density_factor: 0.02,
-            ..default()
-        },
-        Transform::from_scale(Vec3::splat(200.0)),
     ));
 }
 
