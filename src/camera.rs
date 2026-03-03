@@ -85,6 +85,7 @@ pub fn update_camera_transform_system(
     time: Res<Time>,
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<(&Projection, &mut Transform)>,
+    mut last_follow_mode: Local<Option<FollowMode>>,
 ) {
     let Ok((projection, mut transform)) = camera_query.single_mut() else {
         return;
@@ -99,8 +100,45 @@ pub fn update_camera_transform_system(
 
     let desired_target = camera_properties.target + Vec3::Y * camera_properties.target_y_offset;
     let camera_dist = camera_properties.fixed_distance;
+    let follow_mode = camera_properties.follow_mode;
 
-    if camera_properties.follow_mode == FollowMode::FixedGround {
+    // Re-seed spring state on mode switches so chase modes immediately acquire the rocket.
+    if last_follow_mode.map_or(true, |prev| prev != follow_mode) {
+        camera_properties.lagged_target_velocity = Vec3::ZERO;
+        camera_properties.lagged_translation_velocity = Vec3::ZERO;
+        camera_properties.lagged_target = desired_target;
+
+        match follow_mode {
+            FollowMode::FollowAbove => {
+                camera_properties.lagged_translation = Vec3::new(
+                    desired_target.x + 0.1,
+                    desired_target.y + camera_dist,
+                    desired_target.z + 0.1,
+                );
+            }
+            FollowMode::FollowSide => {
+                camera_properties.lagged_translation = Vec3::new(
+                    desired_target.x + camera_dist,
+                    desired_target.y + 0.5,
+                    desired_target.z + 0.1,
+                );
+            }
+            FollowMode::FixedGround => {
+                let angle_rad = camera_properties.orbit_angle_degrees.to_radians();
+                camera_properties.lagged_translation = Vec3::new(
+                    desired_target.x + camera_dist * angle_rad.sin(),
+                    camera_properties.desired_translation.y,
+                    desired_target.z + camera_dist * angle_rad.cos(),
+                );
+            }
+            FollowMode::FreeLook => {
+                camera_properties.lagged_translation = camera_properties.desired_translation;
+            }
+        }
+    }
+    *last_follow_mode = Some(follow_mode);
+
+    if follow_mode == FollowMode::FixedGround {
         {
             let (lagged_target, lagged_target_velocity) = (
                 &mut camera_properties.lagged_target,
@@ -139,7 +177,7 @@ pub fn update_camera_transform_system(
                 time.delta_secs(),
             );
         }
-    } else if camera_properties.follow_mode == FollowMode::FreeLook {
+    } else if follow_mode == FollowMode::FreeLook {
         {
             let (lagged_target, lagged_target_velocity) = (
                 &mut camera_properties.lagged_target,
@@ -171,7 +209,7 @@ pub fn update_camera_transform_system(
                 time.delta_secs(),
             );
         }
-    } else if camera_properties.follow_mode == FollowMode::FollowAbove {
+    } else if follow_mode == FollowMode::FollowAbove {
         // Interpolate look target
         {
             let (lagged_target, lagged_target_velocity) = (
@@ -208,7 +246,7 @@ pub fn update_camera_transform_system(
                 time.delta_secs(),
             );
         }
-    } else if camera_properties.follow_mode == FollowMode::FollowSide {
+    } else if follow_mode == FollowMode::FollowSide {
         // Interpolate look target
         // We want fast follow on translation but slower on look
         {
