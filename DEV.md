@@ -38,6 +38,18 @@ If you have both installed, remove Homebrew's: `brew uninstall rust`
 
 Verify with: `rustup show` — should show `stable-aarch64-apple-darwin` (or your platform) as active.
 
+## Build Profiles
+
+- Native `release` profile is performance-oriented: `opt-level=3`, `lto="thin"`.
+- WASM `wasm-release` profile is size-oriented: `opt-level='z'`, full LTO, `panic="abort"`.
+
+Use:
+
+```
+just release          # native performance build
+just release-wasm     # wasm32 build using the wasm-release profile
+```
+
 ## WASM Build
 
 ### Prerequisites

@@ -33,10 +33,10 @@ jobs:
         run: cargo install wasm-bindgen-cli --version 0.2.114
 
       - name: Build WASM
-        run: cargo build --release --target wasm32-unknown-unknown
+        run: cargo build --profile wasm-release --target wasm32-unknown-unknown
 
       - name: Run wasm-bindgen
-        run: wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/release/bevy-rocket-lab.wasm
+        run: wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/wasm-release/bevy-rocket-lab.wasm
 
       - name: Install wasm-opt
         run: |

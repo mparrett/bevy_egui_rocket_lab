@@ -13,7 +13,8 @@
 ## Build
 
 - Dev profile: opt-level=1 for crate, opt-level=3 for deps
-- Release profile: opt-level='z', lto=true, codegen-units=1, strip=true, panic="abort"
+- Native release profile: opt-level=3, lto="thin", codegen-units=1, strip=true
+- WASM release profile (`wasm-release`): opt-level='z', lto=true, codegen-units=1, strip=true, panic="abort"
 - WASM target: wasm32-unknown-unknown + wasm-bindgen
 - WASM backend: WebGPU (wgpu 27 default, no `webgl2` feature)
 - WASM binary size: ~33MB after wasm-opt -Oz
