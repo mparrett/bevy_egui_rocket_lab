@@ -736,7 +736,7 @@ fn ui_system(
 
 fn update_rocket_dimensions_system(
     mut commands: Commands,
-    materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut rocket_dims: ResMut<RocketDimensions>,
     mut geometry_changed: MessageWriter<RocketGeometryChangedEvent>,
@@ -796,8 +796,12 @@ fn update_rocket_dimensions_system(
         warn!("Rocket dimension update requested but no rocket entity exists");
         return;
     };
-    let rocket_fin_pbr_bundles =
-        create_rocket_fin_pbr_bundles(materials, rocket_dims.as_ref(), meshes.as_mut(), "#339933");
+    let rocket_fin_pbr_bundles = create_rocket_fin_pbr_bundles(
+        materials.as_mut(),
+        rocket_dims.as_ref(),
+        meshes.as_mut(),
+        "#339933",
+    );
     for bundle in rocket_fin_pbr_bundles {
         commands.entity(rocket).with_children(|parent| {
             parent.spawn((bundle, FinMarker));

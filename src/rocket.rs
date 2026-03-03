@@ -95,7 +95,7 @@ impl Default for RocketFlightParameters {
 }
 
 pub fn create_rocket_fin_pbr_bundles(
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    materials: &mut Assets<StandardMaterial>,
     rocket_dims: &RocketDimensions,
     meshes: &mut Assets<Mesh>,
     rocket_color_hex: &str,
@@ -121,9 +121,11 @@ pub fn create_rocket_fin_pbr_bundles(
         ..default()
     };
 
+    let fin_mesh_handle = meshes.add(fin_mesh);
+    let fin_mat_handle = materials.add(fin_material);
+
     let mut bundles = Vec::new();
     for i in 0..n_fins {
-        let fin_mat_handle = materials.add(fin_material.clone());
         let angle = i as f32 * degs_per_fin.to_radians();
         let rotation = Quat::from_rotation_y(angle);
 
@@ -133,8 +135,8 @@ pub fn create_rocket_fin_pbr_bundles(
         let fin_rotation = rotation * Quat::from_rotation_y(-90.0f32.to_radians());
 
         bundles.push((
-            Mesh3d(meshes.add(fin_mesh.clone())),
-            MeshMaterial3d(fin_mat_handle),
+            Mesh3d(fin_mesh_handle.clone()),
+            MeshMaterial3d(fin_mat_handle.clone()),
             Transform {
                 translation: position_relative,
                 rotation: fin_rotation,
@@ -215,7 +217,7 @@ pub fn spawn_rocket_system(
         ));
 
         let rocket_fin_pbr_bundles = create_rocket_fin_pbr_bundles(
-            materials,
+            materials.as_mut(),
             rocket_dims.as_ref(),
             meshes.as_mut(),
             rocket_color_hex,
@@ -224,4 +226,30 @@ pub fn spawn_rocket_system(
             parent.spawn((bundle, FinMarker));
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fin_bundles_share_mesh_and_material_handles() {
+        let mut materials = Assets::<StandardMaterial>::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let dims = RocketDimensions {
+            num_fins: 4.0,
+            ..RocketDimensions::default()
+        };
+
+        let bundles =
+            create_rocket_fin_pbr_bundles(&mut materials, &dims, &mut meshes, "#eeeeff");
+        assert_eq!(bundles.len(), 4);
+
+        let first_mesh = &bundles[0].0.0;
+        let first_material = &bundles[0].1.0;
+        for (mesh, material, _) in &bundles {
+            assert_eq!(&mesh.0, first_mesh);
+            assert_eq!(&material.0, first_material);
+        }
+    }
 }
