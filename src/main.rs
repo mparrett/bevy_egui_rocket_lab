@@ -228,7 +228,7 @@ fn init_egui_ui_input_system(
         info!("Resetting rocket state");
         reset.write_default();
     }
-    // TODO: Fail mode F
+    // TODO: Add fail mode trigger
 
     // Destabilize the rocket by adding random force and torque
     if ctx.input(|input| input.key_pressed(Key::D)) {
@@ -847,8 +847,8 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
         Text::new(
             "R: reset  Enter: launch  C: camera mode\n\
              Z: zoom  Q: quit  D/S: destabilize/stabilize\n\
-             F: fog toggle  T: fog mode  Space: slowmo\n\
-             Esc: world inspector  Arrow keys: move camera",
+             Space: slowmo  Fog: use Sky panel controls\n\
+             Esc: world inspector  Arrow keys: camera move",
         ),
         TextFont {
             font_size: 13.,

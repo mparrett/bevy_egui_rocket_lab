@@ -24,7 +24,7 @@
 ## Assets
 
 - Skybox cubemap: `textures/grasslands_sunset_cubemap_astc4x4.ktx2` (ASTC), with ETC2 and PNG fallbacks
-- Ground texture: `textures/GroundGrassGreen002_COL_4K_1024.png.ktx2`
+- Ground texture: `textures/GroundGrassGreen002_COL_4K_1024.png`
 - Audio: `audio/Welcome_to_the_Lab_v1.ogg` (loop), `air-rushes-out-fast-long.ogg` (launch), `impact_wood.ogg` (crash)
 - Font: `fonts/FiraMono-Medium.ttf`
 
@@ -36,9 +36,7 @@
 - C: Cycle camera mode
 - Z: Cycle zoom
 - D/S: Destabilize/Stabilize
-- F: Toggle fog
-- T: Cycle fog type
-- L: Toggle fog lighting
+- Fog: use Sky panel controls (no keyboard toggle)
 - Space: Toggle slow-mo
 - Arrow keys: Camera orbit/distance
 - Escape: World inspector

@@ -26,4 +26,4 @@ Atmospheric fog that blends smoothly into the skybox at the horizon. Options to 
 
 ## Interim fix
 
-Fog disabled by default (alpha=0 on spawn). Still togglable with F/T keys for experimentation.
+Fog disabled by default (alpha=0 on spawn). Fog settings remain available in the Sky panel.
