@@ -1,6 +1,6 @@
 use bevy::{
-    light::VolumetricFog,
     app::AppExit,
+    light::VolumetricFog,
     core_pipeline::Skybox,
     diagnostic::FrameTimeDiagnosticsPlugin,
     image::{CompressedImageFormats, ImageAddressMode, ImageSamplerDescriptor},
@@ -421,11 +421,16 @@ fn on_launch_event(
 fn update_stats_system(
     rocket_state: Res<RocketState>,
     mut text_query: Query<&mut Text, With<ScoreMarker>>,
+    rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
 ) {
     if let Ok(mut score_text) = text_query.single_mut() {
+        let (transform, velocity) = rocket_query.single().unwrap();
         **score_text = format!(
-            "Alt: {:.1} m  Vel: {:.1} m/s",
-            rocket_state.max_height, rocket_state.max_velocity
+            "Alt: {:.1} / {:.1} m  Vel: {:.1} / {:.1} m/s",
+            transform.translation.y,
+            rocket_state.max_height,
+            velocity.length(),
+            rocket_state.max_velocity
         );
     }
 }
