@@ -61,6 +61,9 @@ struct DownedEvent;
 #[derive(Message, Default)]
 struct ResetEvent;
 
+#[derive(Message, Default)]
+struct RocketGeometryChangedEvent;
+
 #[derive(Component, Default)]
 struct ScoreMarker;
 
@@ -112,6 +115,7 @@ fn main() {
     app.add_message::<LaunchEvent>();
     app.add_message::<DownedEvent>();
     app.add_message::<ResetEvent>();
+    app.add_message::<RocketGeometryChangedEvent>();
 
     app.add_plugins(ParticleSystemPlugin::default())
         .add_plugins(PhysicsPlugins::default())
@@ -735,6 +739,7 @@ fn update_rocket_dimensions_system(
     materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut rocket_dims: ResMut<RocketDimensions>,
+    mut geometry_changed: MessageWriter<RocketGeometryChangedEvent>,
     mut body_query: Query<
         (&mut Mesh3d, &mut Collider, &mut Transform),
         (With<RocketBody>, Without<RocketCone>),
@@ -799,6 +804,7 @@ fn update_rocket_dimensions_system(
         });
     }
     rocket_dims.flag_changed = false;
+    geometry_changed.write_default();
 }
 
 fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {

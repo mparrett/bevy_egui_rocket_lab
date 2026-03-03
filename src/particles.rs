@@ -11,14 +11,17 @@ use std::f32::consts::PI;
 
 use crate::{
     rocket::{RocketDimensions, RocketFlightParameters, RocketMarker},
-    LaunchEvent, ResetEvent,
+    LaunchEvent, ResetEvent, RocketGeometryChangedEvent,
 };
 
 pub struct RocketParticlesPlugin;
 
 impl Plugin for RocketParticlesPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Update, (spawn, launch, timers, reset));
+        app.add_systems(
+            Update,
+            (spawn, launch, timers, reset, sync_emitters_with_dimensions),
+        );
     }
 }
 
@@ -274,6 +277,87 @@ fn reset(
             spawner.starts_enabled = false;
             timers.paused = true;
             timers.reset();
+        }
+    }
+}
+
+fn sync_emitters_with_dimensions(
+    mut events: MessageReader<RocketGeometryChangedEvent>,
+    rocket_query: Query<&Children, With<RocketMarker>>,
+    mut particle_query: Query<&mut Transform, With<Particle>>,
+    rocket_dims: Res<RocketDimensions>,
+) {
+    if events.read().next().is_none() {
+        return;
+    }
+
+    let emitter_y = -rocket_dims.total_length() * 0.5;
+    for children in &rocket_query {
+        let mut iter = particle_query.iter_many_mut(children);
+        while let Some(mut transform) = iter.fetch_next() {
+            transform.translation = Vec3::new(0.0, emitter_y, 0.0);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::ecs::message::Messages;
+
+    fn write_message<M: Message>(app: &mut App, message: M) {
+        app.world_mut()
+            .resource_mut::<Messages<M>>()
+            .write(message);
+    }
+
+    #[test]
+    fn geometry_change_reanchors_particle_emitters() {
+        let mut app = App::new();
+        app.add_message::<RocketGeometryChangedEvent>();
+        app.insert_resource(RocketDimensions::default());
+        app.add_systems(Update, sync_emitters_with_dimensions);
+
+        let rocket = app.world_mut().spawn(RocketMarker).id();
+        let child_a = app
+            .world_mut()
+            .spawn((Particle::Sparks, Transform::from_xyz(1.0, 2.0, 3.0)))
+            .id();
+        let child_b = app
+            .world_mut()
+            .spawn((Particle::ActiveSmoke, Transform::from_xyz(-1.0, 9.0, 0.0)))
+            .id();
+        let child_c = app
+            .world_mut()
+            .spawn((Particle::ResidualSmoke, Transform::from_xyz(0.0, -4.0, 8.0)))
+            .id();
+        app.world_mut()
+            .entity_mut(rocket)
+            .add_children(&[child_a, child_b, child_c]);
+
+        {
+            let mut dims = app.world_mut().resource_mut::<RocketDimensions>();
+            dims.length = 1.6;
+            dims.cone_length = 0.3;
+        }
+
+        write_message(&mut app, RocketGeometryChangedEvent);
+        app.update();
+
+        let expected_y = -0.5 * (1.6 + 0.3);
+        for entity in [child_a, child_b, child_c] {
+            let transform = app
+                .world()
+                .entity(entity)
+                .get::<Transform>()
+                .expect("particle child should keep transform");
+            assert_eq!(transform.translation.x, 0.0);
+            assert_eq!(transform.translation.z, 0.0);
+            assert!(
+                (transform.translation.y - expected_y).abs() < 1e-5,
+                "expected y={expected_y}, got {}",
+                transform.translation.y
+            );
         }
     }
 }
