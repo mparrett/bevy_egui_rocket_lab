@@ -1,12 +1,15 @@
 use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
+use std::f32::consts::PI;
 
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 
-pub const CAMERA_FAST_FOLLOW_SPEED: f32 = 40.0;
-pub const CAMERA_FOLLOW_SPEED: f32 = 10.0; // Faster follow speed for above/side camera
-pub const HUMAN_LOOK_SPEED: f32 = 3.0; // Mimic human head movement
+pub const CAMERA_DAMPING_RATIO: f32 = 1.0; // Critically damped by default.
+pub const CAMERA_FAST_FOLLOW_FREQ_HZ: f32 = 4.5;
+pub const CAMERA_FOLLOW_FREQ_HZ: f32 = 3.0;
+pub const HUMAN_LOOK_FREQ_HZ: f32 = 1.7;
+pub const CAMERA_MAX_SPEED: f32 = 60.0;
 pub const ZOOM_LEVELS: &[f32] = &[0.8, 1.0, 2.0, 4.0, 8.0, 16.0];
 pub const CAMERA_MODES: &[FollowMode] = &[
     FollowMode::FixedGround,
@@ -29,8 +32,10 @@ pub struct CameraProperties {
     pub target: Vec3,
     pub target_y_offset: f32,
     pub lagged_target: Vec3,
+    pub lagged_target_velocity: Vec3,
     pub desired_translation: Vec3,
     pub lagged_translation: Vec3,
+    pub lagged_translation_velocity: Vec3,
     pub zoom: f32,
     pub zoom_index: usize,
     pub base_fov: f32,
@@ -46,7 +51,9 @@ impl Default for CameraProperties {
             target: INITIAL_CAMERA_TARGET,
             target_y_offset: 0.0,
             lagged_target: INITIAL_CAMERA_TARGET,
+            lagged_target_velocity: Vec3::ZERO,
             lagged_translation: INITIAL_CAMERA_POS,
+            lagged_translation_velocity: Vec3::ZERO,
             zoom: 1.0,
             zoom_index: 1,
             base_fov: 60.0_f32.to_radians(),
@@ -86,19 +93,29 @@ pub fn update_camera_transform_system(
         return;
     };
 
+    let camera_properties = camera_properties.as_mut();
+
     // Update based on camera properties/follow mode
 
     let desired_target = camera_properties.target + Vec3::Y * camera_properties.target_y_offset;
     let camera_dist = camera_properties.fixed_distance;
 
     if camera_properties.follow_mode == FollowMode::FixedGround {
-        let spring_mu = HUMAN_LOOK_SPEED;
-        interpolate_to_target(
-            &mut camera_properties.lagged_target,
-            desired_target,
-            spring_mu,
-            time.delta_secs(),
-        );
+        {
+            let (lagged_target, lagged_target_velocity) = (
+                &mut camera_properties.lagged_target,
+                &mut camera_properties.lagged_target_velocity,
+            );
+            spring_to_target(
+                lagged_target,
+                lagged_target_velocity,
+                desired_target,
+                HUMAN_LOOK_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
 
         // Position from orbit angle and distance around target
         let angle_rad = camera_properties.orbit_angle_degrees.to_radians();
@@ -107,76 +124,164 @@ pub fn update_camera_transform_system(
             camera_properties.desired_translation.y,
             desired_target.z + camera_dist * angle_rad.cos(),
         );
-        interpolate_to_target(
-            &mut camera_properties.lagged_translation,
-            orbit_pos,
-            spring_mu,
-            time.delta_secs(),
-        );
+        {
+            let (lagged_translation, lagged_translation_velocity) = (
+                &mut camera_properties.lagged_translation,
+                &mut camera_properties.lagged_translation_velocity,
+            );
+            spring_to_target(
+                lagged_translation,
+                lagged_translation_velocity,
+                orbit_pos,
+                HUMAN_LOOK_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
     } else if camera_properties.follow_mode == FollowMode::FreeLook {
-        interpolate_to_target(
-            &mut camera_properties.lagged_target,
-            desired_target,
-            HUMAN_LOOK_SPEED,
-            time.delta_secs(),
-        );
+        {
+            let (lagged_target, lagged_target_velocity) = (
+                &mut camera_properties.lagged_target,
+                &mut camera_properties.lagged_target_velocity,
+            );
+            spring_to_target(
+                lagged_target,
+                lagged_target_velocity,
+                desired_target,
+                HUMAN_LOOK_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
         let desired = camera_properties.desired_translation;
-        interpolate_to_target(
-            &mut camera_properties.lagged_translation,
-            desired,
-            CAMERA_FOLLOW_SPEED,
-            time.delta_secs(),
-        );
+        {
+            let (lagged_translation, lagged_translation_velocity) = (
+                &mut camera_properties.lagged_translation,
+                &mut camera_properties.lagged_translation_velocity,
+            );
+            spring_to_target(
+                lagged_translation,
+                lagged_translation_velocity,
+                desired,
+                CAMERA_FOLLOW_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
     } else if camera_properties.follow_mode == FollowMode::FollowAbove {
         // Interpolate look target
-        interpolate_to_target(
-            &mut camera_properties.lagged_target,
-            desired_target,
-            CAMERA_FOLLOW_SPEED,
-            time.delta_secs(),
-        );
+        {
+            let (lagged_target, lagged_target_velocity) = (
+                &mut camera_properties.lagged_target,
+                &mut camera_properties.lagged_target_velocity,
+            );
+            spring_to_target(
+                lagged_target,
+                lagged_target_velocity,
+                desired_target,
+                CAMERA_FOLLOW_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
         // Position. Actual target will be above the rocket
-        interpolate_to_target(
-            &mut camera_properties.lagged_translation,
-            Vec3::new(
-                desired_target.x + 0.1,
-                desired_target.y + camera_dist,
-                desired_target.z + 0.1,
-            ),
-            CAMERA_FAST_FOLLOW_SPEED,
-            time.delta_secs(),
-        )
+        {
+            let (lagged_translation, lagged_translation_velocity) = (
+                &mut camera_properties.lagged_translation,
+                &mut camera_properties.lagged_translation_velocity,
+            );
+            spring_to_target(
+                lagged_translation,
+                lagged_translation_velocity,
+                Vec3::new(
+                    desired_target.x + 0.1,
+                    desired_target.y + camera_dist,
+                    desired_target.z + 0.1,
+                ),
+                CAMERA_FAST_FOLLOW_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
     } else if camera_properties.follow_mode == FollowMode::FollowSide {
         // Interpolate look target
         // We want fast follow on translation but slower on look
-        interpolate_to_target(
-            &mut camera_properties.lagged_target,
-            desired_target,
-            HUMAN_LOOK_SPEED,
-            time.delta_secs(),
-        );
+        {
+            let (lagged_target, lagged_target_velocity) = (
+                &mut camera_properties.lagged_target,
+                &mut camera_properties.lagged_target_velocity,
+            );
+            spring_to_target(
+                lagged_target,
+                lagged_target_velocity,
+                desired_target,
+                HUMAN_LOOK_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
 
         // Interpolate position
-        interpolate_to_target(
-            &mut camera_properties.lagged_translation,
-            Vec3::new(
-                desired_target.x + camera_dist,
-                desired_target.y + 0.5,
-                desired_target.z + 0.1,
-            ),
-            CAMERA_FOLLOW_SPEED,
-            time.delta_secs(),
-        );
+        {
+            let (lagged_translation, lagged_translation_velocity) = (
+                &mut camera_properties.lagged_translation,
+                &mut camera_properties.lagged_translation_velocity,
+            );
+            spring_to_target(
+                lagged_translation,
+                lagged_translation_velocity,
+                Vec3::new(
+                    desired_target.x + camera_dist,
+                    desired_target.y + 0.5,
+                    desired_target.z + 0.1,
+                ),
+                CAMERA_FAST_FOLLOW_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
     }
 
     *transform = Transform::from_translation(camera_properties.lagged_translation)
         .looking_at(camera_properties.lagged_target, Vec3::Y);
 }
 
-fn interpolate_to_target(target: &mut Vec3, target_vec: Vec3, spring_mu: f32, delta_t: f32) {
-    target.x = target.x - (target.x - target_vec.x) * spring_mu * delta_t;
-    target.y = target.y - (target.y - target_vec.y) * spring_mu * delta_t;
-    target.z = target.z - (target.z - target_vec.z) * spring_mu * delta_t;
+fn spring_to_target(
+    position: &mut Vec3,
+    velocity: &mut Vec3,
+    target: Vec3,
+    frequency_hz: f32,
+    damping_ratio: f32,
+    max_speed: f32,
+    delta_t: f32,
+) {
+    if delta_t <= 0.0 {
+        return;
+    }
+
+    let omega = 2.0 * PI * frequency_hz.max(0.01);
+    let max_step = 1.0 / 120.0;
+    let steps = (delta_t / max_step).ceil().max(1.0) as usize;
+    let step_dt = delta_t / steps as f32;
+
+    for _ in 0..steps {
+        let displacement = target - *position;
+        let accel = displacement * (omega * omega) - *velocity * (2.0 * damping_ratio * omega);
+        *velocity += accel * step_dt;
+
+        if velocity.length_squared() > max_speed * max_speed {
+            *velocity = velocity.normalize() * max_speed;
+        }
+
+        *position += *velocity * step_dt;
+    }
 }
 
 pub fn mouse_orbit_system(
