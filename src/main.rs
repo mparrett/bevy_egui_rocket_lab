@@ -447,7 +447,7 @@ fn ui_system(
     mut fog_query: Query<&mut DistanceFog>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    camera_properties.egui_has_pointer = ctx.is_pointer_over_area();
+    camera_properties.egui_has_pointer = ctx.wants_pointer_input();
 
     egui::SidePanel::left("left_panel")
         .resizable(true)
