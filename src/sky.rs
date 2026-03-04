@@ -416,8 +416,8 @@ pub fn animate_light_direction(
         Vec3::Y
     };
     // Keep a baseline fill so late dusk/night remains readable.
-    let ambient_night = 0.55;
-    let ambient_day = 1.05;
+    let ambient_night = 0.25;
+    let ambient_day = 0.5;
     ambient_light.brightness = ambient_night + (ambient_day - ambient_night) * daylight.powf(0.6);
 
     for (mut transform, mut light) in &mut query {
