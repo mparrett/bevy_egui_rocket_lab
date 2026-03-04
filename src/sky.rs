@@ -398,6 +398,7 @@ pub fn cubemap_asset_loaded(
 pub fn animate_light_direction(
     time: Res<Time>,
     mut sky_props: ResMut<SkyProperties>,
+    sky_mode: Res<SkyRenderMode>,
     mut ambient_light: ResMut<GlobalAmbientLight>,
     mut query: Query<(&mut Transform, &mut DirectionalLight), With<SunLightMarker>>,
 ) {
@@ -415,9 +416,11 @@ pub fn animate_light_direction(
     } else {
         Vec3::Y
     };
-    // Keep a baseline fill so late dusk/night remains readable.
-    let ambient_night = 0.25;
-    let ambient_day = 0.5;
+    // Atmosphere mode benefits from a stronger ambient floor than cubemap mode.
+    let (ambient_night, ambient_day) = match *sky_mode {
+        SkyRenderMode::Cubemap => (0.25, 0.5),
+        SkyRenderMode::Atmosphere => (0.55, 1.05),
+    };
     ambient_light.brightness = ambient_night + (ambient_day - ambient_night) * daylight.powf(0.6);
 
     for (mut transform, mut light) in &mut query {
