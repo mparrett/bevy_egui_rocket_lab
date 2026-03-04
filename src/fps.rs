@@ -17,11 +17,12 @@ pub fn setup_fps_counter(mut commands: Commands) {
             FpsRoot,
             Node {
                 position_type: PositionType::Absolute,
-                right: Val::Px(8.),
+                right: Val::Px(12.),
                 top: Val::Px(8.),
                 bottom: Val::Auto,
                 left: Val::Auto,
-                padding: UiRect::all(Val::Px(3.0)),
+                padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..Default::default()
             },
             BackgroundColor(Color::BLACK.with_alpha(0.4)),

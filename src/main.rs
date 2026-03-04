@@ -1,5 +1,4 @@
 use bevy::{
-    app::AppExit,
     camera::Exposure,
     core_pipeline::{Skybox, tonemapping::Tonemapping},
     diagnostic::FrameTimeDiagnosticsPlugin,
@@ -301,14 +300,15 @@ fn init_egui_ui_input_system(
         ),
         (With<RocketMarker>, Without<Camera>),
     >,
-    mut exit: MessageWriter<AppExit>,
+    mut next_state: ResMut<NextState<AppState>>,
     mut reset: MessageWriter<ResetEvent>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let (rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
         rocket_query.single_mut()?;
     if ctx.input(|i| i.key_pressed(Key::Q)) {
-        exit.write(AppExit::Success);
+        reset.write_default();
+        next_state.set(AppState::Menu);
     }
     // Reset
     if ctx.input(|i| i.key_pressed(Key::R)) {
@@ -888,6 +888,23 @@ fn ui_system(
                     }
                 });
 
+            ui.add_space(6.0);
+            egui::CollapsingHeader::new("Keys")
+                .default_open(false)
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    for line in [
+                        "D: destabilize  S: stabilize",
+                        "Hold `/~: slow motion",
+                        "Arrows: orbit / distance",
+                        "Shift+Up/Down: truck cam",
+                        "Esc: world inspector",
+                        "F12: toggle FPS",
+                    ] {
+                        ui.label(line);
+                    }
+                });
+
             ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::hover());
         });
 
@@ -1022,28 +1039,24 @@ fn setup_camera_system(
 }
 
 fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
-    // Instructions (top-right, below FPS)
     commands.spawn((
-        Text::new(
-            "R: reset  Enter/Space: launch  C: camera mode\n\
-             Z: zoom  Q: quit  D/S: destabilize/stabilize\n\
-             Hold `/~: slowmo  Fog: use Sky panel controls\n\
-             Esc: world inspector  Arrows: orbit/dist  Shift+Up/Down: truck",
-        ),
+        Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Q: menu"),
         TextFont {
             font_size: 13.,
             ..default()
         },
-        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.7)),
+        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         Node {
             position_type: PositionType::Absolute,
-            top: Val::Px(30.0),
-            right: Val::Px(10.0),
+            top: Val::Px(8.0),
+            left: Val::Px(280.0),
+            padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
+            border_radius: BorderRadius::all(Val::Px(4.0)),
             ..default()
         },
     ));
 
-    // Scoreboard (top-left, just past the egui panel)
     commands.spawn((
         Text::new(""),
         TextFont {
@@ -1056,8 +1069,9 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
         Node {
             position_type: PositionType::Absolute,
             top: Val::Px(8.0),
-            left: Val::Px(280.0),
-            padding: UiRect::axes(Val::Px(8.0), Val::Px(5.0)),
+            left: Val::Percent(50.0),
+            padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
+            border_radius: BorderRadius::all(Val::Px(4.0)),
             ..default()
         },
         ScoreMarker,
