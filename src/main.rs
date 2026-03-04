@@ -77,6 +77,24 @@ struct RocketGeometryChangedEvent;
 #[derive(Component, Default)]
 struct ScoreMarker;
 
+#[derive(Resource)]
+pub struct AudioSettings {
+    pub music_enabled: bool,
+    pub sfx_enabled: bool,
+}
+
+impl Default for AudioSettings {
+    fn default() -> Self {
+        Self {
+            music_enabled: true,
+            sfx_enabled: true,
+        }
+    }
+}
+
+#[derive(Component)]
+pub struct MusicMarker;
+
 #[derive(Component)]
 struct LoadingOverlay;
 
@@ -146,6 +164,7 @@ fn main() {
         .init_resource::<RocketFlightParameters>()
         .init_resource::<CameraProperties>()
         .init_resource::<RocketState>()
+        .init_resource::<AudioSettings>()
         .add_systems(
             Startup,
             (
@@ -178,7 +197,7 @@ fn main() {
             )
                 .run_if(in_state(AppState::Playing)),
         )
-        .add_systems(Update, (fps_text_update_system, fps_counter_showhide))
+        .add_systems(Update, (fps_text_update_system, fps_counter_showhide, sync_music_mute_system))
         .add_systems(
             PostUpdate,
             (
@@ -300,15 +319,14 @@ fn init_egui_ui_input_system(
         ),
         (With<RocketMarker>, Without<Camera>),
     >,
-    mut next_state: ResMut<NextState<AppState>>,
+    mut app_exit: MessageWriter<AppExit>,
     mut reset: MessageWriter<ResetEvent>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let (rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
         rocket_query.single_mut()?;
     if ctx.input(|i| i.key_pressed(Key::Q)) {
-        reset.write_default();
-        next_state.set(AppState::Menu);
+        app_exit.write(AppExit::Success);
     }
     // Reset
     if ctx.input(|i| i.key_pressed(Key::R)) {
@@ -439,10 +457,14 @@ fn rocket_position_system(
 fn on_crash_event(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    audio_settings: Res<AudioSettings>,
     mut crash_reader: MessageReader<DownedEvent>,
 ) {
     for _event in crash_reader.read() {
         info!("Crash event");
+        if !audio_settings.sfx_enabled {
+            continue;
+        }
         commands.spawn((
             AudioPlayer::new(asset_server.load("audio/impact_wood.ogg")),
             PlaybackSettings::DESPAWN,
@@ -493,9 +515,13 @@ fn on_launch_event(
 fn on_launch_audio_event(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
+    audio_settings: Res<AudioSettings>,
     mut launch_events: MessageReader<LaunchEvent>,
 ) {
     for _ in launch_events.read() {
+        if !audio_settings.sfx_enabled {
+            continue;
+        }
         commands.spawn((
             AudioPlayer::new(asset_server.load("audio/air-rushes-out-fast-long.ogg")),
             PlaybackSettings::DESPAWN,
@@ -992,7 +1018,25 @@ fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         AudioPlayer::new(asset_server.load("audio/Welcome_to_the_Lab_v1.ogg")),
         PlaybackSettings::LOOP,
+        MusicMarker,
     ));
+}
+
+fn sync_music_mute_system(
+    audio_settings: Res<AudioSettings>,
+    mut music_query: Query<&mut AudioSink, With<MusicMarker>>,
+) {
+    if !audio_settings.is_changed() {
+        return;
+    }
+    let Ok(mut sink) = music_query.single_mut() else {
+        return;
+    };
+    if audio_settings.music_enabled {
+        sink.set_volume(bevy::audio::Volume::Linear(1.0));
+    } else {
+        sink.set_volume(bevy::audio::Volume::Linear(0.0));
+    }
 }
 
 const DEFAULT_FOV_DEGREES: f32 = 45.0;
@@ -1052,7 +1096,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         ))
         .with_child((
-            Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Q: menu"),
+            Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Q: quit"),
             TextFont {
                 font_size: 13.,
                 ..default()
@@ -1065,7 +1109,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
-                left: Val::Percent(50.0),
+                right: Val::Px(12.0),
                 padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
