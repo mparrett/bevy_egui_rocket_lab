@@ -81,10 +81,10 @@ impl Particle {
                 },
                 EmissionSettings {
                     emission_pacing: EmissionPacing::CountOverDuration {
-                        count: 120.0,
+                        count: 200.0,
                         duration: 1.0,
                         offset_start: 0.,
-                        offset_end: 0.,
+                        offset_end: 1.,
                     },
                     emission_shape: EmissionShape::Circle {
                         normal: Vec3::Y,
@@ -103,8 +103,8 @@ impl Particle {
                 ParticleSettings {
                     lifetime: RandF32 { min: 5., max: 8. },
                     initial_scale: RandF32 {
-                        min: 0.04,
-                        max: 0.05,
+                        min: 0.05,
+                        max: 0.065,
                     },
                     scale_curve: FireworkCurve::uneven_samples(vec![
                         (0., 1.),
@@ -113,7 +113,7 @@ impl Particle {
                     ]),
                     base_color: FireworkGradient::uneven_samples(vec![
                         (0., LinearRgba::new(1.0, 1.0, 1.0, 0.0)),
-                        (0.1, LinearRgba::new(1.0, 1.0, 1.0, 0.5)),
+                        (0.1, LinearRgba::new(1.0, 1.0, 1.0, 0.65)),
                         (1., LinearRgba::new(1.0, 1.0, 1.0, 0.0)),
                     ]),
                     blend_mode: BlendMode::Blend,
@@ -124,10 +124,10 @@ impl Particle {
                 },
                 EmissionSettings {
                     emission_pacing: EmissionPacing::CountOverDuration {
-                        count: 40.0,
+                        count: 65.0,
                         duration: 1.0,
                         offset_start: 0.,
-                        offset_end: 0.,
+                        offset_end: 1.,
                     },
                     emission_shape: EmissionShape::Circle {
                         normal: Vec3::Y,
@@ -167,10 +167,10 @@ impl Particle {
                 },
                 EmissionSettings {
                     emission_pacing: EmissionPacing::CountOverDuration {
-                        count: 18.0,
+                        count: 25.0,
                         duration: 1.0,
                         offset_start: 0.,
-                        offset_end: 0.,
+                        offset_end: 1.,
                     },
                     emission_shape: EmissionShape::Circle {
                         normal: Vec3::Y,
@@ -256,7 +256,7 @@ fn timers(mut query: Query<(&mut ParticleTimers, &mut ParticleSpawner)>, time: R
         if let Some(deactivate) = &mut timers.shut_down {
             deactivate.tick(time.delta());
             if deactivate.just_finished() {
-                spawner.starts_enabled = false;
+                timers.paused = true;
             }
         }
     }
