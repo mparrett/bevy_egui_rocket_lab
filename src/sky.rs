@@ -1,7 +1,10 @@
 use bevy::prelude::*;
 
 use bevy::image::CompressedImageFormats;
-use bevy::light::{CascadeShadowConfigBuilder, FogVolume, VolumetricFog, VolumetricLight};
+use bevy::light::{
+    CascadeShadowConfigBuilder, FogVolume, NotShadowCaster, NotShadowReceiver, VolumetricFog,
+    VolumetricLight,
+};
 use bevy::{
     core_pipeline::Skybox,
     render::render_resource::{TextureViewDescriptor, TextureViewDimension},
@@ -128,16 +131,11 @@ impl Cubemap {
     }
 }
 
-#[derive(Resource, Clone, Copy, PartialEq, Eq)]
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SkyRenderMode {
+    #[default]
     Cubemap,
     Atmosphere,
-}
-
-impl Default for SkyRenderMode {
-    fn default() -> Self {
-        Self::Cubemap
-    }
 }
 
 #[derive(Resource)]
@@ -252,6 +250,8 @@ pub fn spawn_sun_disc_system(
         MeshMaterial3d(sun_material),
         Transform::from_scale(Vec3::splat(initial_radius)),
         Visibility::Hidden,
+        NotShadowCaster,
+        NotShadowReceiver,
         SunDiscMarker,
     ));
 }
