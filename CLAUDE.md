@@ -30,6 +30,8 @@ Tests exist (`just test`) for launch/reset/landing core-loop behavior. Use `just
 
 **Always test locally before pushing.** This project auto-deploys to GitHub Pages on push to main. Run `just run` for native or `just serve-wasm` for WASM, and verify behavior before committing/pushing. Don't batch untested changes into a push.
 
+**Before every push**, run `just clippy` and `just test` — these same checks run in CI (`.github/workflows/ci.yml`) and will block PRs if they fail.
+
 ## Architecture
 
 **State & Messages:** `LaunchEvent`, `DownedEvent`, `ResetEvent` messages for rocket lifecycle. `RocketStateEnum` tracks `Initial → Launched → Grounded`.
