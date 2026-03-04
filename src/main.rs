@@ -48,12 +48,20 @@ mod cone;
 mod fin;
 mod fps;
 mod ground;
+mod menu;
 mod particles;
 mod physics;
 mod rendering;
 mod rocket;
 mod sky;
 mod util;
+
+#[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum AppState {
+    #[default]
+    Menu,
+    Playing,
+}
 
 #[derive(Message)]
 struct LaunchEvent;
@@ -133,6 +141,8 @@ fn main() {
         .add_plugins(
             WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
         )
+        .init_state::<AppState>()
+        .add_plugins(menu::MenuPlugin)
         .init_resource::<RocketDimensions>()
         .init_resource::<RocketFlightParameters>()
         .init_resource::<CameraProperties>()
@@ -144,31 +154,32 @@ fn main() {
                 setup_camera_system,
                 spawn_rocket_system,
                 setup_sky_system,
-                setup_text_system,
                 setup_fps_counter,
                 spawn_music,
                 setup_loading_overlay,
                 spawn_sun_disc_system,
             ),
         )
+        .add_systems(OnEnter(AppState::Playing), setup_text_system)
         .add_systems(
             EguiPrimaryContextPass,
-            (ui_system, init_egui_ui_input_system, do_launch_system),
+            (ui_system, init_egui_ui_input_system, do_launch_system)
+                .run_if(in_state(AppState::Playing)),
         )
         .add_systems(
             Update,
             (
                 update_rocket_dimensions_system,
-                fps_text_update_system,
-                fps_counter_showhide,
                 on_launch_event,
                 on_launch_audio_event,
                 on_reset_event,
                 detect_landing_from_collision_system,
                 on_crash_event,
                 update_stats_system,
-            ),
+            )
+                .run_if(in_state(AppState::Playing)),
         )
+        .add_systems(Update, (fps_text_update_system, fps_counter_showhide))
         .add_systems(
             PostUpdate,
             (
@@ -176,12 +187,15 @@ fn main() {
                 update_camera_zoom_perspective_system,
                 update_camera_transform_system,
             )
+                .run_if(in_state(AppState::Playing))
                 .after(PhysicsSystems::Writeback)
                 .before(TransformSystems::Propagate),
         );
     app.add_systems(
         FixedPostUpdate,
-        update_forces_system.in_set(PhysicsSystems::First),
+        update_forces_system
+            .in_set(PhysicsSystems::First)
+            .run_if(in_state(AppState::Playing)),
     );
 
     app.add_systems(Startup, spawn_regular_sky_map);
@@ -195,7 +209,10 @@ fn main() {
             check_loading_complete,
         ),
     );
-    app.add_systems(Update, (adjust_time_scale, mouse_orbit_system));
+    app.add_systems(
+        Update,
+        (adjust_time_scale, mouse_orbit_system).run_if(in_state(AppState::Playing)),
+    );
 
     app.run();
 }
