@@ -303,7 +303,7 @@ fn do_launch_system(
             camera_properties.desired_translation.z -= increment * delta_to_target.z;
         } else {
             camera_properties.fixed_distance =
-                (camera_properties.fixed_distance - 0.1).clamp(1.0, 50.0);
+                (camera_properties.fixed_distance - 0.1).clamp(0.0, 50.0);
         }
     } else if arrow_down {
         if shift_held {
@@ -314,7 +314,7 @@ fn do_launch_system(
             camera_properties.desired_translation.z += increment * delta_to_target.z;
         } else {
             camera_properties.fixed_distance =
-                (camera_properties.fixed_distance + 0.1).clamp(1.0, 50.0);
+                (camera_properties.fixed_distance + 0.1).clamp(0.0, 50.0);
         }
     }
 
@@ -490,6 +490,7 @@ fn detect_landing_from_collision_system(
 
 fn update_stats_system(
     rocket_state: Res<RocketState>,
+    sky_props: Res<SkyProperties>,
     mut text_query: Query<&mut Text, With<ScoreMarker>>,
     rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
 ) {
@@ -500,8 +501,10 @@ fn update_stats_system(
         return;
     };
     let altitude = (transform.translation.y - rocket_state.launch_origin_y).max(0.0);
+    let h = sky_props.time_of_day as u32 % 24;
+    let m = ((sky_props.time_of_day.fract()) * 60.0) as u32;
     **score_text = format!(
-        "Alt: {:.1} / {:.1} m  Vel: {:.1} / {:.1} m/s",
+        "Alt: {:.1} / {:.1} m  Vel: {:.1} / {:.1} m/s  {h:02}:{m:02}",
         altitude,
         rocket_state.max_height,
         velocity.length(),
@@ -515,7 +518,7 @@ fn ui_system(
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
     mut sky_props: ResMut<SkyProperties>,
-    rocket_query: Query<(&Mass, &CenterOfMass), (With<RocketMarker>, Without<Camera>)>,
+    rocket_query: Query<(&ComputedMass, &ComputedCenterOfMass), (With<RocketMarker>, Without<Camera>)>,
     mut fog_query: Query<&mut DistanceFog>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
@@ -530,7 +533,7 @@ fn ui_system(
                 .default_open(true)
                 .show(ui, |ui| {
                     ui.add(
-                        egui::Slider::new(&mut camera_properties.fixed_distance, -50.0..=50.0)
+                        egui::Slider::new(&mut camera_properties.fixed_distance, 0.0..=50.0)
                             .text("distance"),
                     );
                     ui.add(
@@ -541,10 +544,10 @@ fn ui_system(
                         egui::Slider::new(&mut camera_properties.desired_translation.y, 0.1..=20.0)
                             .text("elevation"),
                     );
-                    ui.add(egui::Slider::new(&mut camera_properties.zoom, 0.2..=5.0).text("zoom"));
+                    ui.add(egui::Slider::new(&mut camera_properties.zoom, 0.5..=10.0).text("zoom"));
                     ui.add(
                         egui::Slider::new(&mut camera_properties.target_y_offset, -10.0..=10.0)
-                            .text("target Y"),
+                            .text("look Y offset"),
                     );
 
                     let mode_label = match camera_properties.follow_mode {
@@ -624,6 +627,13 @@ fn ui_system(
                     if changed {
                         rocket_dims.flag_changed = true;
                     }
+                    if let Ok((mass, com)) = rocket_query.single() {
+                        ui.separator();
+                        ui.label(format!(
+                            "Mass: {:.3}  CoM: ({:.2}, {:.2}, {:.2})",
+                            mass.value(), com.0.x, com.0.y, com.0.z
+                        ));
+                    }
                 });
 
             ui.add_space(6.0);
@@ -639,12 +649,6 @@ fn ui_system(
                         egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
                             .text("duration"),
                     );
-                    if let Ok((mass, com)) = rocket_query.single() {
-                        ui.label(format!(
-                            "Mass: {:.3}  CoM: ({:.2}, {:.2}, {:.2})",
-                            mass.0, com.0.x, com.0.y, com.0.z
-                        ));
-                    }
                 });
 
             ui.add_space(6.0);
@@ -678,6 +682,14 @@ fn ui_system(
                             }
                         }
                     }
+
+                    ui.separator();
+                    ui.add(
+                        egui::Slider::new(&mut sky_props.time_of_day, 0.0..=24.0).text("time"),
+                    );
+                    ui.add(
+                        egui::Slider::new(&mut sky_props.day_speed, 0.0..=600.0).text("speed"),
+                    );
 
                     ui.separator();
                     ui.checkbox(

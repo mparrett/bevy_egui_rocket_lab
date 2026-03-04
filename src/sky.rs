@@ -6,7 +6,7 @@ use bevy::{
     core_pipeline::Skybox,
     render::render_resource::{TextureViewDescriptor, TextureViewDimension},
 };
-use std::f32::consts::PI;
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 pub struct FogColors {
     pub base: Color,
@@ -130,6 +130,8 @@ pub struct SkyProperties {
     pub fog_enabled: bool,
     pub fog_visibility: f32,
     pub volumetrics_enabled: bool,
+    pub time_of_day: f32,
+    pub day_speed: f32,
 }
 
 impl Default for SkyProperties {
@@ -141,6 +143,8 @@ impl Default for SkyProperties {
             fog_enabled: false,
             fog_visibility: 150.0,
             volumetrics_enabled: false,
+            time_of_day: 17.0,
+            day_speed: 60.0,
         }
     }
 }
@@ -315,11 +319,29 @@ pub fn cubemap_asset_loaded(
 
 pub fn animate_light_direction(
     time: Res<Time>,
+    mut sky_props: ResMut<SkyProperties>,
     mut query: Query<&mut Transform, With<DirectionalLight>>,
 ) {
-    let rotate_speed = 0.03;
+    let dt = time.delta_secs();
+    if sky_props.day_speed > 0.0 {
+        sky_props.time_of_day += dt / sky_props.day_speed;
+        if sky_props.time_of_day >= 24.0 {
+            sky_props.time_of_day -= 24.0;
+        }
+    }
+
+    let sun_angle = (sky_props.time_of_day / 24.0) * TAU - FRAC_PI_2;
+    let tilt = 20f32.to_radians();
+
+    let direction = Vec3::new(
+        sun_angle.cos() * tilt.cos(),
+        sun_angle.sin(),
+        sun_angle.cos() * tilt.sin(),
+    )
+    .normalize();
+
     for mut transform in &mut query {
-        transform.rotate_y(time.delta_secs() * rotate_speed);
+        *transform = Transform::default().looking_to(-direction, Vec3::Y);
     }
 }
 pub fn make_atmospheric_fog(visibility: f32, skybox_index: usize) -> DistanceFog {
