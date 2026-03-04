@@ -192,6 +192,9 @@ pub struct VolumetricFogMarker;
 #[derive(Component)]
 pub struct SunDiscMarker;
 
+#[derive(Component)]
+pub struct SunLightMarker;
+
 pub fn setup_sky_system(mut commands: Commands) {
     commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb_u8(210, 220, 240),
@@ -215,6 +218,7 @@ pub fn setup_sky_system(mut commands: Commands) {
         },
         Transform::from_xyz(0.0, 2.0, 0.0).with_rotation(Quat::from_rotation_x(-PI / 4.)),
         cascade_shadow_config,
+        SunLightMarker,
     ));
 }
 
@@ -394,21 +398,25 @@ pub fn cubemap_asset_loaded(
 pub fn animate_light_direction(
     time: Res<Time>,
     mut sky_props: ResMut<SkyProperties>,
-    mut query: Query<(&mut Transform, &mut DirectionalLight)>,
+    mut query: Query<(&mut Transform, &mut DirectionalLight), With<SunLightMarker>>,
 ) {
     let dt = time.delta_secs();
     if sky_props.day_speed > 0.0 {
-        sky_props.time_of_day += dt / sky_props.day_speed;
-        if sky_props.time_of_day >= 24.0 {
-            sky_props.time_of_day -= 24.0;
-        }
+        sky_props.time_of_day = (sky_props.time_of_day + dt / sky_props.day_speed).rem_euclid(24.0);
+    } else {
+        sky_props.time_of_day = sky_props.time_of_day.rem_euclid(24.0);
     }
 
     let direction = sun_direction_for_time(sky_props.time_of_day);
     let daylight = direction.y.max(0.0);
+    let up = if direction.y.abs() > 0.999 {
+        Vec3::X
+    } else {
+        Vec3::Y
+    };
 
     for (mut transform, mut light) in &mut query {
-        *transform = Transform::default().looking_to(-direction, Vec3::Y);
+        *transform = Transform::default().looking_to(-direction, up);
         light.illuminance = if daylight > 0.0 {
             light_consts::lux::CLEAR_SUNRISE
                 + (light_consts::lux::RAW_SUNLIGHT - light_consts::lux::CLEAR_SUNRISE)
@@ -421,6 +429,7 @@ pub fn animate_light_direction(
 
 pub fn update_sun_disc_system(
     sky_props: Res<SkyProperties>,
+    sky_mode: Res<SkyRenderMode>,
     settings: Res<SunDiscSettings>,
     camera_query: Query<&GlobalTransform, With<Camera3d>>,
     mut disc_query: Query<
@@ -440,7 +449,7 @@ pub fn update_sun_disc_system(
         return;
     };
 
-    if !settings.enabled {
+    if *sky_mode != SkyRenderMode::Cubemap || !settings.enabled {
         *visibility = Visibility::Hidden;
         return;
     }
