@@ -357,6 +357,6 @@ pub fn mouse_orbit_system(
     let scroll_y = accumulated_scroll.delta.y;
     if scroll_y != 0.0 {
         camera_properties.fixed_distance -= scroll_y * 0.5;
-        camera_properties.fixed_distance = camera_properties.fixed_distance.clamp(1.0, 50.0);
+        camera_properties.fixed_distance = camera_properties.fixed_distance.clamp(0.0, 50.0);
     }
 }
