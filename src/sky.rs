@@ -161,7 +161,7 @@ impl Default for SkyProperties {
             fog_enabled: false,
             fog_visibility: 150.0,
             volumetrics_enabled: false,
-            time_of_day: 17.0,
+            time_of_day: 10.0,
             day_speed: 60.0,
         }
     }
@@ -398,6 +398,7 @@ pub fn cubemap_asset_loaded(
 pub fn animate_light_direction(
     time: Res<Time>,
     mut sky_props: ResMut<SkyProperties>,
+    mut ambient_light: ResMut<GlobalAmbientLight>,
     mut query: Query<(&mut Transform, &mut DirectionalLight), With<SunLightMarker>>,
 ) {
     let dt = time.delta_secs();
@@ -414,6 +415,10 @@ pub fn animate_light_direction(
     } else {
         Vec3::Y
     };
+    // Keep a baseline fill so late dusk/night remains readable.
+    let ambient_night = 0.55;
+    let ambient_day = 1.05;
+    ambient_light.brightness = ambient_night + (ambient_day - ambient_night) * daylight.powf(0.6);
 
     for (mut transform, mut light) in &mut query {
         *transform = Transform::default().looking_to(-direction, up);
