@@ -18,7 +18,7 @@ pub fn setup_fps_counter(mut commands: Commands) {
             Node {
                 position_type: PositionType::Absolute,
                 right: Val::Px(12.),
-                top: Val::Px(8.),
+                top: Val::Px(42.),
                 bottom: Val::Auto,
                 left: Val::Auto,
                 padding: UiRect::axes(Val::Px(8.0), Val::Px(4.0)),
