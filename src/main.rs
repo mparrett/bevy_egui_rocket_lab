@@ -738,6 +738,7 @@ fn ui_system(
             egui::CollapsingHeader::new("Sky")
                 .default_open(false)
                 .show(ui, |ui| {
+                    let is_cubemap_mode = *sky_mode == SkyRenderMode::Cubemap;
                     let mode_label = match *sky_mode {
                         SkyRenderMode::Cubemap => "Cubemap",
                         SkyRenderMode::Atmosphere => "Atmosphere",
@@ -753,37 +754,8 @@ fn ui_system(
                             );
                         });
 
-                    if *sky_mode == SkyRenderMode::Atmosphere {
+                    if !is_cubemap_mode {
                         ui.label("Atmosphere mode uses procedural sky + IBL");
-                    }
-
-                    ui.separator();
-                    let current_name = SKYBOXES[sky_props.skybox_index].name;
-                    let mut changed = false;
-                    egui::ComboBox::from_label("skybox")
-                        .selected_text(current_name)
-                        .show_ui(ui, |ui| {
-                            for (i, entry) in SKYBOXES.iter().enumerate() {
-                                if ui
-                                    .selectable_value(&mut sky_props.skybox_index, i, entry.name)
-                                    .changed()
-                                {
-                                    changed = true;
-                                }
-                            }
-                        });
-                    if changed {
-                        sky_props.skybox_changed = true;
-                        if sky_props.fog_enabled
-                            && let Ok(mut fog_settings) = fog_query.single_mut()
-                        {
-                            apply_fog_mode(
-                                &mut fog_settings,
-                                sky_props.fog_mode,
-                                sky_props.fog_visibility,
-                                sky_props.skybox_index,
-                            );
-                        }
                     }
 
                     ui.separator();
@@ -791,19 +763,58 @@ fn ui_system(
                     ui.add(egui::Slider::new(&mut sky_props.day_speed, 0.0..=600.0).text("speed"));
 
                     ui.separator();
-                    ui.checkbox(&mut sun_disc_settings.enabled, "Sun disc");
-                    ui.add(
-                        egui::Slider::new(
-                            &mut sun_disc_settings.emissive_strength,
-                            1000.0..=80000.0,
-                        )
-                        .logarithmic(true)
-                        .text("sun emissive"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut sun_disc_settings.angular_diameter_deg, 0.1..=1.5)
+                    if is_cubemap_mode {
+                        let current_name = SKYBOXES[sky_props.skybox_index].name;
+                        let mut changed = false;
+                        egui::ComboBox::from_label("skybox")
+                            .selected_text(current_name)
+                            .show_ui(ui, |ui| {
+                                for (i, entry) in SKYBOXES.iter().enumerate() {
+                                    if ui
+                                        .selectable_value(&mut sky_props.skybox_index, i, entry.name)
+                                        .changed()
+                                    {
+                                        changed = true;
+                                    }
+                                }
+                            });
+                        if changed {
+                            sky_props.skybox_changed = true;
+                            if sky_props.fog_enabled
+                                && let Ok(mut fog_settings) = fog_query.single_mut()
+                            {
+                                apply_fog_mode(
+                                    &mut fog_settings,
+                                    sky_props.fog_mode,
+                                    sky_props.fog_visibility,
+                                    sky_props.skybox_index,
+                                );
+                            }
+                        }
+
+                        ui.separator();
+                        ui.checkbox(&mut sun_disc_settings.enabled, "Sun disc");
+                        ui.add(
+                            egui::Slider::new(
+                                &mut sun_disc_settings.emissive_strength,
+                                1000.0..=80000.0,
+                            )
+                            .logarithmic(true)
+                            .text("sun emissive"),
+                        );
+                        ui.add(
+                            egui::Slider::new(
+                                &mut sun_disc_settings.angular_diameter_deg,
+                                0.1..=1.5,
+                            )
                             .text("sun size (deg)"),
-                    );
+                        );
+                        ui.separator();
+                    } else {
+                        ui.label("Cubemap-only controls are hidden in Atmosphere mode.");
+                        ui.separator();
+                    }
+
                     if let Ok(mut bloom) = bloom_query.single_mut() {
                         ui.add(egui::Slider::new(&mut bloom.intensity, 0.0..=1.0).text("bloom"));
                         ui.add(
