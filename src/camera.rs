@@ -13,6 +13,7 @@ pub const CAMERA_FAST_FOLLOW_FREQ_HZ: f32 = 6.5;
 pub const CAMERA_FOLLOW_FREQ_HZ: f32 = 4.5;
 pub const HUMAN_LOOK_FREQ_HZ: f32 = 2.8;
 pub const CAMERA_MAX_SPEED: f32 = 85.0;
+pub const SCROLL_ZOOM_SENSITIVITY: f32 = 0.2;
 pub const ZOOM_LEVELS: &[f32] = &[0.8, 1.0, 2.0, 4.0, 8.0, 16.0];
 pub const CAMERA_MODES: &[FollowMode] = &[
     FollowMode::FixedGround,
@@ -356,7 +357,7 @@ pub fn mouse_orbit_system(
 
     let scroll_y = accumulated_scroll.delta.y;
     if scroll_y != 0.0 {
-        camera_properties.fixed_distance -= scroll_y * 0.5;
+        camera_properties.fixed_distance -= scroll_y * SCROLL_ZOOM_SENSITIVITY;
         camera_properties.fixed_distance = camera_properties.fixed_distance.clamp(0.0, 50.0);
     }
 }
