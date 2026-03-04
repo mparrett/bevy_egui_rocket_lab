@@ -1,10 +1,13 @@
 use bevy::{
     app::AppExit,
-    core_pipeline::Skybox,
+    camera::Exposure,
+    core_pipeline::{Skybox, tonemapping::Tonemapping},
     diagnostic::FrameTimeDiagnosticsPlugin,
     image::{CompressedImageFormats, ImageAddressMode, ImageSamplerDescriptor},
     input::common_conditions::input_toggle_active,
+    light::AtmosphereEnvironmentMapLight,
     math::primitives::Cylinder,
+    pbr::{Atmosphere, AtmosphereSettings, ScatteringMedium},
     post_process::bloom::Bloom,
     prelude::*,
     render::view::Hdr,
@@ -17,7 +20,7 @@ use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use egui::Key;
 use particles::RocketParticlesPlugin;
-use sky::SkyProperties;
+use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 
 use crate::{
     camera::{
@@ -34,7 +37,8 @@ use crate::{
     },
     sky::{
         Cubemap, SKYBOXES, animate_light_direction, apply_fog_mode, cubemap_asset_loaded,
-        pick_best_variant, setup_sky_system, spawn_regular_sky_map, sync_volumetrics_system,
+        pick_best_variant, setup_sky_system, spawn_regular_sky_map, spawn_sun_disc_system,
+        sync_volumetrics_system, update_sun_disc_system,
     },
     util::random_vec,
 };
@@ -119,6 +123,8 @@ fn main() {
     app.add_plugins(ParticleSystemPlugin::default())
         .add_plugins(PhysicsPlugins::default())
         .insert_resource(SkyProperties::default())
+        .insert_resource(SkyRenderMode::default())
+        .insert_resource(SunDiscSettings::default())
         .insert_resource(Gravity(Vec3::NEG_Y * 9.81 * 1.0))
         .add_plugins(EguiPlugin::default())
         .add_plugins(RocketParticlesPlugin)
@@ -142,6 +148,7 @@ fn main() {
                 setup_fps_counter,
                 spawn_music,
                 setup_loading_overlay,
+                spawn_sun_disc_system,
             ),
         )
         .add_systems(
@@ -181,8 +188,9 @@ fn main() {
     app.add_systems(
         Update,
         (
+            sync_sky_render_mode_system,
             cubemap_asset_loaded,
-            animate_light_direction,
+            (animate_light_direction, update_sun_disc_system).chain(),
             sync_volumetrics_system,
             check_loading_complete,
         ),
@@ -196,6 +204,72 @@ fn adjust_time_scale(mut time: ResMut<Time<Virtual>>, input: Res<ButtonInput<Key
     // Hold backquote (`/~) for temporary slow motion.
     let slowmo_active = input.pressed(KeyCode::Backquote);
     time.set_relative_speed(if slowmo_active { 0.05 } else { 1.0 });
+}
+
+fn sync_sky_render_mode_system(
+    sky_mode: Res<SkyRenderMode>,
+    sky_props: Res<SkyProperties>,
+    cubemap: Option<Res<Cubemap>>,
+    asset_server: Res<AssetServer>,
+    mut scattering_media: ResMut<Assets<ScatteringMedium>>,
+    mut cached_medium: Local<Option<Handle<ScatteringMedium>>>,
+    mut commands: Commands,
+    camera_query: Query<(Entity, Option<&Skybox>, Option<&Atmosphere>), With<Camera3d>>,
+) {
+    if !sky_mode.is_changed() {
+        return;
+    }
+
+    let Ok((camera, skybox, atmosphere)) = camera_query.single() else {
+        return;
+    };
+
+    match *sky_mode {
+        SkyRenderMode::Cubemap => {
+            commands.entity(camera).insert(Exposure::BLENDER);
+            commands.entity(camera).remove::<(
+                Atmosphere,
+                AtmosphereSettings,
+                AtmosphereEnvironmentMapLight,
+            )>();
+
+            if skybox.is_none() {
+                let skybox_image =
+                    cubemap
+                        .as_ref()
+                        .map(|c| c.image_handle())
+                        .unwrap_or_else(|| {
+                            let path = pick_best_variant(
+                                SKYBOXES[sky_props.skybox_index].variants,
+                                CompressedImageFormats::NONE,
+                            );
+                            asset_server.load(path)
+                        });
+                commands.entity(camera).insert(Skybox {
+                    image: skybox_image,
+                    brightness: 150.0,
+                    ..default()
+                });
+            }
+        }
+        SkyRenderMode::Atmosphere => {
+            commands.entity(camera).insert(Exposure::SUNLIGHT);
+            if skybox.is_some() {
+                commands.entity(camera).remove::<Skybox>();
+            }
+
+            if atmosphere.is_none() {
+                let medium = cached_medium
+                    .get_or_insert_with(|| scattering_media.add(ScatteringMedium::default()))
+                    .clone();
+                commands.entity(camera).insert((
+                    Atmosphere::earthlike(medium),
+                    AtmosphereSettings::default(),
+                    AtmosphereEnvironmentMapLight::default(),
+                ));
+            }
+        }
+    }
 }
 
 fn init_egui_ui_input_system(
@@ -518,8 +592,14 @@ fn ui_system(
     mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     mut camera_properties: ResMut<CameraProperties>,
     mut sky_props: ResMut<SkyProperties>,
-    rocket_query: Query<(&ComputedMass, &ComputedCenterOfMass), (With<RocketMarker>, Without<Camera>)>,
+    mut sky_mode: ResMut<SkyRenderMode>,
+    mut sun_disc_settings: ResMut<SunDiscSettings>,
+    rocket_query: Query<
+        (&ComputedMass, &ComputedCenterOfMass),
+        (With<RocketMarker>, Without<Camera>),
+    >,
     mut fog_query: Query<&mut DistanceFog>,
+    mut bloom_query: Query<&mut Bloom, With<Camera3d>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     camera_properties.egui_has_pointer = ctx.wants_pointer_input();
@@ -631,7 +711,10 @@ fn ui_system(
                         ui.separator();
                         ui.label(format!(
                             "Mass: {:.3}  CoM: ({:.2}, {:.2}, {:.2})",
-                            mass.value(), com.0.x, com.0.y, com.0.z
+                            mass.value(),
+                            com.0.x,
+                            com.0.y,
+                            com.0.z
                         ));
                     }
                 });
@@ -655,6 +738,26 @@ fn ui_system(
             egui::CollapsingHeader::new("Sky")
                 .default_open(false)
                 .show(ui, |ui| {
+                    let mode_label = match *sky_mode {
+                        SkyRenderMode::Cubemap => "Cubemap",
+                        SkyRenderMode::Atmosphere => "Atmosphere",
+                    };
+                    egui::ComboBox::from_label("sky mode")
+                        .selected_text(mode_label)
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut *sky_mode, SkyRenderMode::Cubemap, "Cubemap");
+                            ui.selectable_value(
+                                &mut *sky_mode,
+                                SkyRenderMode::Atmosphere,
+                                "Atmosphere",
+                            );
+                        });
+
+                    if *sky_mode == SkyRenderMode::Atmosphere {
+                        ui.label("Atmosphere mode uses procedural sky + IBL");
+                    }
+
+                    ui.separator();
                     let current_name = SKYBOXES[sky_props.skybox_index].name;
                     let mut changed = false;
                     egui::ComboBox::from_label("skybox")
@@ -684,12 +787,30 @@ fn ui_system(
                     }
 
                     ui.separator();
+                    ui.add(egui::Slider::new(&mut sky_props.time_of_day, 0.0..=24.0).text("time"));
+                    ui.add(egui::Slider::new(&mut sky_props.day_speed, 0.0..=600.0).text("speed"));
+
+                    ui.separator();
+                    ui.checkbox(&mut sun_disc_settings.enabled, "Sun disc");
                     ui.add(
-                        egui::Slider::new(&mut sky_props.time_of_day, 0.0..=24.0).text("time"),
+                        egui::Slider::new(
+                            &mut sun_disc_settings.emissive_strength,
+                            1000.0..=80000.0,
+                        )
+                        .logarithmic(true)
+                        .text("sun emissive"),
                     );
                     ui.add(
-                        egui::Slider::new(&mut sky_props.day_speed, 0.0..=600.0).text("speed"),
+                        egui::Slider::new(&mut sun_disc_settings.angular_diameter_deg, 0.1..=1.5)
+                            .text("sun size (deg)"),
                     );
+                    if let Ok(mut bloom) = bloom_query.single_mut() {
+                        ui.add(egui::Slider::new(&mut bloom.intensity, 0.0..=1.0).text("bloom"));
+                        ui.add(
+                            egui::Slider::new(&mut bloom.high_pass_frequency, 0.0..=1.0)
+                                .text("bloom high-pass"),
+                        );
+                    }
 
                     ui.separator();
                     ui.checkbox(
@@ -729,9 +850,7 @@ fn ui_system(
                         fog_changed = true;
                     }
 
-                    if fog_changed
-                        && let Ok(mut fog_settings) = fog_query.single_mut()
-                    {
+                    if fog_changed && let Ok(mut fog_settings) = fog_query.single_mut() {
                         apply_fog_mode(
                             &mut fog_settings,
                             sky_props.fog_mode,
@@ -855,6 +974,8 @@ fn setup_camera_system(
         camera_transform,
         Camera::default(),
         Hdr,
+        Tonemapping::TonyMcMapface,
+        Exposure::BLENDER,
         Projection::Perspective(PerspectiveProjection {
             fov: DEFAULT_FOV_DEGREES.to_radians(),
             ..default()
@@ -864,7 +985,7 @@ fn setup_camera_system(
             brightness: 150.0,
             ..default()
         },
-        Bloom::default(),
+        Bloom::NATURAL,
         DistanceFog {
             color: Color::srgba(0.0, 0.0, 0.0, 0.0),
             ..default()

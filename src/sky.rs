@@ -122,6 +122,24 @@ pub struct Cubemap {
     image_handle: Handle<Image>,
 }
 
+impl Cubemap {
+    pub fn image_handle(&self) -> Handle<Image> {
+        self.image_handle.clone()
+    }
+}
+
+#[derive(Resource, Clone, Copy, PartialEq, Eq)]
+pub enum SkyRenderMode {
+    Cubemap,
+    Atmosphere,
+}
+
+impl Default for SkyRenderMode {
+    fn default() -> Self {
+        Self::Cubemap
+    }
+}
+
 #[derive(Resource)]
 pub struct SkyProperties {
     pub fog_mode: usize,
@@ -149,8 +167,30 @@ impl Default for SkyProperties {
     }
 }
 
+#[derive(Resource)]
+pub struct SunDiscSettings {
+    pub enabled: bool,
+    pub distance: f32,
+    pub angular_diameter_deg: f32,
+    pub emissive_strength: f32,
+}
+
+impl Default for SunDiscSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            distance: 250.0,
+            angular_diameter_deg: 0.53,
+            emissive_strength: 22_000.0,
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct VolumetricFogMarker;
+
+#[derive(Component)]
+pub struct SunDiscMarker;
 
 pub fn setup_sky_system(mut commands: Commands) {
     commands.insert_resource(GlobalAmbientLight {
@@ -175,6 +215,40 @@ pub fn setup_sky_system(mut commands: Commands) {
         },
         Transform::from_xyz(0.0, 2.0, 0.0).with_rotation(Quat::from_rotation_x(-PI / 4.)),
         cascade_shadow_config,
+    ));
+}
+
+pub fn spawn_sun_disc_system(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    settings: Res<SunDiscSettings>,
+) {
+    let initial_radius = sun_disc_radius(settings.distance, settings.angular_diameter_deg);
+    let sun_material = materials.add(StandardMaterial {
+        base_color: Color::WHITE,
+        emissive: LinearRgba::rgb(
+            settings.emissive_strength,
+            settings.emissive_strength * 0.95,
+            settings.emissive_strength * 0.85,
+        ),
+        emissive_exposure_weight: 1.0,
+        unlit: true,
+        ..default()
+    });
+    let sun_mesh = meshes.add(
+        Sphere::new(1.0)
+            .mesh()
+            .ico(4)
+            .expect("sun disc sphere should have valid ico subdivisions"),
+    );
+
+    commands.spawn((
+        Mesh3d(sun_mesh),
+        MeshMaterial3d(sun_material),
+        Transform::from_scale(Vec3::splat(initial_radius)),
+        Visibility::Hidden,
+        SunDiscMarker,
     ));
 }
 
@@ -320,7 +394,7 @@ pub fn cubemap_asset_loaded(
 pub fn animate_light_direction(
     time: Res<Time>,
     mut sky_props: ResMut<SkyProperties>,
-    mut query: Query<&mut Transform, With<DirectionalLight>>,
+    mut query: Query<(&mut Transform, &mut DirectionalLight)>,
 ) {
     let dt = time.delta_secs();
     if sky_props.day_speed > 0.0 {
@@ -330,19 +404,87 @@ pub fn animate_light_direction(
         }
     }
 
-    let sun_angle = (sky_props.time_of_day / 24.0) * TAU - FRAC_PI_2;
-    let tilt = 20f32.to_radians();
+    let direction = sun_direction_for_time(sky_props.time_of_day);
+    let daylight = direction.y.max(0.0);
 
-    let direction = Vec3::new(
+    for (mut transform, mut light) in &mut query {
+        *transform = Transform::default().looking_to(-direction, Vec3::Y);
+        light.illuminance = if daylight > 0.0 {
+            light_consts::lux::CLEAR_SUNRISE
+                + (light_consts::lux::RAW_SUNLIGHT - light_consts::lux::CLEAR_SUNRISE)
+                    * daylight.powf(0.45)
+        } else {
+            light_consts::lux::FULL_MOON_NIGHT
+        };
+    }
+}
+
+pub fn update_sun_disc_system(
+    sky_props: Res<SkyProperties>,
+    settings: Res<SunDiscSettings>,
+    camera_query: Query<&GlobalTransform, With<Camera3d>>,
+    mut disc_query: Query<
+        (
+            &mut Transform,
+            &MeshMaterial3d<StandardMaterial>,
+            &mut Visibility,
+        ),
+        With<SunDiscMarker>,
+    >,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let Ok(camera_transform) = camera_query.single() else {
+        return;
+    };
+    let Ok((mut transform, material_handle, mut visibility)) = disc_query.single_mut() else {
+        return;
+    };
+
+    if !settings.enabled {
+        *visibility = Visibility::Hidden;
+        return;
+    }
+
+    let sun_direction = sun_direction_for_time(sky_props.time_of_day);
+    if sun_direction.y <= -0.05 {
+        *visibility = Visibility::Hidden;
+        return;
+    }
+
+    *visibility = Visibility::Visible;
+    let radius = sun_disc_radius(settings.distance, settings.angular_diameter_deg);
+    transform.translation = camera_transform.translation() + sun_direction * settings.distance;
+    transform.scale = Vec3::splat(radius);
+
+    if let Some(material) = materials.get_mut(&material_handle.0) {
+        let warmness = (1.0 - sun_direction.y.clamp(0.0, 1.0)).powf(1.8);
+        let r = 1.0;
+        let g = 0.95 - 0.28 * warmness;
+        let b = 0.85 - 0.45 * warmness;
+        let altitude_boost = ((sun_direction.y + 0.05) / 0.4).clamp(0.0, 1.0);
+        let emissive_strength = settings.emissive_strength * (0.25 + 0.75 * altitude_boost);
+        material.emissive = LinearRgba::rgb(
+            r * emissive_strength,
+            g * emissive_strength,
+            b * emissive_strength,
+        );
+    }
+}
+
+pub fn sun_direction_for_time(time_of_day: f32) -> Vec3 {
+    let sun_angle = (time_of_day / 24.0) * TAU - FRAC_PI_2;
+    let tilt = 20f32.to_radians();
+    Vec3::new(
         sun_angle.cos() * tilt.cos(),
         sun_angle.sin(),
         sun_angle.cos() * tilt.sin(),
     )
-    .normalize();
+    .normalize()
+}
 
-    for mut transform in &mut query {
-        *transform = Transform::default().looking_to(-direction, Vec3::Y);
-    }
+fn sun_disc_radius(distance: f32, angular_diameter_deg: f32) -> f32 {
+    let half_angle = (angular_diameter_deg.to_radians() * 0.5).max(0.0001);
+    distance * half_angle.tan()
 }
 pub fn make_atmospheric_fog(visibility: f32, skybox_index: usize) -> DistanceFog {
     let fog = &SKYBOXES[skybox_index].fog;
