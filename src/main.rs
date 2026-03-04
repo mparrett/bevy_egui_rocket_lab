@@ -1039,43 +1039,49 @@ fn setup_camera_system(
 }
 
 fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands.spawn((
-        Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Q: menu"),
-        TextFont {
-            font_size: 13.,
-            ..default()
-        },
-        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(8.0),
-            left: Val::Px(280.0),
-            padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
-            border_radius: BorderRadius::all(Val::Px(4.0)),
-            ..default()
-        },
-    ));
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(8.0),
+                left: Val::Px(280.0),
+                padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        ))
+        .with_child((
+            Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Q: menu"),
+            TextFont {
+                font_size: 13.,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+        ));
 
-    commands.spawn((
-        Text::new(""),
-        TextFont {
-            font: asset_server.load("fonts/FiraMono-Medium.ttf"),
-            font_size: 13.0,
-            ..default()
-        },
-        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
-        BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
-        Node {
-            position_type: PositionType::Absolute,
-            top: Val::Px(8.0),
-            left: Val::Percent(50.0),
-            padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
-            border_radius: BorderRadius::all(Val::Px(4.0)),
-            ..default()
-        },
-        ScoreMarker,
-    ));
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(8.0),
+                left: Val::Percent(50.0),
+                padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        ))
+        .with_child((
+            Text::new(""),
+            TextFont {
+                font: asset_server.load("fonts/FiraMono-Medium.ttf"),
+                font_size: 13.0,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
+            ScoreMarker,
+        ));
 }
 
 #[cfg(test)]
