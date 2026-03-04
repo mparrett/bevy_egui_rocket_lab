@@ -13,7 +13,7 @@ pub const CAMERA_FAST_FOLLOW_FREQ_HZ: f32 = 6.5;
 pub const CAMERA_FOLLOW_FREQ_HZ: f32 = 4.5;
 pub const HUMAN_LOOK_FREQ_HZ: f32 = 2.8;
 pub const CAMERA_MAX_SPEED: f32 = 85.0;
-pub const SCROLL_ZOOM_SENSITIVITY: f32 = 0.2;
+pub const SCROLL_ZOOM_SENSITIVITY: f32 = 0.01;
 pub const ZOOM_LEVELS: &[f32] = &[0.8, 1.0, 2.0, 4.0, 8.0, 16.0];
 pub const CAMERA_MODES: &[FollowMode] = &[
     FollowMode::FixedGround,
