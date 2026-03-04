@@ -1088,7 +1088,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
-                left: Val::Px(280.0),
+                left: Val::Px(296.0),
                 padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
