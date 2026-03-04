@@ -240,13 +240,13 @@ pub fn pick_best_variant<'a>(
         .iter()
         .find(|(_, fmt)| *fmt == CompressedImageFormats::NONE || supported.contains(*fmt))
     {
-        *path
+        path
     } else {
         warn!(
             "No supported compressed skybox format found; falling back to {}",
             fallback_path
         );
-        *fallback_path
+        fallback_path
     }
 }
 

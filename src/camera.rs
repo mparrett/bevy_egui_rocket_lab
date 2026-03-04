@@ -107,7 +107,7 @@ pub fn update_camera_transform_system(
     let follow_mode = camera_properties.follow_mode;
 
     // Re-seed spring state on mode switches so chase modes immediately acquire the rocket.
-    if last_follow_mode.map_or(true, |prev| prev != follow_mode) {
+    if last_follow_mode.is_none_or(|prev| prev != follow_mode) {
         let rocket_velocity = rocket_velocity_query
             .single()
             .map(|v| v.0)

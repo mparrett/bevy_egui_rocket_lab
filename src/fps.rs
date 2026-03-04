@@ -91,12 +91,12 @@ pub fn fps_counter_showhide(
     mut q: Query<&mut Visibility, With<FpsRoot>>,
     kbd: Res<ButtonInput<KeyCode>>,
 ) {
-    if kbd.just_pressed(KeyCode::F12) {
-        if let Ok(mut vis) = q.single_mut() {
-            *vis = match *vis {
-                Visibility::Hidden => Visibility::Visible,
-                _ => Visibility::Hidden,
-            };
-        }
+    if kbd.just_pressed(KeyCode::F12)
+        && let Ok(mut vis) = q.single_mut()
+    {
+        *vis = match *vis {
+            Visibility::Hidden => Visibility::Visible,
+            _ => Visibility::Hidden,
+        };
     }
 }

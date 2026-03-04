@@ -671,15 +671,15 @@ fn ui_system(
                         });
                     if changed {
                         sky_props.skybox_changed = true;
-                        if sky_props.fog_enabled {
-                            if let Ok(mut fog_settings) = fog_query.single_mut() {
-                                apply_fog_mode(
-                                    &mut fog_settings,
-                                    sky_props.fog_mode,
-                                    sky_props.fog_visibility,
-                                    sky_props.skybox_index,
-                                );
-                            }
+                        if sky_props.fog_enabled
+                            && let Ok(mut fog_settings) = fog_query.single_mut()
+                        {
+                            apply_fog_mode(
+                                &mut fog_settings,
+                                sky_props.fog_mode,
+                                sky_props.fog_visibility,
+                                sky_props.skybox_index,
+                            );
                         }
                     }
 
@@ -718,27 +718,26 @@ fn ui_system(
                             }
                         });
 
-                    if sky_props.fog_enabled {
-                        if ui
+                    if sky_props.fog_enabled
+                        && ui
                             .add(
                                 egui::Slider::new(&mut sky_props.fog_visibility, 10.0..=200.0)
                                     .text("visibility"),
                             )
                             .changed()
-                        {
-                            fog_changed = true;
-                        }
+                    {
+                        fog_changed = true;
                     }
 
-                    if fog_changed {
-                        if let Ok(mut fog_settings) = fog_query.single_mut() {
-                            apply_fog_mode(
-                                &mut fog_settings,
-                                sky_props.fog_mode,
-                                sky_props.fog_visibility,
-                                sky_props.skybox_index,
-                            );
-                        }
+                    if fog_changed
+                        && let Ok(mut fog_settings) = fog_query.single_mut()
+                    {
+                        apply_fog_mode(
+                            &mut fog_settings,
+                            sky_props.fog_mode,
+                            sky_props.fog_visibility,
+                            sky_props.skybox_index,
+                        );
                     }
                 });
 
