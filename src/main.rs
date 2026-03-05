@@ -1095,6 +1095,8 @@ fn update_rocket_dimensions_system(
     geometry_changed.write_default();
 }
 
+// NOTE: Track filenames are misleading — "Rocket_Town" is the lab track,
+// "the_Lab" is the outdoor launch track (legacy naming).
 fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         AudioPlayer::new(asset_server.load("audio/Welcome_to_Rocket_Town_v1.ogg")),
