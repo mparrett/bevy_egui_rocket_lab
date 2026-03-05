@@ -14,6 +14,7 @@ pub const CAMERA_FOLLOW_FREQ_HZ: f32 = 4.5;
 pub const HUMAN_LOOK_FREQ_HZ: f32 = 2.8;
 pub const CAMERA_MAX_SPEED: f32 = 85.0;
 pub const SCROLL_ZOOM_SENSITIVITY: f32 = 0.01;
+pub const FREELOOK_MOVE_SPEED: f32 = 3.0;
 pub const ZOOM_LEVELS: &[f32] = &[0.8, 1.0, 2.0, 4.0, 8.0, 16.0];
 pub const CAMERA_MODES: &[FollowMode] = &[
     FollowMode::FixedGround,
@@ -338,7 +339,9 @@ fn spring_to_target(
 }
 
 pub fn mouse_orbit_system(
+    time: Res<Time>,
     mouse_button: Res<ButtonInput<MouseButton>>,
+    keyboard: Res<ButtonInput<KeyCode>>,
     accumulated_motion: Res<AccumulatedMouseMotion>,
     accumulated_scroll: Res<AccumulatedMouseScroll>,
     mut camera_properties: ResMut<CameraProperties>,
@@ -349,15 +352,71 @@ pub fn mouse_orbit_system(
 
     if mouse_button.pressed(MouseButton::Left) {
         let delta = accumulated_motion.delta;
-        camera_properties.orbit_angle_degrees -= delta.x * 0.2;
-        camera_properties.desired_translation.y -= delta.y * 0.01;
-        camera_properties.desired_translation.y =
-            camera_properties.desired_translation.y.clamp(0.1, 50.0);
+
+        if camera_properties.follow_mode == FollowMode::FreeLook {
+            // Mouselook: rotate the look direction around the camera position
+            let cam_pos = camera_properties.desired_translation;
+            let look_dir = (camera_properties.target - cam_pos).normalize_or_zero();
+            if look_dir.length_squared() > 0.0 {
+                let yaw = Quat::from_rotation_y(-delta.x * 0.003);
+                let right = look_dir.cross(Vec3::Y).normalize_or_zero();
+                let pitch = Quat::from_axis_angle(right, -delta.y * 0.003);
+                let new_dir = pitch * (yaw * look_dir);
+                // Clamp to avoid flipping past vertical
+                if new_dir.y.abs() < 0.98 {
+                    let dist = (camera_properties.target - cam_pos).length();
+                    camera_properties.target = cam_pos + new_dir * dist;
+                    camera_properties.lagged_target = camera_properties.target;
+                }
+            }
+        } else {
+            camera_properties.orbit_angle_degrees -= delta.x * 0.2;
+            camera_properties.desired_translation.y -= delta.y * 0.01;
+            camera_properties.desired_translation.y =
+                camera_properties.desired_translation.y.clamp(0.1, 50.0);
+        }
     }
 
     let scroll_y = accumulated_scroll.delta.y;
     if scroll_y != 0.0 {
-        camera_properties.fixed_distance -= scroll_y * SCROLL_ZOOM_SENSITIVITY;
-        camera_properties.fixed_distance = camera_properties.fixed_distance.clamp(0.0, 50.0);
+        if camera_properties.follow_mode == FollowMode::FreeLook {
+            // Dolly along look direction
+            let cam_pos = camera_properties.desired_translation;
+            let look_dir = (camera_properties.target - cam_pos).normalize_or_zero();
+            let dolly = look_dir * scroll_y * 0.1;
+            camera_properties.desired_translation += dolly;
+            camera_properties.lagged_translation = camera_properties.desired_translation;
+        } else {
+            camera_properties.fixed_distance -= scroll_y * SCROLL_ZOOM_SENSITIVITY;
+            camera_properties.fixed_distance = camera_properties.fixed_distance.clamp(0.0, 50.0);
+        }
+    }
+
+    if camera_properties.follow_mode == FollowMode::FreeLook {
+        let cam_pos = camera_properties.desired_translation;
+        let look_dir = (camera_properties.target - cam_pos).normalize_or_zero();
+        let forward = Vec3::new(look_dir.x, 0.0, look_dir.z).normalize_or_zero();
+        let right = forward.cross(Vec3::Y).normalize_or_zero();
+
+        let mut movement = Vec3::ZERO;
+        if keyboard.pressed(KeyCode::KeyW) {
+            movement += forward;
+        }
+        if keyboard.pressed(KeyCode::KeyS) {
+            movement -= forward;
+        }
+        if keyboard.pressed(KeyCode::KeyD) {
+            movement += right;
+        }
+        if keyboard.pressed(KeyCode::KeyA) {
+            movement -= right;
+        }
+        if movement.length_squared() > 0.0 {
+            let delta = movement.normalize() * FREELOOK_MOVE_SPEED * time.delta_secs();
+            camera_properties.desired_translation += delta;
+            camera_properties.target += delta;
+            camera_properties.lagged_translation += delta;
+            camera_properties.lagged_target += delta;
+        }
     }
 }

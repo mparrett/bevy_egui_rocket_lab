@@ -39,7 +39,6 @@ use crate::{
         pick_best_variant, setup_sky_system, spawn_regular_sky_map, spawn_sun_disc_system,
         sync_volumetrics_system, update_sun_disc_system,
     },
-    util::random_vec,
 };
 
 mod camera;
@@ -346,25 +345,13 @@ fn sync_sky_render_mode_system(
 }
 
 fn init_egui_ui_input_system(
-    mut commands: Commands,
     mut contexts: EguiContexts,
-    mut rocket_query: Query<
-        (
-            Entity,
-            &mut Transform,
-            &mut LinearVelocity,
-            &mut AngularVelocity,
-        ),
-        (With<RocketMarker>, Without<Camera>),
-    >,
     mut app_exit: MessageWriter<AppExit>,
     mut reset: MessageWriter<ResetEvent>,
     app_state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    let (rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
-        rocket_query.single_mut()?;
     if ctx.input(|i| i.key_pressed(Key::Q)) {
         app_exit.write(AppExit::Success);
     }
@@ -383,33 +370,6 @@ fn init_egui_ui_input_system(
         reset.write_default();
     }
 
-    if ctx.input(|input| input.key_pressed(Key::D)) {
-        let destabilize_force_magnitude: f32 = 0.01;
-        let destabilize_proba: f32 = 0.3;
-        let destabilize_torque_proba: f32 = 0.7;
-        let destabilize_torque_magnitude: f32 = 0.001;
-        let destabilize_duration: f32 = 0.5 * rand::random::<f32>();
-
-        let force = random_vec(destabilize_force_magnitude, destabilize_proba);
-        let torque = random_vec(destabilize_torque_magnitude, destabilize_torque_proba);
-
-        let force_timer = ForceTimer {
-            id: get_timer_id(),
-            timer: Timer::from_seconds(destabilize_duration, TimerMode::Once),
-            force: Some(force),
-            torque: Some(torque),
-            sync_rotation_with_entity: false,
-        };
-        commands.entity(rocket_ent).insert(force_timer);
-    }
-
-    // Stabilize by resetting the forces and velocities
-    if ctx.input(|i| i.key_pressed(Key::S)) {
-        commands.entity(rocket_ent).remove::<ForceTimer>();
-        rocket_transform.rotation = Quat::IDENTITY;
-        *lin_velocity = LinearVelocity::ZERO;
-        *ang_velocity = AngularVelocity::ZERO;
-    }
     Ok(())
 }
 
@@ -485,11 +445,16 @@ fn rocket_position_system(
     rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
     mut camera_properties: ResMut<CameraProperties>,
     mut rocket_state: ResMut<RocketState>,
+    app_state: Res<State<AppState>>,
 ) {
     let Ok((transform, velocity)) = rocket_query.single() else {
         return;
     };
-    camera_properties.target = transform.translation;
+    if *app_state.get() == AppState::Launch
+        && camera_properties.follow_mode != FollowMode::FreeLook
+    {
+        camera_properties.target = transform.translation;
+    }
     if rocket_state.state == RocketStateEnum::Initial {
         rocket_state.launch_origin_y = transform.translation.y;
     }
@@ -1012,7 +977,7 @@ fn ui_system(
                     ui.spacing_mut().item_spacing.y = 2.0;
                     for line in [
                         "Tab: cycle Lab/Launch/Store",
-                        "D: destabilize  S: stabilize",
+                        "WASD: move (FreeLook)",
                         "Hold `/~: slow motion",
                         "Arrows: orbit / distance",
                         "Shift+Up/Down: truck cam",
