@@ -887,6 +887,7 @@ fn ui_system(
                                 }
                             });
                         if changed {
+                            sky_props.lab_skybox_index = sky_props.skybox_index;
                             sky_props.skybox_changed = true;
                             if sky_props.fog_enabled
                                 && let Ok(mut fog_settings) = fog_query.single_mut()

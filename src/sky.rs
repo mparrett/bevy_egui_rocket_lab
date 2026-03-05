@@ -117,6 +117,29 @@ pub const SKYBOXES: &[SkyboxEntry] = &[
             directional: Color::srgba(1.0, 0.8, 0.5, 0.3),
         },
     },
+    SkyboxEntry {
+        name: "Learner Park",
+        variants: &[
+            (
+                "textures/learner_park_cubemap_astc4x4.ktx2",
+                CompressedImageFormats::ASTC_LDR,
+            ),
+            (
+                "textures/learner_park_cubemap_etc2.ktx2",
+                CompressedImageFormats::ETC2,
+            ),
+            (
+                "textures/learner_park_cubemap.png",
+                CompressedImageFormats::NONE,
+            ),
+        ],
+        fog: FogColors {
+            base: Color::srgba(0.4, 0.42, 0.48, 1.0),
+            extinction: Color::srgb(0.4, 0.42, 0.48),
+            inscattering: Color::srgb(0.7, 0.75, 0.82),
+            directional: Color::srgba(0.9, 0.85, 0.8, 0.2),
+        },
+    },
 ];
 
 #[derive(Resource)]
@@ -148,10 +171,16 @@ pub struct SkyProperties {
     pub volumetrics_enabled: bool,
     pub time_of_day: f32,
     pub day_speed: f32,
+    pub lab_skybox_index: usize,
+    pub store_skybox_index: usize,
 }
 
 impl Default for SkyProperties {
     fn default() -> Self {
+        let store_index = SKYBOXES
+            .iter()
+            .position(|s| s.name == "Learner Park")
+            .unwrap_or(0);
         Self {
             fog_mode: 0,
             skybox_index: 0,
@@ -161,6 +190,8 @@ impl Default for SkyProperties {
             volumetrics_enabled: false,
             time_of_day: 10.0,
             day_speed: 60.0,
+            lab_skybox_index: 0,
+            store_skybox_index: store_index,
         }
     }
 }

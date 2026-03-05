@@ -6,7 +6,7 @@ use crate::{
     camera::CameraProperties,
     physics::lock_all_axes,
     rocket::{RocketDimensions, RocketMarker, RocketState, RocketStateEnum},
-    sky::SkyRenderMode,
+    sky::{SkyProperties, SkyRenderMode},
 };
 
 pub struct ScenePlugin;
@@ -41,6 +41,7 @@ struct RoomConfig {
     wall_color: Color,
     has_posters: bool,
     has_window: bool,
+    has_table: bool,
     ceiling_light_pos: Vec3,
 }
 
@@ -234,37 +235,39 @@ fn spawn_room(
         ));
     }
 
-    // Table top
-    commands.spawn((
-        IndoorRoom,
-        despawn.clone(),
-        RigidBody::Static,
-        Collider::cuboid(TABLE_WIDTH, TABLE_THICKNESS, TABLE_DEPTH),
-        Mesh3d(meshes.add(Cuboid::new(TABLE_WIDTH, TABLE_THICKNESS, TABLE_DEPTH))),
-        MeshMaterial3d(table_mat.clone()),
-        Transform::from_xyz(0.0, TABLE_HEIGHT, 0.0),
-        Friction::new(0.7),
-    ));
-
-    // Table legs (4 cylinders, IKEA style)
-    let leg_radius = 0.025;
-    let leg_height = TABLE_HEIGHT - TABLE_THICKNESS / 2.0;
-    let leg_mesh = meshes.add(Cylinder::new(leg_radius, leg_height));
-    let inset_x = TABLE_WIDTH / 2.0 - 0.06;
-    let inset_z = TABLE_DEPTH / 2.0 - 0.06;
-    for (x, z) in [
-        (inset_x, inset_z),
-        (-inset_x, inset_z),
-        (inset_x, -inset_z),
-        (-inset_x, -inset_z),
-    ] {
+    if config.has_table {
+        // Table top
         commands.spawn((
             IndoorRoom,
             despawn.clone(),
-            Mesh3d(leg_mesh.clone()),
+            RigidBody::Static,
+            Collider::cuboid(TABLE_WIDTH, TABLE_THICKNESS, TABLE_DEPTH),
+            Mesh3d(meshes.add(Cuboid::new(TABLE_WIDTH, TABLE_THICKNESS, TABLE_DEPTH))),
             MeshMaterial3d(table_mat.clone()),
-            Transform::from_xyz(x, leg_height / 2.0, z),
+            Transform::from_xyz(0.0, TABLE_HEIGHT, 0.0),
+            Friction::new(0.7),
         ));
+
+        // Table legs (4 cylinders, IKEA style)
+        let leg_radius = 0.025;
+        let leg_height = TABLE_HEIGHT - TABLE_THICKNESS / 2.0;
+        let leg_mesh = meshes.add(Cylinder::new(leg_radius, leg_height));
+        let inset_x = TABLE_WIDTH / 2.0 - 0.06;
+        let inset_z = TABLE_DEPTH / 2.0 - 0.06;
+        for (x, z) in [
+            (inset_x, inset_z),
+            (-inset_x, inset_z),
+            (inset_x, -inset_z),
+            (-inset_x, -inset_z),
+        ] {
+            commands.spawn((
+                IndoorRoom,
+                despawn.clone(),
+                Mesh3d(leg_mesh.clone()),
+                MeshMaterial3d(table_mat.clone()),
+                Transform::from_xyz(x, leg_height / 2.0, z),
+            ));
+        }
     }
 
     // Ceiling light (softened)
@@ -325,6 +328,7 @@ fn spawn_lab_room(
             wall_color: Color::srgb(0.7, 0.7, 0.72),
             has_posters: true,
             has_window: true,
+            has_table: true,
             ceiling_light_pos: Vec3::new(0.5, ROOM_HEIGHT - 0.3, 0.3),
         },
     );
@@ -346,9 +350,53 @@ fn spawn_store_room(
             wall_color: Color::srgb(0.6, 0.55, 0.5),
             has_posters: false,
             has_window: false,
+            has_table: false,
             ceiling_light_pos: Vec3::new(-0.5, ROOM_HEIGHT - 0.3, -0.2),
         },
     );
+
+    let half_z = ROOM_DEPTH / 2.0;
+    let despawn = DespawnOnExit(AppState::Store);
+
+    // Counter (solid block with a top surface)
+    let counter_w = 2.0;
+    let counter_d = 0.5;
+    let counter_h = TABLE_HEIGHT;
+    let counter_top_thickness = 0.04;
+    let counter_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.5, 0.32, 0.18),
+        perceptual_roughness: 0.65,
+        ..default()
+    });
+    let base_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.4, 0.25, 0.14),
+        perceptual_roughness: 0.8,
+        ..default()
+    });
+    let counter_z = -half_z + counter_d / 2.0 + WALL_THICKNESS + 0.3;
+    // Top
+    commands.spawn((
+        IndoorRoom, despawn.clone(),
+        RigidBody::Static,
+        Collider::cuboid(counter_w, counter_top_thickness, counter_d),
+        Mesh3d(meshes.add(Cuboid::new(counter_w, counter_top_thickness, counter_d))),
+        MeshMaterial3d(counter_mat),
+        Transform::from_xyz(0.0, counter_h, counter_z),
+        Friction::new(0.7),
+    ));
+    // Solid base (slightly inset)
+    let base_inset = 0.04;
+    let base_h = counter_h - counter_top_thickness / 2.0;
+    commands.spawn((
+        IndoorRoom, despawn.clone(),
+        Mesh3d(meshes.add(Cuboid::new(
+            counter_w - base_inset * 2.0,
+            base_h,
+            counter_d - base_inset * 2.0,
+        ))),
+        MeshMaterial3d(base_mat),
+        Transform::from_xyz(0.0, base_h / 2.0, counter_z),
+    ));
 
     // Shelves on back wall
     let shelf_mat = materials.add(StandardMaterial {
@@ -360,14 +408,33 @@ fn spawn_store_room(
     let shelf_d = 0.3;
     let shelf_h = 0.04;
     let shelf_mesh = meshes.add(Cuboid::new(shelf_w, shelf_h, shelf_d));
-    let half_z = ROOM_DEPTH / 2.0;
-    for y in [1.0, 1.8] {
+    let bottom_shelf_y = 1.0_f32;
+    let shelf_z = -half_z + shelf_d / 2.0 + WALL_THICKNESS;
+    for y in [bottom_shelf_y, 1.8] {
         commands.spawn((
-            IndoorRoom,
-            DespawnOnExit(AppState::Store),
+            IndoorRoom, despawn.clone(),
             Mesh3d(shelf_mesh.clone()),
             MeshMaterial3d(shelf_mat.clone()),
-            Transform::from_xyz(0.0, y, -half_z + shelf_d / 2.0 + WALL_THICKNESS),
+            Transform::from_xyz(0.0, y, shelf_z),
+        ));
+    }
+
+    // Rocket motors on bottom shelf
+    let motor_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.3, 0.3, 0.32),
+        perceptual_roughness: 0.4,
+        metallic: 0.3,
+        ..default()
+    });
+    let motor_radius = 0.013;
+    let motor_length = 0.076;
+    let motor_mesh = meshes.add(Cylinder::new(motor_radius, motor_length));
+    for x in [-0.6, -0.3, 0.0, 0.3, 0.6] {
+        commands.spawn((
+            IndoorRoom, despawn.clone(),
+            Mesh3d(motor_mesh.clone()),
+            MeshMaterial3d(motor_mat.clone()),
+            Transform::from_xyz(x, bottom_shelf_y + shelf_h / 2.0 + motor_radius, shelf_z),
         ));
     }
 }
@@ -447,6 +514,7 @@ fn enter_lab(
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<Entity, With<Camera3d>>,
     mut commands: Commands,
+    mut sky_props: ResMut<SkyProperties>,
 ) {
     enter_indoor(
         &mut outdoor_query,
@@ -458,6 +526,8 @@ fn enter_lab(
         &mut commands,
         true,
     );
+    sky_props.skybox_index = sky_props.lab_skybox_index;
+    sky_props.skybox_changed = true;
 }
 
 fn enter_store(
@@ -477,6 +547,7 @@ fn enter_store(
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<Entity, With<Camera3d>>,
     mut commands: Commands,
+    mut sky_props: ResMut<SkyProperties>,
 ) {
     enter_indoor(
         &mut outdoor_query,
@@ -488,6 +559,16 @@ fn enter_store(
         &mut commands,
         false,
     );
+
+    // Store camera: closer to counter/shelves on back wall
+    camera_properties.target = Vec3::new(0.0, 1.2, -2.0);
+    camera_properties.desired_translation = Vec3::new(-1.0, 1.4, 0.5);
+    camera_properties.lagged_translation = camera_properties.desired_translation;
+    camera_properties.lagged_target = camera_properties.target;
+    camera_properties.fixed_distance = 2.0;
+
+    sky_props.skybox_index = sky_props.store_skybox_index;
+    sky_props.skybox_changed = true;
 }
 
 fn enter_launch(
@@ -506,6 +587,7 @@ fn enter_launch(
     rocket_dims: Res<RocketDimensions>,
     mut camera_properties: ResMut<CameraProperties>,
     mut sky_mode: ResMut<SkyRenderMode>,
+    mut sky_props: ResMut<SkyProperties>,
     mut commands: Commands,
 ) {
     for mut vis in &mut outdoor_query {
@@ -537,4 +619,7 @@ fn enter_launch(
         camera_properties.target = transform.translation;
         camera_properties.lagged_target = transform.translation;
     }
+
+    sky_props.skybox_index = sky_props.lab_skybox_index;
+    sky_props.skybox_changed = true;
 }
