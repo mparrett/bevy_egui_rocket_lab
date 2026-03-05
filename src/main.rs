@@ -298,8 +298,8 @@ fn sync_sky_render_mode_system(
 
     match *sky_mode {
         SkyRenderMode::Cubemap => {
-            commands.entity(camera).insert(Exposure::BLENDER);
             commands.entity(camera).remove::<(
+                Exposure,
                 Atmosphere,
                 AtmosphereSettings,
                 AtmosphereEnvironmentMapLight,
@@ -319,13 +319,13 @@ fn sync_sky_render_mode_system(
                         });
                 commands.entity(camera).insert(Skybox {
                     image: skybox_image,
-                    brightness: 150.0,
+                    brightness: 1000.0,
                     ..default()
                 });
             }
         }
         SkyRenderMode::Atmosphere => {
-            commands.entity(camera).insert(Exposure::SUNLIGHT);
+            commands.entity(camera).insert(Exposure { ev100: 13.0 });
             if skybox.is_some() {
                 commands.entity(camera).remove::<Skybox>();
             }
@@ -1165,14 +1165,13 @@ fn setup_camera_system(
         Camera::default(),
         Hdr,
         Tonemapping::TonyMcMapface,
-        Exposure::BLENDER,
         Projection::Perspective(PerspectiveProjection {
             fov: DEFAULT_FOV_DEGREES.to_radians(),
             ..default()
         }),
         Skybox {
             image: skybox_handle,
-            brightness: 150.0,
+            brightness: 1000.0,
             ..default()
         },
         Bloom::NATURAL,
