@@ -275,7 +275,7 @@ fn spawn_room(
         IndoorRoom,
         despawn.clone(),
         PointLight {
-            intensity: 80_000.0,
+            intensity: 240_000.0,
             range: 12.0,
             shadows_enabled: true,
             shadow_depth_bias: 0.02,
@@ -289,7 +289,7 @@ fn spawn_room(
         IndoorRoom,
         despawn.clone(),
         PointLight {
-            intensity: 30_000.0,
+            intensity: 90_000.0,
             range: 10.0,
             shadows_enabled: false,
             color: Color::srgb(0.9, 0.92, 1.0),
@@ -297,19 +297,21 @@ fn spawn_room(
         },
         Transform::from_xyz(-1.5, 1.5, -1.0),
     ));
-    // Window light (simulates outdoor light coming through)
-    commands.spawn((
-        IndoorRoom,
-        despawn,
-        PointLight {
-            intensity: 60_000.0,
-            range: 8.0,
-            shadows_enabled: false,
-            color: Color::srgb(0.85, 0.92, 1.0),
-            ..default()
-        },
-        Transform::from_xyz(0.0, 1.6, -half_z + 0.3),
-    ));
+    if config.has_window {
+        // Window light (simulates outdoor light coming through)
+        commands.spawn((
+            IndoorRoom,
+            despawn,
+            PointLight {
+                intensity: 180_000.0,
+                range: 8.0,
+                shadows_enabled: false,
+                color: Color::srgb(0.85, 0.92, 1.0),
+                ..default()
+            },
+            Transform::from_xyz(0.0, 1.6, -half_z + 0.3),
+        ));
+    }
 }
 
 fn spawn_lab_room(
@@ -427,14 +429,42 @@ fn spawn_store_room(
         ..default()
     });
     let motor_radius = 0.013;
-    let motor_length = 0.076;
+    let motor_length = 0.15;
     let motor_mesh = meshes.add(Cylinder::new(motor_radius, motor_length));
-    for x in [-0.6, -0.3, 0.0, 0.3, 0.6] {
+    for x in [-0.63, -0.58, -0.53, -0.48] {
         commands.spawn((
             IndoorRoom, despawn.clone(),
             Mesh3d(motor_mesh.clone()),
             MeshMaterial3d(motor_mat.clone()),
             Transform::from_xyz(x, bottom_shelf_y + shelf_h / 2.0 + motor_radius, shelf_z),
+        ));
+    }
+
+    // Overhead light fixtures (4 in a grid)
+    let fixture_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.9, 0.9, 0.9),
+        emissive: bevy::color::LinearRgba::new(2.0, 1.9, 1.7, 1.0),
+        ..default()
+    });
+    let fixture_mesh = meshes.add(Cuboid::new(0.4, 0.03, 0.15));
+    let light_y = ROOM_HEIGHT - 0.15;
+    for (x, z) in [(-1.2, -1.0), (1.2, -1.0), (-1.2, 1.2), (1.2, 1.2)] {
+        commands.spawn((
+            IndoorRoom, despawn.clone(),
+            PointLight {
+                intensity: 120_000.0,
+                range: 8.0,
+                shadows_enabled: false,
+                color: Color::srgb(1.0, 0.97, 0.92),
+                ..default()
+            },
+            Transform::from_xyz(x, light_y, z),
+        ));
+        commands.spawn((
+            IndoorRoom, despawn.clone(),
+            Mesh3d(fixture_mesh.clone()),
+            MeshMaterial3d(fixture_mat.clone()),
+            Transform::from_xyz(x, ROOM_HEIGHT - 0.02, z),
         ));
     }
 }
@@ -489,8 +519,9 @@ fn enter_indoor(
         camera_properties.target = transform.translation;
     }
 
+    camera_properties.follow_mode = crate::camera::FollowMode::FreeLook;
     camera_properties.fixed_distance = 2.5;
-    camera_properties.desired_translation = Vec3::new(-1.5, 1.5, 1.5);
+    camera_properties.desired_translation = Vec3::new(-0.6, 1.5, 1.5);
     camera_properties.lagged_translation = camera_properties.desired_translation;
     camera_properties.lagged_translation_velocity = Vec3::ZERO;
     camera_properties.lagged_target = camera_properties.target;
@@ -561,11 +592,11 @@ fn enter_store(
     );
 
     // Store camera: closer to counter/shelves on back wall
-    camera_properties.target = Vec3::new(0.0, 1.2, -2.0);
-    camera_properties.desired_translation = Vec3::new(-1.0, 1.4, 0.5);
+    camera_properties.target = Vec3::new(0.3, 1.15, -2.2);
+    camera_properties.desired_translation = Vec3::new(-0.3, 1.3, -0.5);
     camera_properties.lagged_translation = camera_properties.desired_translation;
     camera_properties.lagged_target = camera_properties.target;
-    camera_properties.fixed_distance = 2.0;
+    camera_properties.fixed_distance = 1.5;
 
     sky_props.skybox_index = sky_props.store_skybox_index;
     sky_props.skybox_changed = true;
