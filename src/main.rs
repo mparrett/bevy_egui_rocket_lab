@@ -52,6 +52,7 @@ mod particles;
 mod physics;
 mod rendering;
 mod rocket;
+mod scene;
 mod sky;
 mod util;
 
@@ -59,7 +60,12 @@ mod util;
 pub enum AppState {
     #[default]
     Menu,
-    Playing,
+    Lab,
+    Launch,
+}
+
+fn in_gameplay(state: Res<State<AppState>>) -> bool {
+    matches!(state.get(), AppState::Lab | AppState::Launch)
 }
 
 #[derive(Message)]
@@ -93,7 +99,10 @@ impl Default for AudioSettings {
 }
 
 #[derive(Component)]
-pub struct MusicMarker;
+pub struct LabMusicMarker;
+
+#[derive(Component)]
+pub struct LaunchMusicMarker;
 
 #[derive(Component)]
 struct LoadingOverlay;
@@ -147,6 +156,7 @@ fn main() {
 
     app.add_plugins(ParticleSystemPlugin::default())
         .add_plugins(PhysicsPlugins::default())
+        .add_plugins(PhysicsDebugPlugin)
         .insert_resource(SkyProperties::default())
         .insert_resource(SkyRenderMode::default())
         .insert_resource(SunDiscSettings::default())
@@ -160,6 +170,7 @@ fn main() {
         )
         .init_state::<AppState>()
         .add_plugins(menu::MenuPlugin)
+        .add_plugins(scene::ScenePlugin)
         .init_resource::<RocketDimensions>()
         .init_resource::<RocketFlightParameters>()
         .init_resource::<CameraProperties>()
@@ -176,28 +187,35 @@ fn main() {
                 spawn_music,
                 setup_loading_overlay,
                 spawn_sun_disc_system,
+                disable_physics_debug,
             ),
         )
-        .add_systems(OnEnter(AppState::Playing), setup_text_system)
+        .add_systems(OnEnter(AppState::Launch), setup_launch_hud)
+        .add_systems(OnEnter(AppState::Lab), setup_lab_hud)
         .add_systems(
             EguiPrimaryContextPass,
-            (ui_system, init_egui_ui_input_system, do_launch_system)
-                .run_if(in_state(AppState::Playing)),
+            (ui_system, init_egui_ui_input_system).run_if(in_gameplay),
+        )
+        .add_systems(
+            EguiPrimaryContextPass,
+            do_launch_system.run_if(in_state(AppState::Launch)),
+        )
+        .add_systems(
+            Update,
+            (update_rocket_dimensions_system, on_reset_event).run_if(in_gameplay),
         )
         .add_systems(
             Update,
             (
-                update_rocket_dimensions_system,
                 on_launch_event,
                 on_launch_audio_event,
-                on_reset_event,
                 detect_landing_from_collision_system,
                 on_crash_event,
                 update_stats_system,
             )
-                .run_if(in_state(AppState::Playing)),
+                .run_if(in_state(AppState::Launch)),
         )
-        .add_systems(Update, (fps_text_update_system, fps_counter_showhide, sync_music_mute_system))
+        .add_systems(Update, (fps_text_update_system, fps_counter_showhide, music_crossfade_system, toggle_physics_debug))
         .add_systems(
             PostUpdate,
             (
@@ -205,7 +223,7 @@ fn main() {
                 update_camera_zoom_perspective_system,
                 update_camera_transform_system,
             )
-                .run_if(in_state(AppState::Playing))
+                .run_if(in_gameplay)
                 .after(PhysicsSystems::Writeback)
                 .before(TransformSystems::Propagate),
         );
@@ -213,23 +231,26 @@ fn main() {
         FixedPostUpdate,
         update_forces_system
             .in_set(PhysicsSystems::First)
-            .run_if(in_state(AppState::Playing)),
+            .run_if(in_state(AppState::Launch)),
     );
 
     app.add_systems(Startup, spawn_regular_sky_map);
     app.add_systems(
         Update,
-        (
-            sync_sky_render_mode_system,
-            cubemap_asset_loaded,
-            (animate_light_direction, update_sun_disc_system).chain(),
-            sync_volumetrics_system,
-            check_loading_complete,
-        ),
+        (cubemap_asset_loaded, check_loading_complete),
     );
     app.add_systems(
         Update,
-        (adjust_time_scale, mouse_orbit_system).run_if(in_state(AppState::Playing)),
+        (
+            sync_sky_render_mode_system,
+            (animate_light_direction, update_sun_disc_system).chain(),
+            sync_volumetrics_system,
+        )
+            .run_if(in_state(AppState::Launch)),
+    );
+    app.add_systems(
+        Update,
+        (adjust_time_scale, mouse_orbit_system).run_if(in_gameplay),
     );
 
     app.run();
@@ -239,6 +260,21 @@ fn adjust_time_scale(mut time: ResMut<Time<Virtual>>, input: Res<ButtonInput<Key
     // Hold backquote (`/~) for temporary slow motion.
     let slowmo_active = input.pressed(KeyCode::Backquote);
     time.set_relative_speed(if slowmo_active { 0.05 } else { 1.0 });
+}
+
+fn disable_physics_debug(mut config_store: ResMut<GizmoConfigStore>) {
+    let (config, _) = config_store.config_mut::<PhysicsGizmos>();
+    config.enabled = false;
+}
+
+fn toggle_physics_debug(
+    input: Res<ButtonInput<KeyCode>>,
+    mut config_store: ResMut<GizmoConfigStore>,
+) {
+    if input.just_pressed(KeyCode::F10) {
+        let (config, _) = config_store.config_mut::<PhysicsGizmos>();
+        config.enabled = !config.enabled;
+    }
 }
 
 fn sync_sky_render_mode_system(
@@ -321,6 +357,8 @@ fn init_egui_ui_input_system(
     >,
     mut app_exit: MessageWriter<AppExit>,
     mut reset: MessageWriter<ResetEvent>,
+    app_state: Res<State<AppState>>,
+    mut next_state: ResMut<NextState<AppState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     let (rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity) =
@@ -328,14 +366,20 @@ fn init_egui_ui_input_system(
     if ctx.input(|i| i.key_pressed(Key::Q)) {
         app_exit.write(AppExit::Success);
     }
-    // Reset
+
+    if ctx.input(|i| i.key_pressed(Key::Tab)) {
+        match app_state.get() {
+            AppState::Lab => next_state.set(AppState::Launch),
+            AppState::Launch => next_state.set(AppState::Lab),
+            _ => {}
+        }
+    }
+
     if ctx.input(|i| i.key_pressed(Key::R)) {
         info!("Resetting rocket state");
         reset.write_default();
     }
-    // TODO: Add fail mode trigger
 
-    // Destabilize the rocket by adding random force and torque
     if ctx.input(|input| input.key_pressed(Key::D)) {
         let destabilize_force_magnitude: f32 = 0.01;
         let destabilize_proba: f32 = 0.3;
@@ -643,7 +687,11 @@ fn ui_system(
     >,
     mut fog_query: Query<&mut DistanceFog>,
     mut bloom_query: Query<&mut Bloom, With<Camera3d>>,
+    app_state: Res<State<AppState>>,
+    mut next_state: ResMut<NextState<AppState>>,
 ) -> Result {
+    let is_lab = *app_state.get() == AppState::Lab;
+    let is_launch = *app_state.get() == AppState::Launch;
     let ctx = contexts.ctx_mut()?;
     camera_properties.egui_has_pointer = ctx.wants_pointer_input();
 
@@ -705,78 +753,85 @@ fn ui_system(
                         });
                 });
 
-            ui.add_space(6.0);
-            egui::CollapsingHeader::new("Rocket Body")
-                .default_open(true)
-                .show(ui, |ui| {
-                    let mut changed = false;
-                    changed |= ui
-                        .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5).text("radius"))
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.length, 0.2..=2.0)
-                                .step_by(0.05)
-                                .text("length"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=0.8)
-                                .text("cone"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
-                                .step_by(1.0)
-                                .text("fins"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=1.5)
-                                .step_by(0.1)
-                                .text("fin H"),
-                        )
-                        .changed();
-                    changed |= ui
-                        .add(
-                            egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=1.0)
-                                .step_by(0.1)
-                                .text("fin L"),
-                        )
-                        .changed();
-                    if changed {
-                        rocket_dims.flag_changed = true;
-                    }
-                    if let Ok((mass, com)) = rocket_query.single() {
-                        ui.separator();
-                        ui.label(format!(
-                            "Mass: {:.3}  CoM: ({:.2}, {:.2}, {:.2})",
-                            mass.value(),
-                            com.0.x,
-                            com.0.y,
-                            com.0.z
-                        ));
-                    }
-                });
+            if is_lab {
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new("Rocket Body")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        let mut changed = false;
+                        changed |= ui
+                            .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5).text("radius"))
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::Slider::new(&mut rocket_dims.length, 0.2..=2.0)
+                                    .step_by(0.05)
+                                    .text("body"),
+                            )
+                            .changed();
+                        let cone_max = rocket_dims.length * 0.4;
+                        rocket_dims.cone_length = rocket_dims.cone_length.min(cone_max);
+                        changed |= ui
+                            .add(
+                                egui::Slider::new(&mut rocket_dims.cone_length, 0.01..=cone_max)
+                                    .text("cone"),
+                            )
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::Slider::new(&mut rocket_dims.num_fins, 1.0..=8.0)
+                                    .step_by(1.0)
+                                    .text("fins"),
+                            )
+                            .changed();
+                        let fin_h_max = rocket_dims.length * 0.8;
+                        rocket_dims.fin_height = rocket_dims.fin_height.min(fin_h_max);
+                        changed |= ui
+                            .add(
+                                egui::Slider::new(&mut rocket_dims.fin_height, 0.01..=fin_h_max)
+                                    .step_by(0.1)
+                                    .text("fin H"),
+                            )
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::Slider::new(&mut rocket_dims.fin_length, 0.01..=1.0)
+                                    .step_by(0.1)
+                                    .text("fin L"),
+                            )
+                            .changed();
+                        if changed {
+                            rocket_dims.flag_changed = true;
+                        }
+                        if let Ok((mass, com)) = rocket_query.single() {
+                            ui.separator();
+                            ui.label(format!(
+                                "Mass: {:.3}  CoM: ({:.2}, {:.2}, {:.2})",
+                                mass.value(),
+                                com.0.x,
+                                com.0.y,
+                                com.0.z
+                            ));
+                        }
+                    });
 
-            ui.add_space(6.0);
-            egui::CollapsingHeader::new("Engine")
-                .default_open(true)
-                .show(ui, |ui| {
-                    ui.add(
-                        egui::Slider::new(&mut rocket_flight_parameters.force, 0.05..=0.25)
-                            .step_by(0.01)
-                            .text("force"),
-                    );
-                    ui.add(
-                        egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
-                            .text("duration"),
-                    );
-                });
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new("Engine")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut rocket_flight_parameters.force, 0.05..=0.25)
+                                .step_by(0.01)
+                                .text("force"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
+                                .text("duration"),
+                        );
+                    });
+            }
 
+            if is_launch {
             ui.add_space(6.0);
             egui::CollapsingHeader::new("Sky")
                 .default_open(false)
@@ -913,6 +968,17 @@ fn ui_system(
                         );
                     }
                 });
+            }
+
+            ui.add_space(6.0);
+            let switch_label = if is_lab { "Go to Launch Pad" } else { "Back to Lab" };
+            if ui.button(switch_label).clicked() {
+                if is_lab {
+                    next_state.set(AppState::Launch);
+                } else {
+                    next_state.set(AppState::Lab);
+                }
+            }
 
             ui.add_space(6.0);
             egui::CollapsingHeader::new("Keys")
@@ -920,11 +986,13 @@ fn ui_system(
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     for line in [
+                        "Tab: switch Lab / Launch",
                         "D: destabilize  S: stabilize",
                         "Hold `/~: slow motion",
                         "Arrows: orbit / distance",
                         "Shift+Up/Down: truck cam",
                         "Esc: world inspector",
+                        "F10: collider gizmos",
                         "F12: toggle FPS",
                     ] {
                         ui.label(line);
@@ -957,6 +1025,7 @@ fn update_rocket_dimensions_system(
     >,
     rocket_query: Query<Entity, With<RocketMarker>>,
     mut fins_query: Query<Entity, With<FinMarker>>,
+    app_state: Res<State<AppState>>,
 ) {
     if !rocket_dims.flag_changed {
         return;
@@ -964,8 +1033,13 @@ fn update_rocket_dimensions_system(
 
     debug!("Updating rocket dimensions");
 
+    let base_y = if *app_state.get() == AppState::Lab {
+        scene::TABLE_TOP_Y + rocket_dims.total_length() * 0.5
+    } else {
+        rocket_dims.total_length() * 0.5
+    };
     for mut rb_transform in rb_query.iter_mut() {
-        rb_transform.translation.y = rocket_dims.total_length() * 0.5;
+        rb_transform.translation.y = base_y;
     }
 
     for (mut mesh_handle, mut collider, _) in body_query.iter_mut() {
@@ -1016,26 +1090,62 @@ fn update_rocket_dimensions_system(
 
 fn spawn_music(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
+        AudioPlayer::new(asset_server.load("audio/Welcome_to_Rocket_Town_v1.ogg")),
+        PlaybackSettings {
+            mode: bevy::audio::PlaybackMode::Loop,
+            volume: bevy::audio::Volume::Linear(0.0),
+            ..default()
+        },
+        LabMusicMarker,
+    ));
+    commands.spawn((
         AudioPlayer::new(asset_server.load("audio/Welcome_to_the_Lab_v1.ogg")),
-        PlaybackSettings::LOOP,
-        MusicMarker,
+        PlaybackSettings {
+            mode: bevy::audio::PlaybackMode::Loop,
+            volume: bevy::audio::Volume::Linear(0.0),
+            ..default()
+        },
+        LaunchMusicMarker,
     ));
 }
 
-fn sync_music_mute_system(
+const MUSIC_FADE_SPEED: f32 = 1.5;
+
+fn music_crossfade_system(
+    time: Res<Time>,
+    app_state: Res<State<AppState>>,
     audio_settings: Res<AudioSettings>,
-    mut music_query: Query<&mut AudioSink, With<MusicMarker>>,
+    mut lab_query: Query<&mut AudioSink, (With<LabMusicMarker>, Without<LaunchMusicMarker>)>,
+    mut launch_query: Query<&mut AudioSink, (With<LaunchMusicMarker>, Without<LabMusicMarker>)>,
 ) {
-    if !audio_settings.is_changed() {
-        return;
-    }
-    let Ok(mut sink) = music_query.single_mut() else {
-        return;
+    let master = if audio_settings.music_enabled { 1.0_f32 } else { 0.0 };
+    let (lab_target, launch_target) = match app_state.get() {
+        AppState::Lab => (master, 0.0),
+        AppState::Launch => (0.0, master),
+        _ => (0.0, 0.0),
     };
-    if audio_settings.music_enabled {
-        sink.set_volume(bevy::audio::Volume::Linear(1.0));
+
+    let dt = time.delta_secs() * MUSIC_FADE_SPEED;
+
+    if let Ok(mut sink) = lab_query.single_mut() {
+        let current = sink.volume().to_linear();
+        let new = move_toward(current, lab_target, dt);
+        sink.set_volume(bevy::audio::Volume::Linear(new));
+    }
+    if let Ok(mut sink) = launch_query.single_mut() {
+        let current = sink.volume().to_linear();
+        let new = move_toward(current, launch_target, dt);
+        sink.set_volume(bevy::audio::Volume::Linear(new));
+    }
+}
+
+fn move_toward(current: f32, target: f32, max_delta: f32) -> f32 {
+    if (target - current).abs() <= max_delta {
+        target
+    } else if target > current {
+        current + max_delta
     } else {
-        sink.set_volume(bevy::audio::Volume::Linear(0.0));
+        current - max_delta
     }
 }
 
@@ -1082,9 +1192,10 @@ fn setup_camera_system(
     ));
 }
 
-fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn((
+            DespawnOnExit(AppState::Launch),
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
@@ -1096,7 +1207,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         ))
         .with_child((
-            Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Q: quit"),
+            Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Tab: lab  Q: quit"),
             TextFont {
                 font_size: 13.,
                 ..default()
@@ -1106,6 +1217,7 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands
         .spawn((
+            DespawnOnExit(AppState::Launch),
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
@@ -1125,6 +1237,30 @@ fn setup_text_system(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
             TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
             ScoreMarker,
+        ));
+}
+
+fn setup_lab_hud(mut commands: Commands) {
+    commands
+        .spawn((
+            DespawnOnExit(AppState::Lab),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(8.0),
+                left: Val::Px(296.0),
+                padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        ))
+        .with_child((
+            Text::new("Lab: tweak your rocket\nTab: launch pad  Q: quit"),
+            TextFont {
+                font_size: 13.,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
         ));
 }
 

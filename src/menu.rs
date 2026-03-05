@@ -101,7 +101,7 @@ fn spawn_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
                 TextColor(Color::WHITE),
             ));
 
-            spawn_button(parent, font.clone(), "Launch", MenuButtonAction::Launch);
+            spawn_button(parent, font.clone(), "Play", MenuButtonAction::Launch);
             spawn_button(parent, font.clone(), "Settings", MenuButtonAction::Settings);
             spawn_button(parent, font, "Quit", MenuButtonAction::Quit);
         });
@@ -212,7 +212,7 @@ fn menu_action(
         }
         match action {
             MenuButtonAction::Launch => {
-                app_state.set(AppState::Playing);
+                app_state.set(AppState::Lab);
                 menu_state.set(MenuState::Disabled);
             }
             MenuButtonAction::Settings => {

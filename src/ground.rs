@@ -8,6 +8,7 @@ const GROUND_HEIGHT: f32 = 0.01;
 const GROUND_TEXTURE: &str = "textures/GroundGrassGreen002_COL_4K_1024_mip.ktx2";
 
 use crate::rendering::update_mesh_uvs_for_number_of_tiles;
+use crate::scene::OutdoorMarker;
 
 pub fn setup_ground_system(
     mut commands: Commands,
@@ -33,6 +34,7 @@ pub fn setup_ground_system(
     let ground_mesh_handle = meshes.add(ground_mesh);
 
     commands.spawn((
+        OutdoorMarker,
         RigidBody::Static,
         Mesh3d(ground_mesh_handle),
         MeshMaterial3d(ground_material_handle),
