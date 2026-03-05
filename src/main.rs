@@ -590,6 +590,7 @@ fn on_reset_event(
         ),
         (With<RocketMarker>, Without<Camera>),
     >,
+    app_state: Res<State<AppState>>,
 ) {
     if reset_events.read().next().is_none() {
         return;
@@ -607,10 +608,16 @@ fn on_reset_event(
         *axes = lock_all_axes(LockedAxes::new());
     }
 
+    let base_y = if *app_state.get() == AppState::Lab {
+        scene::TABLE_TOP_Y + rocket_dims.total_length() * 0.5
+    } else {
+        rocket_dims.total_length() * 0.5
+    };
+
     if let Ok((rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity)) =
         rocket_query.single_mut()
     {
-        rocket_transform.translation = Vec3::new(0.0, rocket_dims.total_length() * 0.5, 0.0);
+        rocket_transform.translation = Vec3::new(0.0, base_y, 0.0);
         rocket_transform.rotation = Quat::IDENTITY;
         *lin_velocity = LinearVelocity::ZERO;
         *ang_velocity = AngularVelocity::ZERO;
@@ -1279,6 +1286,7 @@ mod tests {
             .add_message::<ResetEvent>()
             .add_message::<DownedEvent>()
             .add_message::<CollisionStart>();
+        app.insert_resource(State::new(AppState::Launch));
         app.insert_resource(RocketDimensions::default());
         app.insert_resource(RocketFlightParameters::default());
         app.insert_resource(CameraProperties::default());
