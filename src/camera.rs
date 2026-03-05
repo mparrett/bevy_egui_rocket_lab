@@ -62,7 +62,7 @@ impl Default for CameraProperties {
             zoom: 1.0,
             zoom_index: 1,
             base_fov: 60.0_f32.to_radians(),
-            follow_mode: FollowMode::FixedGround,
+            follow_mode: FollowMode::FreeLook,
             fixed_distance: 6.0,
             egui_has_pointer: false,
         }
