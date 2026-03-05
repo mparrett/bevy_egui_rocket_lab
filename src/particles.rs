@@ -256,6 +256,7 @@ fn timers(mut query: Query<(&mut ParticleTimers, &mut ParticleSpawner)>, time: R
         if let Some(deactivate) = &mut timers.shut_down {
             deactivate.tick(time.delta());
             if deactivate.just_finished() {
+                spawner.starts_enabled = false;
                 timers.paused = true;
             }
         }
