@@ -62,10 +62,11 @@ pub enum AppState {
     Menu,
     Lab,
     Launch,
+    Store,
 }
 
 fn in_gameplay(state: Res<State<AppState>>) -> bool {
-    matches!(state.get(), AppState::Lab | AppState::Launch)
+    matches!(state.get(), AppState::Lab | AppState::Launch | AppState::Store)
 }
 
 #[derive(Message)]
@@ -192,6 +193,7 @@ fn main() {
         )
         .add_systems(OnEnter(AppState::Launch), setup_launch_hud)
         .add_systems(OnEnter(AppState::Lab), setup_lab_hud)
+        .add_systems(OnEnter(AppState::Store), setup_store_hud)
         .add_systems(
             EguiPrimaryContextPass,
             (ui_system, init_egui_ui_input_system).run_if(in_gameplay),
@@ -370,7 +372,8 @@ fn init_egui_ui_input_system(
     if ctx.input(|i| i.key_pressed(Key::Tab)) {
         match app_state.get() {
             AppState::Lab => next_state.set(AppState::Launch),
-            AppState::Launch => next_state.set(AppState::Lab),
+            AppState::Launch => next_state.set(AppState::Store),
+            AppState::Store => next_state.set(AppState::Lab),
             _ => {}
         }
     }
@@ -608,10 +611,9 @@ fn on_reset_event(
         *axes = lock_all_axes(LockedAxes::new());
     }
 
-    let base_y = if *app_state.get() == AppState::Lab {
-        scene::TABLE_TOP_Y + rocket_dims.total_length() * 0.5
-    } else {
-        rocket_dims.total_length() * 0.5
+    let base_y = match *app_state.get() {
+        AppState::Lab | AppState::Store => scene::TABLE_TOP_Y + rocket_dims.total_length() * 0.5,
+        _ => rocket_dims.total_length() * 0.5,
     };
 
     if let Ok((rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity)) =
@@ -699,6 +701,7 @@ fn ui_system(
 ) -> Result {
     let is_lab = *app_state.get() == AppState::Lab;
     let is_launch = *app_state.get() == AppState::Launch;
+    let is_store = *app_state.get() == AppState::Store;
     let ctx = contexts.ctx_mut()?;
     camera_properties.egui_has_pointer = ctx.wants_pointer_input();
 
@@ -978,12 +981,26 @@ fn ui_system(
             }
 
             ui.add_space(6.0);
-            let switch_label = if is_lab { "Go to Launch Pad" } else { "Back to Lab" };
-            if ui.button(switch_label).clicked() {
-                if is_lab {
+            if is_lab {
+                if ui.button("Go to Launch Pad").clicked() {
                     next_state.set(AppState::Launch);
-                } else {
+                }
+                if ui.button("Go to Store").clicked() {
+                    next_state.set(AppState::Store);
+                }
+            } else if is_launch {
+                if ui.button("Back to Lab").clicked() {
                     next_state.set(AppState::Lab);
+                }
+                if ui.button("Go to Store").clicked() {
+                    next_state.set(AppState::Store);
+                }
+            } else if is_store {
+                if ui.button("Back to Lab").clicked() {
+                    next_state.set(AppState::Lab);
+                }
+                if ui.button("Go to Launch Pad").clicked() {
+                    next_state.set(AppState::Launch);
                 }
             }
 
@@ -993,7 +1010,7 @@ fn ui_system(
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     for line in [
-                        "Tab: switch Lab / Launch",
+                        "Tab: cycle Lab/Launch/Store",
                         "D: destabilize  S: stabilize",
                         "Hold `/~: slow motion",
                         "Arrows: orbit / distance",
@@ -1040,10 +1057,9 @@ fn update_rocket_dimensions_system(
 
     debug!("Updating rocket dimensions");
 
-    let base_y = if *app_state.get() == AppState::Lab {
-        scene::TABLE_TOP_Y + rocket_dims.total_length() * 0.5
-    } else {
-        rocket_dims.total_length() * 0.5
+    let base_y = match *app_state.get() {
+        AppState::Lab | AppState::Store => scene::TABLE_TOP_Y + rocket_dims.total_length() * 0.5,
+        _ => rocket_dims.total_length() * 0.5,
     };
     for mut rb_transform in rb_query.iter_mut() {
         rb_transform.translation.y = base_y;
@@ -1265,6 +1281,30 @@ fn setup_lab_hud(mut commands: Commands) {
         ))
         .with_child((
             Text::new("Lab: tweak your rocket\nTab: launch pad  Q: quit"),
+            TextFont {
+                font_size: 13.,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+        ));
+}
+
+fn setup_store_hud(mut commands: Commands) {
+    commands
+        .spawn((
+            DespawnOnExit(AppState::Store),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(8.0),
+                left: Val::Px(296.0),
+                padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        ))
+        .with_child((
+            Text::new("Store\nTab: lab  Q: quit"),
             TextFont {
                 font_size: 13.,
                 ..default()
