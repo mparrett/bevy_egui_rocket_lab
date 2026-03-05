@@ -37,9 +37,9 @@ equirect = cv2.imread(hdr_path, cv2.IMREAD_UNCHANGED)
 equirect = cv2.cvtColor(equirect, cv2.COLOR_BGR2RGB).astype(np.float32)
 
 # py360convert face order: F R B L U D
-# wgpu cubemap face order: +X(R) -X(L) +Y(U) -Y(D) +Z(B) -Z(F)
+# wgpu cubemap face order: +X(R) -X(L) +Y(U) -Y(D) +Z(F) -Z(B)
 cube_faces = py360convert.e2c(equirect, face_w=face_size, cube_format='list')
-wgpu_order = [1, 3, 4, 5, 2, 0]  # R L U D B F
+wgpu_order = [1, 3, 4, 5, 0, 2]  # R L U D F B
 ordered = [cube_faces[i] for i in wgpu_order]
 
 # Reinhard tonemap HDR → LDR
