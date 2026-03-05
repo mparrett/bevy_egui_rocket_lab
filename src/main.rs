@@ -53,7 +53,6 @@ mod rendering;
 mod rocket;
 mod scene;
 mod sky;
-mod util;
 
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum AppState {
