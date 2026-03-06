@@ -115,16 +115,16 @@ pub fn apply_wind_force_system(
     wind: Res<WindProperties>,
     rocket_state: Res<RocketState>,
     rocket_dims: Res<RocketDimensions>,
-    mut query: Query<(&Transform, &LinearVelocity, Forces), With<RocketMarker>>,
+    mut query: Query<(&Transform, Forces), With<RocketMarker>>,
 ) {
     if rocket_state.state != RocketStateEnum::Launched {
         return;
     }
-    let Ok((transform, linear_velocity, mut forces)) = query.single_mut() else {
+    let Ok((transform, mut forces)) = query.single_mut() else {
         return;
     };
 
-    let rel_air_velocity = wind.wind_velocity_world - linear_velocity.0;
+    let rel_air_velocity = wind.wind_velocity_world - forces.linear_velocity();
     let speed_sq = rel_air_velocity.length_squared();
     if speed_sq < 1e-6 {
         return;
