@@ -1637,6 +1637,9 @@ mod tests {
             state.max_height = 0.0;
             state.max_velocity = 0.0;
         }
+        app.world_mut()
+            .resource_mut::<CameraProperties>()
+            .follow_mode = FollowMode::FollowSide;
 
         app.update();
 
