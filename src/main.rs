@@ -50,6 +50,7 @@ mod ground;
 mod menu;
 mod particles;
 mod physics;
+mod profiling;
 mod rendering;
 mod rocket;
 mod save;
@@ -169,6 +170,7 @@ fn main() {
         .add_plugins(EguiPlugin::default())
         .add_plugins(RocketParticlesPlugin)
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(profiling::ProfilingPlugin)
         .register_type::<ForceTimer>()
         .add_plugins(
             WorldInspectorPlugin::default().run_if(input_toggle_active(false, KeyCode::Escape)),
@@ -1242,6 +1244,7 @@ fn ui_system(
                         "Shift+Up/Down: truck cam",
                         "Esc: world inspector",
                         "F10: collider gizmos",
+                        "F11: profiling HUD",
                         "F12: toggle FPS",
                     ] {
                         ui.label(line);

@@ -3,6 +3,10 @@ name = "bevy-rocket-lab"
 version = "0.3.0"
 edition = "2024"
 
+[features]
+default = []
+profiling = ["bevy/trace_tracy_memory"]
+
 [dependencies]
 bevy = { version = "0.18", features = ["webgpu"] }
 bevy_egui = "0.39"
