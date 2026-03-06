@@ -31,3 +31,16 @@ Current chase camera behavior is improved, but naming/intent still diverges from
 2. Add a rocket-relative side frame so `FollowSide` can orbit around heading rather than world-axis lock
 3. Expose small tuning knobs in camera config (above bias strength, side orbit aggressiveness)
 4. Add a focused camera-mode transition test plan (Ground→Side, Ground→Above, Side↔Above during ascent)
+
+## Atmosphere mode incompatible with bevy_firework particle pipeline
+
+**Status:** Workaround in place (atmosphere disabled during launch)
+**Severity:** Crash — wgpu validation error
+**Observed:** 2026-03-05
+**Upstream:** [bevyengine/bevy#21784](https://github.com/bevyengine/bevy/issues/21784)
+
+When `Atmosphere` is on the camera, Bevy adds extra bind group entries (bindings 29-31) to `mesh_view_layout_multisampled_atmosphere`. bevy_firework 0.9's render pipeline is compiled against the non-atmosphere layout and panics on the mismatch.
+
+**Workaround:** `enter_launch` forces `SkyRenderMode::Cubemap`, and the atmosphere option is greyed out in the launch UI. All atmosphere code paths are preserved for when the upstream fix lands.
+
+**Resolution:** Wait for bevy_firework to support atmosphere bind group layouts, or for Bevy to decouple atmosphere bindings from the mesh view bind group.

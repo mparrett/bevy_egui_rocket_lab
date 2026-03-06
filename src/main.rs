@@ -854,16 +854,15 @@ fn ui_system(
                         .selected_text(mode_label)
                         .show_ui(ui, |ui| {
                             ui.selectable_value(&mut *sky_mode, SkyRenderMode::Cubemap, "Cubemap");
+                            // Atmosphere mode crashes with bevy_firework's render pipeline
+                            // (bind group layout mismatch, bevyengine/bevy#21784)
+                            ui.disable();
                             ui.selectable_value(
                                 &mut *sky_mode,
                                 SkyRenderMode::Atmosphere,
-                                "Atmosphere",
+                                "Atmosphere (needs particle fix)",
                             );
                         });
-
-                    if !is_cubemap_mode {
-                        ui.label("Atmosphere mode uses procedural sky + IBL");
-                    }
 
                     ui.separator();
                     ui.add(egui::Slider::new(&mut sky_props.time_of_day, 0.0..=24.0).text("time"));

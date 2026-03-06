@@ -629,6 +629,9 @@ fn enter_launch(
         *vis = Visibility::Visible;
     }
 
+    // Force cubemap mode — bevy_firework's render pipeline is incompatible
+    // with Atmosphere bind group bindings (29-31). See bevyengine/bevy#21784.
+    *sky_mode = SkyRenderMode::Cubemap;
     sky_mode.set_changed();
 
     rocket_state.state = RocketStateEnum::Initial;

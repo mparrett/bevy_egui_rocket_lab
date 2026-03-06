@@ -158,6 +158,9 @@ impl Cubemap {
 pub enum SkyRenderMode {
     #[default]
     Cubemap,
+    // Currently disabled at runtime: bevy_firework's pipeline is incompatible
+    // with Atmosphere bind group bindings (bevyengine/bevy#21784).
+    #[allow(dead_code)]
     Atmosphere,
 }
 
