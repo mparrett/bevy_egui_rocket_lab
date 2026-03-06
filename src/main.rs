@@ -262,10 +262,17 @@ fn main() {
     app.run();
 }
 
-fn adjust_time_scale(mut time: ResMut<Time<Virtual>>, input: Res<ButtonInput<KeyCode>>) {
-    // Hold backquote (`/~) for temporary slow motion.
+fn adjust_time_scale(
+    mut contexts: EguiContexts,
+    mut time: ResMut<Time<Virtual>>,
+    input: Res<ButtonInput<KeyCode>>,
+) -> Result {
+    if contexts.ctx_mut()?.wants_keyboard_input() {
+        return Ok(());
+    }
     let slowmo_active = input.pressed(KeyCode::Backquote);
     time.set_relative_speed(if slowmo_active { 0.05 } else { 1.0 });
+    Ok(())
 }
 
 fn disable_physics_debug(mut config_store: ResMut<GizmoConfigStore>) {
@@ -274,13 +281,18 @@ fn disable_physics_debug(mut config_store: ResMut<GizmoConfigStore>) {
 }
 
 fn toggle_physics_debug(
+    mut contexts: EguiContexts,
     input: Res<ButtonInput<KeyCode>>,
     mut config_store: ResMut<GizmoConfigStore>,
-) {
+) -> Result {
+    if contexts.ctx_mut()?.wants_keyboard_input() {
+        return Ok(());
+    }
     if input.just_pressed(KeyCode::F10) {
         let (config, _) = config_store.config_mut::<PhysicsGizmos>();
         config.enabled = !config.enabled;
     }
+    Ok(())
 }
 
 fn sync_sky_render_mode_system(
@@ -361,6 +373,10 @@ fn init_egui_ui_input_system(
     mut next_state: ResMut<NextState<AppState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
+    if ctx.wants_keyboard_input() {
+        return Ok(());
+    }
+
     if ctx.input(|i| i.key_pressed(Key::Q)) {
         app_exit.write(AppExit::Success);
     }
@@ -388,6 +404,9 @@ fn do_launch_system(
     mut launch_event_writer: MessageWriter<LaunchEvent>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
+    if ctx.wants_keyboard_input() {
+        return Ok(());
+    }
     let shift_held = ctx.input(|i| i.modifiers.shift);
     let arrow_left = ctx.input(|i| i.key_down(Key::ArrowLeft));
     let arrow_right = ctx.input(|i| i.key_down(Key::ArrowRight));
