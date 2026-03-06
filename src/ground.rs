@@ -19,7 +19,7 @@ pub fn setup_ground_system(
     let ground_material_handle = materials.add(StandardMaterial {
         base_color_texture: Some(asset_server.load(GROUND_TEXTURE)),
         base_color: Color::srgb(0.3, 0.5, 0.2),
-        reflectance: 0.01,
+        reflectance: 0.05,
         alpha_mode: AlphaMode::Opaque,
         unlit: false,
         ..default()

@@ -285,18 +285,19 @@ fn sync_sky_render_mode_system(
     mut scattering_media: ResMut<Assets<ScatteringMedium>>,
     mut cached_medium: Local<Option<Handle<ScatteringMedium>>>,
     mut commands: Commands,
-    camera_query: Query<(Entity, Option<&Skybox>, Option<&Atmosphere>), With<Camera3d>>,
+    mut camera_query: Query<(Entity, Option<&Skybox>, Option<&Atmosphere>, &mut Tonemapping), With<Camera3d>>,
 ) {
     if !sky_mode.is_changed() {
         return;
     }
 
-    let Ok((camera, skybox, atmosphere)) = camera_query.single() else {
+    let Ok((camera, skybox, atmosphere, mut tonemapping)) = camera_query.single_mut() else {
         return;
     };
 
     match *sky_mode {
         SkyRenderMode::Cubemap => {
+            *tonemapping = Tonemapping::TonyMcMapface;
             commands.entity(camera).remove::<(
                 Exposure,
                 Atmosphere,
@@ -324,6 +325,9 @@ fn sync_sky_render_mode_system(
             }
         }
         SkyRenderMode::Atmosphere => {
+            // AcesFitted is what the Bevy atmosphere example uses; it handles
+            // HDR sky highlights better than TonyMcMapface for this pipeline.
+            *tonemapping = Tonemapping::AcesFitted;
             commands.entity(camera).insert(Exposure { ev100: 13.0 });
             if skybox.is_some() {
                 commands.entity(camera).remove::<Skybox>();
@@ -654,6 +658,8 @@ fn ui_system(
     mut sky_props: ResMut<SkyProperties>,
     mut sky_mode: ResMut<SkyRenderMode>,
     mut sun_disc_settings: ResMut<SunDiscSettings>,
+    ambient_light: Res<GlobalAmbientLight>,
+    sun_query: Query<&DirectionalLight, With<sky::SunLightMarker>>,
     rocket_query: Query<
         (&ComputedMass, &ComputedCenterOfMass),
         (With<RocketMarker>, Without<Camera>),
@@ -833,6 +839,14 @@ fn ui_system(
                     ui.separator();
                     ui.add(egui::Slider::new(&mut sky_props.time_of_day, 0.0..=24.0).text("time"));
                     ui.add(egui::Slider::new(&mut sky_props.day_speed, 0.0..=600.0).text("speed"));
+                    ui.add(
+                        egui::Slider::new(&mut sky_props.ambient_floor, 0.0..=1.0)
+                            .text("ambient floor"),
+                    );
+                    ui.label(format!("  ambient brightness: {:.3}", ambient_light.brightness));
+                    if let Ok(sun) = sun_query.single() {
+                        ui.label(format!("  sun illuminance: {:.1} lux", sun.illuminance));
+                    }
 
                     ui.separator();
                     if is_cubemap_mode {

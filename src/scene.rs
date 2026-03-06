@@ -484,7 +484,7 @@ fn enter_indoor(
     rocket_state: &mut RocketState,
     rocket_dims: &RocketDimensions,
     camera_properties: &mut CameraProperties,
-    camera_query: &mut Query<Entity, With<Camera3d>>,
+    camera_query: &mut Query<(Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping), With<Camera3d>>,
     commands: &mut Commands,
     show_rocket: bool,
 ) {
@@ -492,12 +492,16 @@ fn enter_indoor(
         *vis = Visibility::Hidden;
     }
 
-    if let Ok(camera_entity) = camera_query.single_mut() {
+    if let Ok((camera_entity, mut tonemapping)) = camera_query.single_mut() {
+        // Remove atmosphere components and any Exposure carried over from atmosphere mode.
+        // Reset tonemapper to the cubemap-mode default for consistent indoor rendering.
         commands.entity(camera_entity).remove::<(
             bevy::pbr::Atmosphere,
             bevy::pbr::AtmosphereSettings,
             bevy::light::AtmosphereEnvironmentMapLight,
+            bevy::camera::Exposure,
         )>();
+        *tonemapping = bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface;
     }
 
     rocket_state.state = RocketStateEnum::Initial;
@@ -543,7 +547,7 @@ fn enter_lab(
     mut rocket_state: ResMut<RocketState>,
     rocket_dims: Res<RocketDimensions>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<Entity, With<Camera3d>>,
+    mut camera_query: Query<(Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping), With<Camera3d>>,
     mut commands: Commands,
     mut sky_props: ResMut<SkyProperties>,
 ) {
@@ -576,7 +580,7 @@ fn enter_store(
     mut rocket_state: ResMut<RocketState>,
     rocket_dims: Res<RocketDimensions>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<Entity, With<Camera3d>>,
+    mut camera_query: Query<(Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping), With<Camera3d>>,
     mut commands: Commands,
     mut sky_props: ResMut<SkyProperties>,
 ) {

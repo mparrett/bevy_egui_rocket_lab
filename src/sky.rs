@@ -173,6 +173,9 @@ pub struct SkyProperties {
     pub day_speed: f32,
     pub lab_skybox_index: usize,
     pub store_skybox_index: usize,
+    /// Compresses the ambient brightness curve toward 1.0.
+    /// 0.0 = full twilight/night range; 1.0 = always fully lit.
+    pub ambient_floor: f32,
 }
 
 impl Default for SkyProperties {
@@ -192,6 +195,7 @@ impl Default for SkyProperties {
             day_speed: 60.0,
             lab_skybox_index: 0,
             store_skybox_index: store_index,
+            ambient_floor: 0.20,
         }
     }
 }
@@ -430,6 +434,7 @@ pub fn animate_light_direction(
     time: Res<Time>,
     mut sky_props: ResMut<SkyProperties>,
     sky_mode: Res<SkyRenderMode>,
+    app_state: Res<State<crate::AppState>>,
     mut ambient_light: ResMut<GlobalAmbientLight>,
     mut query: Query<(&mut Transform, &mut DirectionalLight), With<SunLightMarker>>,
 ) {
@@ -447,21 +452,53 @@ pub fn animate_light_direction(
     } else {
         Vec3::Y
     };
-    // Atmosphere mode benefits from a stronger ambient floor than cubemap mode.
-    let (ambient_night, ambient_day) = match *sky_mode {
-        SkyRenderMode::Cubemap => (0.25, 0.5),
-        SkyRenderMode::Atmosphere => (0.55, 1.05),
-    };
-    ambient_light.brightness = ambient_night + (ambient_day - ambient_night) * daylight.powf(0.6);
+
+    match app_state.get() {
+        crate::AppState::Lab | crate::AppState::Store => {
+            // Indoor scenes use a fixed ambient; outdoor day/night doesn't apply.
+            ambient_light.brightness = 0.8;
+        }
+        _ => {
+            // Both modes use: ambient = natural + (1 - natural) * floor
+            // This compresses the curve toward 1.0 — floor has a visible effect
+            // whenever natural < 1.0, including atmosphere mode during daytime
+            // (where natural = 0, so ambient = floor directly).
+            let natural = match *sky_mode {
+                SkyRenderMode::Cubemap => {
+                    // Twilight blend: midnight ≈ 0.35, horizon ≈ 0.675, noon = 1.0.
+                    let t = (direction.y + 1.0) * 0.5; // 0 at midnight → 1 at noon
+                    let s = t * t * (3.0 - 2.0 * t); // smoothstep
+                    0.35 + 0.65 * s
+                }
+                SkyRenderMode::Atmosphere => {
+                    // AtmosphereEnvironmentMapLight handles daytime via IBL.
+                    // Fade in a moonlit natural floor below the horizon.
+                    let night_factor = (-direction.y).clamp(0.0, 1.0);
+                    0.15 * night_factor
+                }
+            };
+            let floor_brightness = sky_props.ambient_floor * 3000.0;
+            ambient_light.brightness = natural + floor_brightness;
+        }
+    }
 
     for (mut transform, mut light) in &mut query {
         *transform = Transform::default().looking_to(-direction, up);
-        light.illuminance = if daylight > 0.0 {
-            light_consts::lux::CLEAR_SUNRISE
-                + (light_consts::lux::RAW_SUNLIGHT - light_consts::lux::CLEAR_SUNRISE)
-                    * daylight.powf(0.45)
-        } else {
-            light_consts::lux::FULL_MOON_NIGHT
+        light.illuminance = match *sky_mode {
+            SkyRenderMode::Cubemap => {
+                let base = if daylight > 0.0 {
+                    light_consts::lux::CLEAR_SUNRISE
+                        + (light_consts::lux::RAW_SUNLIGHT - light_consts::lux::CLEAR_SUNRISE)
+                            * daylight.powf(0.45)
+                } else {
+                    light_consts::lux::FULL_MOON_NIGHT
+                };
+                let floor = sky_props.ambient_floor * light_consts::lux::CLEAR_SUNRISE;
+                base.max(floor)
+            }
+            SkyRenderMode::Atmosphere => {
+                light_consts::lux::RAW_SUNLIGHT
+            }
         };
     }
 }
