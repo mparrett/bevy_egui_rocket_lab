@@ -89,6 +89,12 @@ struct RocketGeometryChangedEvent;
 #[derive(Component, Default)]
 struct ScoreMarker;
 
+#[derive(Component, Default)]
+struct WindHudMarker;
+
+#[derive(Component, Default)]
+struct WindIconMarker;
+
 #[derive(Resource)]
 pub struct AudioSettings {
     pub music_enabled: bool,
@@ -223,6 +229,7 @@ fn main() {
                 detect_landing_from_collision_system,
                 on_crash_event,
                 update_stats_system,
+                update_wind_hud_system,
                 wind::update_wind_system,
             )
                 .run_if(in_state(AppState::Launch)),
@@ -669,9 +676,26 @@ fn detect_landing_from_collision_system(
     }
 }
 
+fn wind_cardinal(dir: Vec2) -> &'static str {
+    if dir.length_squared() < 0.001 {
+        return "--";
+    }
+    let angle = dir.y.atan2(dir.x).to_degrees().rem_euclid(360.0);
+    match angle {
+        a if a < 22.5 => "E",
+        a if a < 67.5 => "NE",
+        a if a < 112.5 => "N",
+        a if a < 157.5 => "NW",
+        a if a < 202.5 => "W",
+        a if a < 247.5 => "SW",
+        a if a < 292.5 => "S",
+        a if a < 337.5 => "SE",
+        _ => "E",
+    }
+}
+
 fn update_stats_system(
     rocket_state: Res<RocketState>,
-    sky_props: Res<SkyProperties>,
     mut text_query: Query<&mut Text, With<ScoreMarker>>,
     rocket_query: Query<(&Transform, &LinearVelocity), (With<RocketMarker>, Without<Camera>)>,
 ) {
@@ -682,15 +706,38 @@ fn update_stats_system(
         return;
     };
     let altitude = (transform.translation.y - rocket_state.launch_origin_y).max(0.0);
+    **score_text = format!(
+        "Alt: {:5.1} / {:5.1} m\n\
+         Vel: {:5.1} / {:5.1} m/s",
+        altitude, rocket_state.max_height, velocity.length(), rocket_state.max_velocity
+    );
+}
+
+fn update_wind_hud_system(
+    sky_props: Res<SkyProperties>,
+    wind: Res<wind::WindProperties>,
+    mut icon_query: Query<(&mut Text, &mut TextColor), With<WindIconMarker>>,
+    mut text_query: Query<&mut TextSpan, With<WindHudMarker>>,
+) {
     let h = sky_props.time_of_day as u32 % 24;
     let m = ((sky_props.time_of_day.fract()) * 60.0) as u32;
-    **score_text = format!(
-        "Alt: {:.1} / {:.1} m  Vel: {:.1} / {:.1} m/s  {h:02}:{m:02}",
-        altitude,
-        rocket_state.max_height,
-        velocity.length(),
-        rocket_state.max_velocity
-    );
+    let is_day = (6..18).contains(&h);
+
+    if let Ok((mut icon, mut icon_color)) = icon_query.single_mut() {
+        **icon = if is_day { "* " } else { "( " }.into();
+        icon_color.0 = if is_day {
+            Color::srgb(1.0, 0.9, 0.2)
+        } else {
+            Color::srgb(0.6, 0.7, 1.0)
+        };
+    }
+
+    if let Ok(mut text) = text_query.single_mut() {
+        let horiz_speed =
+            Vec2::new(wind.wind_velocity_world.x, wind.wind_velocity_world.z).length();
+        let cardinal = wind_cardinal(wind.direction);
+        **text = format!("{h:02}:{m:02}\nW: {horiz_speed:4.1} m/s {cardinal:<2}");
+    }
 }
 
 fn ui_system(
@@ -1160,50 +1207,6 @@ fn ui_system(
                     .default_open(true)
                     .show(ui, |ui| {
                         ui.add(egui::Slider::new(&mut wind.strength, 0.0..=1.0).text("strength"));
-                        let horizontal_speed =
-                            Vec2::new(wind.wind_velocity_world.x, wind.wind_velocity_world.z)
-                                .length();
-                        ui.label(format!(
-                            "horiz: {:.1} m/s  vertical: {:+.1} m/s",
-                            horizontal_speed, wind.wind_velocity_world.y
-                        ));
-
-                        let size = 80.0;
-                        let (response, painter) =
-                            ui.allocate_painter(egui::vec2(size, size), egui::Sense::hover());
-                        let center = response.rect.center();
-                        let radius = size * 0.4;
-
-                        let wind_color = egui::Color32::from_rgb(100, 200, 255);
-                        let dim_color = egui::Color32::from_rgba_premultiplied(100, 200, 255, 60);
-
-                        painter.circle_stroke(center, radius, egui::Stroke::new(1.0, dim_color));
-
-                        let label_offset = radius + 8.0;
-                        let font = egui::FontId::proportional(10.0);
-                        for (label, dir) in [
-                            ("N", egui::vec2(0.0, -1.0)),
-                            ("S", egui::vec2(0.0, 1.0)),
-                            ("E", egui::vec2(1.0, 0.0)),
-                            ("W", egui::vec2(-1.0, 0.0)),
-                        ] {
-                            painter.text(
-                                center + dir * label_offset,
-                                egui::Align2::CENTER_CENTER,
-                                label,
-                                font.clone(),
-                                dim_color,
-                            );
-                        }
-
-                        let mag = wind.direction.length();
-                        if mag > 0.001 {
-                            let arrow_len = mag * radius;
-                            let dir_screen =
-                                egui::vec2(wind.direction.x, -wind.direction.y).normalized();
-                            let tip = center + dir_screen * arrow_len;
-                            painter.arrow(center, tip - center, egui::Stroke::new(2.0, wind_color));
-                        }
                     });
             }
 
@@ -1497,6 +1500,8 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
         ));
 
+    let mono_font = asset_server.load("fonts/FiraMono-Medium.ttf");
+
     commands
         .spawn((
             DespawnOnExit(AppState::Launch),
@@ -1504,22 +1509,72 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
                 right: Val::Px(12.0),
-                padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
-                border_radius: BorderRadius::all(Val::Px(4.0)),
+                column_gap: Val::Px(6.0),
                 ..default()
             },
-            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         ))
-        .with_child((
-            Text::new(""),
-            TextFont {
-                font: asset_server.load("fonts/FiraMono-Medium.ttf"),
-                font_size: 13.0,
-                ..default()
-            },
-            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
-            ScoreMarker,
-        ));
+        .with_children(|parent| {
+            parent
+                .spawn((Node {
+                    padding: UiRect::new(
+                        Val::Px(8.0),
+                        Val::Px(8.0),
+                        Val::Px(6.0),
+                        Val::Px(8.0),
+                    ),
+                    border_radius: BorderRadius::all(Val::Px(4.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                ))
+                .with_child((
+                    Text::new(""),
+                    TextFont {
+                        font: mono_font.clone(),
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
+                    ScoreMarker,
+                ));
+
+            parent
+                .spawn((Node {
+                    padding: UiRect::new(
+                        Val::Px(8.0),
+                        Val::Px(8.0),
+                        Val::Px(6.0),
+                        Val::Px(8.0),
+                    ),
+                    border_radius: BorderRadius::all(Val::Px(4.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                ))
+                .with_children(|panel| {
+                    panel
+                        .spawn((
+                            Text::new("* "),
+                            TextFont {
+                                font: mono_font.clone(),
+                                font_size: 13.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgb(1.0, 0.9, 0.2)),
+                            WindIconMarker,
+                        ))
+                        .with_child((
+                            TextSpan::new(""),
+                            TextFont {
+                                font: mono_font,
+                                font_size: 13.0,
+                                ..default()
+                            },
+                            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
+                            WindHudMarker,
+                        ));
+                });
+        });
 }
 
 fn setup_lab_hud(mut commands: Commands) {

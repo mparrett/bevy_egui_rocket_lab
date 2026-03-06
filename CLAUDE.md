@@ -32,6 +32,8 @@ Tests exist (`just test`) for launch/reset/landing core-loop behavior. Use `just
 
 **Before every push**, run `just clippy` and `just test` — these same checks run in CI (`.github/workflows/ci.yml`) and will block PRs if they fail.
 
+**Running the app:** Always run via `just run` (or `just debug`, `just serve-wasm`, etc.) inside the tmux session named `rocket-lab-runner`.
+
 ## Architecture
 
 **State & Messages:** `LaunchEvent`, `DownedEvent`, `ResetEvent` messages for rocket lifecycle. `RocketStateEnum` tracks `Initial → Launched → Grounded`.
