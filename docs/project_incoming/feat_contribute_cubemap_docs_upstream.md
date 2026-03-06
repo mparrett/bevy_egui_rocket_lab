@@ -1,3 +1,7 @@
+---
+priority: P4
+---
+
 # Contribute cubemap face ordering docs upstream to Bevy
 
 ## Context

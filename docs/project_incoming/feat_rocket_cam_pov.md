@@ -1,3 +1,7 @@
+---
+priority: P3
+---
+
 # Rocket-Cam POV Mode
 
 ## Summary

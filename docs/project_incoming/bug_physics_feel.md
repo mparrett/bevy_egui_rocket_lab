@@ -1,3 +1,7 @@
+---
+priority: P1
+---
+
 # Bug: Physics Feel Off After avian3d Migration
 
 ## Summary

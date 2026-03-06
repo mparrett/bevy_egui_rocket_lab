@@ -1,3 +1,7 @@
+---
+priority: P2
+---
+
 # Calibrate lighting for cubemap and atmosphere modes
 
 ## Problem

@@ -1,3 +1,7 @@
+---
+priority: P3
+---
+
 # Bug: Fog only affects ground plane, looks bad
 
 ## Status: TODO
