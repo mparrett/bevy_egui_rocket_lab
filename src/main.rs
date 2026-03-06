@@ -53,6 +53,7 @@ mod rendering;
 mod rocket;
 mod scene;
 mod sky;
+mod wind;
 
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub enum AppState {
@@ -175,6 +176,8 @@ fn main() {
         .init_resource::<CameraProperties>()
         .init_resource::<RocketState>()
         .init_resource::<AudioSettings>()
+        .init_resource::<save::SaveState>()
+        .init_resource::<wind::WindProperties>()
         .add_systems(
             Startup,
             (
@@ -212,6 +215,7 @@ fn main() {
                 detect_landing_from_collision_system,
                 on_crash_event,
                 update_stats_system,
+                wind::update_wind_system,
             )
                 .run_if(in_state(AppState::Launch)),
         )
@@ -229,7 +233,7 @@ fn main() {
         );
     app.add_systems(
         FixedPostUpdate,
-        update_forces_system
+        (update_forces_system, wind::apply_wind_force_system)
             .in_set(PhysicsSystems::First)
             .run_if(in_state(AppState::Launch)),
     );
@@ -658,6 +662,8 @@ fn ui_system(
     mut sky_props: ResMut<SkyProperties>,
     mut sky_mode: ResMut<SkyRenderMode>,
     mut sun_disc_settings: ResMut<SunDiscSettings>,
+    mut wind: ResMut<wind::WindProperties>,
+    mut save_state: ResMut<save::SaveState>,
     ambient_light: Res<GlobalAmbientLight>,
     sun_query: Query<&DirectionalLight, With<sky::SunLightMarker>>,
     rocket_query: Query<
@@ -957,6 +963,63 @@ fn ui_system(
                         );
                     }
                 });
+            }
+
+            if is_launch {
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new("Wind")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut wind.strength, 0.0..=1.0)
+                                .text("strength"),
+                        );
+
+                        let size = 80.0;
+                        let (response, painter) =
+                            ui.allocate_painter(egui::vec2(size, size), egui::Sense::hover());
+                        let center = response.rect.center();
+                        let radius = size * 0.4;
+
+                        let wind_color = egui::Color32::from_rgb(100, 200, 255);
+                        let dim_color = egui::Color32::from_rgba_premultiplied(100, 200, 255, 60);
+
+                        painter.circle_stroke(
+                            center,
+                            radius,
+                            egui::Stroke::new(1.0, dim_color),
+                        );
+
+                        let label_offset = radius + 8.0;
+                        let font = egui::FontId::proportional(10.0);
+                        for (label, dir) in [
+                            ("N", egui::vec2(0.0, -1.0)),
+                            ("S", egui::vec2(0.0, 1.0)),
+                            ("E", egui::vec2(1.0, 0.0)),
+                            ("W", egui::vec2(-1.0, 0.0)),
+                        ] {
+                            painter.text(
+                                center + dir * label_offset,
+                                egui::Align2::CENTER_CENTER,
+                                label,
+                                font.clone(),
+                                dim_color,
+                            );
+                        }
+
+                        let mag = wind.direction.length();
+                        if mag > 0.001 {
+                            let arrow_len = mag * radius;
+                            let dir_screen =
+                                egui::vec2(wind.direction.x, -wind.direction.y).normalized();
+                            let tip = center + dir_screen * arrow_len;
+                            painter.arrow(
+                                center,
+                                tip - center,
+                                egui::Stroke::new(2.0, wind_color),
+                            );
+                        }
+                    });
             }
 
             ui.add_space(6.0);
