@@ -5,6 +5,49 @@ use crate::cone::Cone;
 use crate::fin::Fin;
 use crate::physics::lock_all_axes;
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ColorPreset {
+    White,
+    Red,
+    Blue,
+    Green,
+    Yellow,
+    Black,
+}
+
+impl ColorPreset {
+    pub const ALL: [ColorPreset; 6] = [
+        Self::White,
+        Self::Red,
+        Self::Blue,
+        Self::Green,
+        Self::Yellow,
+        Self::Black,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::White => "White",
+            Self::Red => "Red",
+            Self::Blue => "Blue",
+            Self::Green => "Green",
+            Self::Yellow => "Yellow",
+            Self::Black => "Black",
+        }
+    }
+
+    pub fn to_color(self) -> Color {
+        match self {
+            Self::White => Color::srgb(0.93, 0.93, 1.0),
+            Self::Red => Color::srgb(0.85, 0.15, 0.15),
+            Self::Blue => Color::srgb(0.15, 0.3, 0.85),
+            Self::Green => Color::srgb(0.2, 0.6, 0.2),
+            Self::Yellow => Color::srgb(0.9, 0.8, 0.1),
+            Self::Black => Color::srgb(0.08, 0.08, 0.08),
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct RocketMarker;
 
@@ -30,7 +73,24 @@ pub struct RocketDimensions {
     pub num_fins: f32,
     pub fin_height: f32,
     pub fin_length: f32,
+    #[serde(default = "default_body_color")]
+    pub body_color: ColorPreset,
+    #[serde(default = "default_cone_color")]
+    pub cone_color: ColorPreset,
+    #[serde(default = "default_fin_color")]
+    pub fin_color: ColorPreset,
+    #[serde(skip)]
     pub flag_changed: bool,
+}
+
+fn default_body_color() -> ColorPreset {
+    ColorPreset::White
+}
+fn default_cone_color() -> ColorPreset {
+    ColorPreset::White
+}
+fn default_fin_color() -> ColorPreset {
+    ColorPreset::Green
 }
 
 impl RocketDimensions {
@@ -42,6 +102,9 @@ impl RocketDimensions {
             num_fins: 3.0,
             fin_height: 0.2,
             fin_length: 0.1,
+            body_color: ColorPreset::White,
+            cone_color: ColorPreset::White,
+            fin_color: ColorPreset::Green,
             flag_changed: false,
         }
     }
@@ -98,7 +161,7 @@ pub fn create_rocket_fin_pbr_bundles(
     materials: &mut Assets<StandardMaterial>,
     rocket_dims: &RocketDimensions,
     meshes: &mut Assets<Mesh>,
-    rocket_color_hex: &str,
+    fin_color: Color,
 ) -> Vec<(Mesh3d, MeshMaterial3d<StandardMaterial>, Transform)> {
     let n_fins = rocket_dims.num_fins as usize;
     let degs_per_fin = 360.0 / n_fins as f32;
@@ -112,9 +175,7 @@ pub fn create_rocket_fin_pbr_bundles(
     });
 
     let fin_material = StandardMaterial {
-        base_color: Srgba::hex(rocket_color_hex)
-            .expect("rocket_color_hex must be a valid hex literal")
-            .into(),
+        base_color: fin_color,
         metallic: 0.7,
         perceptual_roughness: 0.3,
         reflectance: 0.6,
@@ -154,11 +215,16 @@ pub fn spawn_rocket_system(
     rocket_dims: Res<RocketDimensions>,
     _rocket_state: ResMut<RocketState>,
 ) {
-    let rocket_color_hex = "#eeeeff";
-    let rocket_material = StandardMaterial {
-        base_color: Srgba::hex(rocket_color_hex)
-            .expect("rocket_color_hex must be a valid hex literal")
-            .into(),
+    let body_material = StandardMaterial {
+        base_color: rocket_dims.body_color.to_color(),
+        metallic: 0.4,
+        perceptual_roughness: 0.4,
+        reflectance: 0.6,
+        emissive: LinearRgba::BLACK,
+        ..default()
+    };
+    let cone_material = StandardMaterial {
+        base_color: rocket_dims.cone_color.to_color(),
         metallic: 0.4,
         perceptual_roughness: 0.4,
         reflectance: 0.6,
@@ -190,7 +256,7 @@ pub fn spawn_rocket_system(
                         .resolution(CIRCLE_RESOLUTION),
                 ),
             ),
-            MeshMaterial3d(materials.add(rocket_material.clone())),
+            MeshMaterial3d(materials.add(body_material)),
             Transform::from_xyz(0.0, 0.0, 0.0),
             Collider::cylinder(rocket_dims.radius, rocket_dims.length),
             RocketBody,
@@ -206,7 +272,7 @@ pub fn spawn_rocket_system(
                 height: rocket_dims.cone_length,
                 segments: CIRCLE_RESOLUTION,
             }))),
-            MeshMaterial3d(materials.add(rocket_material)),
+            MeshMaterial3d(materials.add(cone_material)),
             Transform::from_xyz(0.0, rocket_dims.total_length() * 0.5, 0.0),
             Collider::cone(rocket_dims.radius, rocket_dims.cone_length),
             ColliderDensity(CONE_DENSITY),
@@ -221,7 +287,7 @@ pub fn spawn_rocket_system(
             materials.as_mut(),
             rocket_dims.as_ref(),
             meshes.as_mut(),
-            rocket_color_hex,
+            rocket_dims.fin_color.to_color(),
         );
         for bundle in rocket_fin_pbr_bundles {
             parent.spawn((bundle, FinMarker));
@@ -242,7 +308,8 @@ mod tests {
             ..RocketDimensions::default()
         };
 
-        let bundles = create_rocket_fin_pbr_bundles(&mut materials, &dims, &mut meshes, "#eeeeff");
+        let bundles =
+            create_rocket_fin_pbr_bundles(&mut materials, &dims, &mut meshes, Color::WHITE);
         assert_eq!(bundles.len(), 4);
 
         let first_mesh = &bundles[0].0.0;

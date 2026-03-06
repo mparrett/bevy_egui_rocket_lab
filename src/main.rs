@@ -31,8 +31,9 @@ use crate::{
     ground::setup_ground_system,
     physics::{ForceTimer, get_timer_id, lock_all_axes, update_forces_system},
     rocket::{
-        FinMarker, RocketBody, RocketCone, RocketDimensions, RocketFlightParameters, RocketMarker,
-        RocketState, RocketStateEnum, create_rocket_fin_pbr_bundles, spawn_rocket_system,
+        ColorPreset, FinMarker, RocketBody, RocketCone, RocketDimensions, RocketFlightParameters,
+        RocketMarker, RocketState, RocketStateEnum, create_rocket_fin_pbr_bundles,
+        spawn_rocket_system,
     },
     sky::{
         Cubemap, SKYBOXES, animate_light_direction, apply_fog_mode, cubemap_asset_loaded,
@@ -789,6 +790,28 @@ fn ui_system(
                         if changed {
                             rocket_dims.flag_changed = true;
                         }
+
+                        ui.separator();
+                        let mut color_changed = false;
+                        let color_combo =
+                            |ui: &mut egui::Ui, label: &str, current: &mut ColorPreset| {
+                                let prev = *current;
+                                egui::ComboBox::from_label(label)
+                                    .selected_text(current.label())
+                                    .show_ui(ui, |ui| {
+                                        for preset in ColorPreset::ALL {
+                                            ui.selectable_value(current, preset, preset.label());
+                                        }
+                                    });
+                                *current != prev
+                            };
+                        color_changed |= color_combo(ui, "body", &mut rocket_dims.body_color);
+                        color_changed |= color_combo(ui, "cone", &mut rocket_dims.cone_color);
+                        color_changed |= color_combo(ui, "fins", &mut rocket_dims.fin_color);
+                        if color_changed {
+                            rocket_dims.flag_changed = true;
+                        }
+
                         if let Ok((mass, com)) = rocket_query.single() {
                             ui.separator();
                             ui.label(format!(
@@ -1078,11 +1101,21 @@ fn update_rocket_dimensions_system(
     mut rocket_dims: ResMut<RocketDimensions>,
     mut geometry_changed: MessageWriter<RocketGeometryChangedEvent>,
     mut body_query: Query<
-        (&mut Mesh3d, &mut Collider, &mut Transform),
+        (
+            &mut Mesh3d,
+            &mut Collider,
+            &mut Transform,
+            &MeshMaterial3d<StandardMaterial>,
+        ),
         (With<RocketBody>, Without<RocketCone>),
     >,
     mut cone_query: Query<
-        (&mut Mesh3d, &mut Collider, &mut Transform),
+        (
+            &mut Mesh3d,
+            &mut Collider,
+            &mut Transform,
+            &MeshMaterial3d<StandardMaterial>,
+        ),
         (With<RocketCone>, Without<RocketBody>),
     >,
     mut rb_query: Query<
@@ -1107,7 +1140,7 @@ fn update_rocket_dimensions_system(
         rb_transform.translation.y = base_y;
     }
 
-    for (mut mesh_handle, mut collider, _) in body_query.iter_mut() {
+    for (mut mesh_handle, mut collider, _, mat_handle) in body_query.iter_mut() {
         *mesh_handle = Mesh3d(
             meshes.add(
                 Cylinder::new(rocket_dims.radius, rocket_dims.length)
@@ -1116,9 +1149,12 @@ fn update_rocket_dimensions_system(
             ),
         );
         *collider = Collider::cylinder(rocket_dims.radius, rocket_dims.length);
+        if let Some(mat) = materials.get_mut(&mat_handle.0) {
+            mat.base_color = rocket_dims.body_color.to_color();
+        }
     }
 
-    for (mut mesh_handle, mut collider, mut transform) in cone_query.iter_mut() {
+    for (mut mesh_handle, mut collider, mut transform, mat_handle) in cone_query.iter_mut() {
         *mesh_handle = Mesh3d(meshes.add(Mesh::from(Cone {
             radius: rocket_dims.radius,
             height: rocket_dims.cone_length,
@@ -1126,6 +1162,9 @@ fn update_rocket_dimensions_system(
         })));
         *collider = Collider::cone(rocket_dims.radius, rocket_dims.cone_length);
         transform.translation.y = rocket_dims.total_length() * 0.5;
+        if let Some(mat) = materials.get_mut(&mat_handle.0) {
+            mat.base_color = rocket_dims.cone_color.to_color();
+        }
     }
 
     // Remove fins
@@ -1142,7 +1181,7 @@ fn update_rocket_dimensions_system(
         materials.as_mut(),
         rocket_dims.as_ref(),
         meshes.as_mut(),
-        "#339933",
+        rocket_dims.fin_color.to_color(),
     );
     for bundle in rocket_fin_pbr_bundles {
         commands.entity(rocket).with_children(|parent| {
