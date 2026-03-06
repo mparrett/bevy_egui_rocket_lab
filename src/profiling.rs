@@ -14,7 +14,11 @@ impl Plugin for ProfilingPlugin {
             .add_systems(Startup, (log_profiling_mode, setup_profiling_hud))
             .add_systems(
                 Update,
-                (toggle_profiling_hud, update_profiling_hud, sync_profiling_visibility),
+                (
+                    toggle_profiling_hud,
+                    update_profiling_hud,
+                    sync_profiling_visibility,
+                ),
             );
     }
 }

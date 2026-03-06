@@ -10,8 +10,8 @@ use bevy_utilitarian::prelude::*;
 use std::f32::consts::PI;
 
 use crate::{
-    LaunchEvent, ResetEvent, RocketGeometryChangedEvent,
     rocket::{RocketDimensions, RocketFlightParameters, RocketMarker},
+    LaunchEvent, ResetEvent, RocketGeometryChangedEvent,
 };
 
 pub struct RocketParticlesPlugin;

@@ -495,8 +495,8 @@ mod tests {
             create_rocket_fin_pbr_bundles(&mut materials, &dims, &mut meshes, Color::WHITE);
         assert_eq!(bundles.len(), 4);
 
-        let first_mesh = &bundles[0].0.0;
-        let first_material = &bundles[0].1.0;
+        let first_mesh = &bundles[0].0 .0;
+        let first_material = &bundles[0].1 .0;
         for (mesh, material, _) in &bundles {
             assert_eq!(&mesh.0, first_mesh);
             assert_eq!(&material.0, first_material);
