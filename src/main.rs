@@ -32,7 +32,8 @@ use crate::{
     physics::{ForceTimer, get_timer_id, lock_all_axes, update_forces_system},
     rocket::{
         ColorPreset, FinMarker, RocketBody, RocketCone, RocketDimensions, RocketFlightParameters,
-        RocketMarker, RocketMassModel, RocketState, RocketStateEnum, create_rocket_fin_pbr_bundles,
+        RocketMarker, RocketMassModel, RocketMaterial, RocketState, RocketStateEnum,
+        create_rocket_fin_pbr_bundles,
         rocket_mass_properties, spawn_rocket_system,
     },
     sky::{
@@ -900,6 +901,23 @@ fn ui_system(
                             rocket_dims.flag_changed = true;
                         }
 
+                        ui.separator();
+                        let prev_mat = rocket_dims.material;
+                        egui::ComboBox::from_label("material")
+                            .selected_text(rocket_dims.material.label())
+                            .show_ui(ui, |ui| {
+                                for preset in RocketMaterial::ALL {
+                                    ui.selectable_value(
+                                        &mut rocket_dims.material,
+                                        preset,
+                                        preset.label(),
+                                    );
+                                }
+                            });
+                        if rocket_dims.material != prev_mat {
+                            rocket_dims.flag_changed = true;
+                        }
+
                         if let Ok((mass, com)) = rocket_query.single() {
                             ui.separator();
                             ui.label(format!(
@@ -1295,7 +1313,7 @@ fn update_rocket_dimensions_system(
     >,
     rocket_query: Query<Entity, With<RocketMarker>>,
     mut fins_query: Query<Entity, With<FinMarker>>,
-    mass_model: Res<RocketMassModel>,
+    mut mass_model: ResMut<RocketMassModel>,
     app_state: Res<State<AppState>>,
 ) {
     if !rocket_dims.flag_changed {
@@ -1303,6 +1321,7 @@ fn update_rocket_dimensions_system(
     }
 
     debug!("Updating rocket dimensions");
+    *mass_model = rocket_dims.material.to_mass_model();
 
     let base_y = match *app_state.get() {
         AppState::Lab | AppState::Store => scene::TABLE_TOP_Y + rocket_dims.length * 0.5,

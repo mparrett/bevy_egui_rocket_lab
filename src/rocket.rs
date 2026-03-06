@@ -49,6 +49,57 @@ impl ColorPreset {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum RocketMaterial {
+    Light,
+    Medium,
+    Heavy,
+    VeryHeavy,
+}
+
+impl RocketMaterial {
+    pub const ALL: [RocketMaterial; 4] = [Self::Light, Self::Medium, Self::Heavy, Self::VeryHeavy];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Light => "Light (cardboard)",
+            Self::Medium => "Medium (thick card)",
+            Self::Heavy => "Heavy (plastic)",
+            Self::VeryHeavy => "Very Heavy (metal)",
+        }
+    }
+
+    pub fn to_mass_model(self) -> RocketMassModel {
+        match self {
+            Self::Light => RocketMassModel {
+                body_wall_thickness_m: 0.0008,
+                nose_wall_thickness_m: 0.0006,
+                fin_density_kg_m3: 300.0,
+                body_density_kg_m3: 400.0,
+                nose_density_kg_m3: 400.0,
+                ..RocketMassModel::default()
+            },
+            Self::Medium => RocketMassModel::default(),
+            Self::Heavy => RocketMassModel {
+                body_wall_thickness_m: 0.0020,
+                nose_wall_thickness_m: 0.0015,
+                fin_density_kg_m3: 1000.0,
+                body_density_kg_m3: 1200.0,
+                nose_density_kg_m3: 1200.0,
+                ..RocketMassModel::default()
+            },
+            Self::VeryHeavy => RocketMassModel {
+                body_wall_thickness_m: 0.0005,
+                nose_wall_thickness_m: 0.0004,
+                fin_density_kg_m3: 2700.0,
+                body_density_kg_m3: 2700.0,
+                nose_density_kg_m3: 2700.0,
+                ..RocketMassModel::default()
+            },
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct RocketMarker;
 
@@ -111,6 +162,8 @@ pub struct RocketDimensions {
     pub cone_color: ColorPreset,
     #[serde(default = "default_fin_color")]
     pub fin_color: ColorPreset,
+    #[serde(default = "default_material")]
+    pub material: RocketMaterial,
     #[serde(skip)]
     pub flag_changed: bool,
 }
@@ -123,6 +176,9 @@ fn default_cone_color() -> ColorPreset {
 }
 fn default_fin_color() -> ColorPreset {
     ColorPreset::Green
+}
+fn default_material() -> RocketMaterial {
+    RocketMaterial::Medium
 }
 
 impl RocketDimensions {
@@ -137,6 +193,7 @@ impl RocketDimensions {
             body_color: ColorPreset::White,
             cone_color: ColorPreset::White,
             fin_color: ColorPreset::Green,
+            material: RocketMaterial::Medium,
             flag_changed: false,
         }
     }
