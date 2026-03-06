@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::{AppState, AudioSettings};
+use crate::{AppState, AudioSettings, save::SaveState};
 
 pub struct MenuPlugin;
 
@@ -10,6 +10,7 @@ impl Plugin for MenuPlugin {
             .add_systems(OnEnter(AppState::Menu), menu_setup)
             .add_systems(OnEnter(MenuState::Main), spawn_main_menu)
             .add_systems(OnEnter(MenuState::Settings), spawn_settings_menu)
+            .add_systems(OnEnter(MenuState::LoadPlayer), spawn_load_player_menu)
             .add_systems(
                 Update,
                 (button_system, menu_action, sync_settings_labels)
@@ -22,6 +23,7 @@ impl Plugin for MenuPlugin {
 enum MenuState {
     Main,
     Settings,
+    LoadPlayer,
     #[default]
     Disabled,
 }
@@ -30,6 +32,8 @@ enum MenuState {
 enum MenuButtonAction {
     Launch,
     Settings,
+    LoadPlayer,
+    SelectPlayer(String),
     Quit,
     ToggleMusic,
     ToggleSfx,
@@ -102,6 +106,8 @@ fn spawn_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
             ));
 
             spawn_button(parent, font.clone(), "Play", MenuButtonAction::Launch);
+            #[cfg(not(target_arch = "wasm32"))]
+            spawn_button(parent, font.clone(), "Load Player", MenuButtonAction::LoadPlayer);
             spawn_button(parent, font.clone(), "Settings", MenuButtonAction::Settings);
             spawn_button(parent, font, "Quit", MenuButtonAction::Quit);
         });
@@ -145,6 +151,66 @@ fn spawn_settings_menu(
 
             spawn_button(parent, font.clone(), music_label, MenuButtonAction::ToggleMusic);
             spawn_button(parent, font.clone(), sfx_label, MenuButtonAction::ToggleSfx);
+            spawn_button(parent, font, "Back", MenuButtonAction::BackToMain);
+        });
+}
+
+fn spawn_load_player_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load("fonts/FiraSans-Bold.ttf");
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let players = crate::save::list_players();
+    #[cfg(target_arch = "wasm32")]
+    let players: Vec<String> = Vec::new();
+
+    commands
+        .spawn((
+            DespawnOnExit(MenuState::LoadPlayer),
+            GlobalZIndex(100),
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                position_type: PositionType::Absolute,
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                row_gap: Val::Px(20.0),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.55)),
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("Load Player"),
+                TextFont {
+                    font: font.clone(),
+                    font_size: 72.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+            ));
+
+            if players.is_empty() {
+                parent.spawn((
+                    Text::new("No saved players yet"),
+                    TextFont {
+                        font: font.clone(),
+                        font_size: 24.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgba(0.7, 0.7, 0.7, 1.0)),
+                ));
+            } else {
+                for name in &players {
+                    spawn_button(
+                        parent,
+                        font.clone(),
+                        name,
+                        MenuButtonAction::SelectPlayer(name.clone()),
+                    );
+                }
+            }
+
             spawn_button(parent, font, "Back", MenuButtonAction::BackToMain);
         });
 }
@@ -204,6 +270,9 @@ fn menu_action(
     mut app_state: ResMut<NextState<AppState>>,
     mut menu_state: ResMut<NextState<MenuState>>,
     mut audio_settings: ResMut<AudioSettings>,
+    mut save_state: ResMut<SaveState>,
+    mut rocket_dims: ResMut<crate::rocket::RocketDimensions>,
+    mut flight_params: ResMut<crate::rocket::RocketFlightParameters>,
     mut app_exit: MessageWriter<AppExit>,
 ) {
     for (interaction, action) in &interaction_query {
@@ -218,6 +287,26 @@ fn menu_action(
             MenuButtonAction::Settings => {
                 menu_state.set(MenuState::Settings);
             }
+            MenuButtonAction::LoadPlayer => {
+                menu_state.set(MenuState::LoadPlayer);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            MenuButtonAction::SelectPlayer(name) => {
+                save_state.player_name = Some(name.clone());
+                save_state.rocket_saves = crate::save::list_rockets(name);
+                if let Some(first) = save_state.rocket_saves.first()
+                    && let Ok(data) = crate::save::load_rocket(name, first)
+                {
+                    *rocket_dims = data.dimensions;
+                    rocket_dims.flag_changed = true;
+                    *flight_params = data.flight_params;
+                    save_state.rocket_name_buf = first.clone();
+                }
+                app_state.set(AppState::Lab);
+                menu_state.set(MenuState::Disabled);
+            }
+            #[cfg(target_arch = "wasm32")]
+            MenuButtonAction::SelectPlayer(_) => {}
             MenuButtonAction::Quit => {
                 app_exit.write(AppExit::Success);
             }

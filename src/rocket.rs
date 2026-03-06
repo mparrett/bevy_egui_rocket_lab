@@ -1,5 +1,6 @@
 use avian3d::prelude::*;
 use bevy::{math::primitives::Cylinder, prelude::*};
+use serde::{Deserialize, Serialize};
 
 use crate::cone::Cone;
 use crate::fin::Fin;
@@ -65,7 +66,7 @@ const FUSELAGE_DENSITY: f32 = 1.0;
 
 pub const CIRCLE_RESOLUTION: u32 = 16;
 
-#[derive(Resource)]
+#[derive(Resource, Serialize, Deserialize, Clone)]
 pub struct RocketDimensions {
     pub radius: f32,
     pub length: f32,
@@ -143,7 +144,7 @@ impl Default for RocketState {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Serialize, Deserialize, Clone)]
 pub struct RocketFlightParameters {
     pub force: f32,
     pub duration: f32,

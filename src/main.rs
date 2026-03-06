@@ -52,6 +52,7 @@ mod particles;
 mod physics;
 mod rendering;
 mod rocket;
+mod save;
 mod scene;
 mod sky;
 mod wind;
@@ -838,6 +839,118 @@ fn ui_system(
                                 .text("duration"),
                         );
                     });
+
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    ui.add_space(6.0);
+                    egui::CollapsingHeader::new("Rocket Saves")
+                        .default_open(false)
+                        .show(ui, |ui| {
+                            let player_label = save_state
+                                .player_name
+                                .as_deref()
+                                .unwrap_or("New Player");
+                            ui.label(format!("Player: {player_label}"));
+                            ui.separator();
+
+                            if save_state.player_name.is_none() {
+                                ui.label("Enter player name to start saving:");
+                                ui.text_edit_singleline(&mut save_state.player_name_buf);
+                                if ui.button("Create Player").clicked()
+                                    && !save_state.player_name_buf.trim().is_empty()
+                                {
+                                    let name = save_state.player_name_buf.trim().to_string();
+                                    match save::ensure_player_dir(&name) {
+                                        Ok(()) => {
+                                            save_state.rocket_saves = save::list_rockets(&name);
+                                            save_state.player_name = Some(name);
+                                            save_state.player_name_buf.clear();
+                                            save_state.status_message =
+                                                Some("Player created!".to_string());
+                                        }
+                                        Err(e) => {
+                                            save_state.status_message = Some(e);
+                                        }
+                                    }
+                                }
+                            } else {
+                                let player = save_state.player_name.clone().unwrap();
+                                ui.horizontal(|ui| {
+                                    ui.text_edit_singleline(&mut save_state.rocket_name_buf);
+                                    if ui.button("Save").clicked()
+                                        && !save_state.rocket_name_buf.trim().is_empty()
+                                    {
+                                        let rname =
+                                            save_state.rocket_name_buf.trim().to_string();
+                                        match save::save_rocket(
+                                            &player,
+                                            &rname,
+                                            &rocket_dims,
+                                            &rocket_flight_parameters,
+                                        ) {
+                                            Ok(()) => {
+                                                save_state.rocket_saves =
+                                                    save::list_rockets(&player);
+                                                save_state.status_message =
+                                                    Some(format!("Saved '{rname}'"));
+                                            }
+                                            Err(e) => {
+                                                save_state.status_message = Some(e);
+                                            }
+                                        }
+                                    }
+                                });
+
+                                ui.separator();
+                                let mut action: Option<(String, bool)> = None;
+                                for rocket_name in &save_state.rocket_saves {
+                                    ui.horizontal(|ui| {
+                                        ui.label(rocket_name);
+                                        if ui.small_button("Load").clicked() {
+                                            action = Some((rocket_name.clone(), false));
+                                        }
+                                        if ui.small_button("Del").clicked() {
+                                            action = Some((rocket_name.clone(), true));
+                                        }
+                                    });
+                                }
+                                if let Some((rname, is_delete)) = action {
+                                    if is_delete {
+                                        match save::delete_rocket(&player, &rname) {
+                                            Ok(()) => {
+                                                save_state.rocket_saves =
+                                                    save::list_rockets(&player);
+                                                save_state.status_message =
+                                                    Some(format!("Deleted '{rname}'"));
+                                            }
+                                            Err(e) => {
+                                                save_state.status_message = Some(e);
+                                            }
+                                        }
+                                    } else {
+                                        match save::load_rocket(&player, &rname) {
+                                            Ok(data) => {
+                                                *rocket_dims = data.dimensions;
+                                                rocket_dims.flag_changed = true;
+                                                *rocket_flight_parameters = data.flight_params;
+                                                save_state.rocket_name_buf = rname.clone();
+                                                save_state.status_message =
+                                                    Some(format!("Loaded '{rname}'"));
+                                            }
+                                            Err(e) => {
+                                                save_state.status_message = Some(e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if let Some(msg) = &save_state.status_message {
+                                ui.separator();
+                                ui.label(msg);
+                            }
+                        });
+                }
             }
 
             if is_launch {
