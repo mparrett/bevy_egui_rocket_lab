@@ -487,9 +487,7 @@ pub fn animate_light_direction(
                 let floor = sky_props.ambient_floor * light_consts::lux::CLEAR_SUNRISE;
                 base.max(floor)
             }
-            SkyRenderMode::Atmosphere => {
-                light_consts::lux::RAW_SUNLIGHT
-            }
+            SkyRenderMode::Atmosphere => light_consts::lux::RAW_SUNLIGHT,
         };
     }
 }

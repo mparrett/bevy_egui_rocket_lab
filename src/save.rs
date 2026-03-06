@@ -36,7 +36,13 @@ mod io {
 
     fn sanitize_name(name: &str) -> String {
         name.chars()
-            .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect()
     }
 
@@ -101,8 +107,7 @@ mod io {
             let meta = serde_json::json!({ "name": player });
             let json = serde_json::to_string_pretty(&meta)
                 .map_err(|e| format!("Failed to serialize player meta: {e}"))?;
-            fs::write(&meta_path, json)
-                .map_err(|e| format!("Failed to write player.json: {e}"))?;
+            fs::write(&meta_path, json).map_err(|e| format!("Failed to write player.json: {e}"))?;
         }
         Ok(())
     }
@@ -138,8 +143,8 @@ mod io {
 
     pub fn load_rocket(player: &str, rocket_name: &str) -> Result<RocketSave, String> {
         let path = player_dir(player).join(rocket_filename(rocket_name));
-        let json = fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read rocket file: {e}"))?;
+        let json =
+            fs::read_to_string(&path).map_err(|e| format!("Failed to read rocket file: {e}"))?;
         serde_json::from_str(&json).map_err(|e| format!("Failed to parse rocket file: {e}"))
     }
 

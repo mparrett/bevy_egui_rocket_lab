@@ -13,8 +13,7 @@ impl Plugin for MenuPlugin {
             .add_systems(OnEnter(MenuState::LoadPlayer), spawn_load_player_menu)
             .add_systems(
                 Update,
-                (button_system, menu_action, sync_settings_labels)
-                    .run_if(in_state(AppState::Menu)),
+                (button_system, menu_action, sync_settings_labels).run_if(in_state(AppState::Menu)),
             );
     }
 }
@@ -48,7 +47,12 @@ fn menu_setup(mut menu_state: ResMut<NextState<MenuState>>) {
     menu_state.set(MenuState::Main);
 }
 
-fn spawn_button(parent: &mut ChildSpawnerCommands, font: Handle<Font>, label: &str, action: MenuButtonAction) {
+fn spawn_button(
+    parent: &mut ChildSpawnerCommands,
+    font: Handle<Font>,
+    label: &str,
+    action: MenuButtonAction,
+) {
     parent
         .spawn((
             action,
@@ -107,7 +111,12 @@ fn spawn_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
 
             spawn_button(parent, font.clone(), "Play", MenuButtonAction::Launch);
             #[cfg(not(target_arch = "wasm32"))]
-            spawn_button(parent, font.clone(), "Load Player", MenuButtonAction::LoadPlayer);
+            spawn_button(
+                parent,
+                font.clone(),
+                "Load Player",
+                MenuButtonAction::LoadPlayer,
+            );
             spawn_button(parent, font.clone(), "Settings", MenuButtonAction::Settings);
             spawn_button(parent, font, "Quit", MenuButtonAction::Quit);
         });
@@ -119,8 +128,16 @@ fn spawn_settings_menu(
     audio_settings: Res<AudioSettings>,
 ) {
     let font = asset_server.load("fonts/FiraSans-Bold.ttf");
-    let music_label = if audio_settings.music_enabled { "Music: ON" } else { "Music: OFF" };
-    let sfx_label = if audio_settings.sfx_enabled { "SFX: ON" } else { "SFX: OFF" };
+    let music_label = if audio_settings.music_enabled {
+        "Music: ON"
+    } else {
+        "Music: OFF"
+    };
+    let sfx_label = if audio_settings.sfx_enabled {
+        "SFX: ON"
+    } else {
+        "SFX: OFF"
+    };
 
     commands
         .spawn((
@@ -149,7 +166,12 @@ fn spawn_settings_menu(
                 TextColor(Color::WHITE),
             ));
 
-            spawn_button(parent, font.clone(), music_label, MenuButtonAction::ToggleMusic);
+            spawn_button(
+                parent,
+                font.clone(),
+                music_label,
+                MenuButtonAction::ToggleMusic,
+            );
             spawn_button(parent, font.clone(), sfx_label, MenuButtonAction::ToggleSfx);
             spawn_button(parent, font, "Back", MenuButtonAction::BackToMain);
         });
@@ -247,10 +269,18 @@ fn sync_settings_labels(
     for (action, children) in &button_query {
         let label = match action {
             MenuButtonAction::ToggleMusic => {
-                if audio_settings.music_enabled { "Music: ON" } else { "Music: OFF" }
+                if audio_settings.music_enabled {
+                    "Music: ON"
+                } else {
+                    "Music: OFF"
+                }
             }
             MenuButtonAction::ToggleSfx => {
-                if audio_settings.sfx_enabled { "SFX: ON" } else { "SFX: OFF" }
+                if audio_settings.sfx_enabled {
+                    "SFX: ON"
+                } else {
+                    "SFX: OFF"
+                }
             }
             _ => continue,
         };
