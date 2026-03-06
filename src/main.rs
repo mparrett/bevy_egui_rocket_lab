@@ -868,7 +868,7 @@ fn ui_system(
                     .default_open(true)
                     .show(ui, |ui| {
                         ui.add(
-                            egui::Slider::new(&mut rocket_flight_parameters.force, 0.05..=0.25)
+                            egui::Slider::new(&mut rocket_flight_parameters.force, 0.5..=10.0)
                                 .step_by(0.01)
                                 .text("force"),
                         );

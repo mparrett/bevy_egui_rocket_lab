@@ -61,7 +61,7 @@ pub struct RocketCone;
 #[derive(Component)]
 pub struct FinMarker;
 
-const FIN_THICKNESS_M: f32 = 0.015;
+const FIN_THICKNESS_M: f32 = 0.0015;
 
 pub const CIRCLE_RESOLUTION: u32 = 16;
 
@@ -183,7 +183,7 @@ pub struct RocketFlightParameters {
 impl Default for RocketFlightParameters {
     fn default() -> Self {
         RocketFlightParameters {
-            force: 0.2,
+            force: 4.0,
             duration: 1.0,
         }
     }
