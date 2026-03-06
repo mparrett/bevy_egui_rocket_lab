@@ -32,8 +32,8 @@ use crate::{
     physics::{ForceTimer, get_timer_id, lock_all_axes, update_forces_system},
     rocket::{
         ColorPreset, FinMarker, RocketBody, RocketCone, RocketDimensions, RocketFlightParameters,
-        RocketMarker, RocketState, RocketStateEnum, create_rocket_fin_pbr_bundles,
-        spawn_rocket_system,
+        RocketMarker, RocketMassModel, RocketState, RocketStateEnum, create_rocket_fin_pbr_bundles,
+        rocket_mass_properties, spawn_rocket_system,
     },
     sky::{
         Cubemap, SKYBOXES, animate_light_direction, apply_fog_mode, cubemap_asset_loaded,
@@ -177,6 +177,7 @@ fn main() {
         .add_plugins(menu::MenuPlugin)
         .add_plugins(scene::ScenePlugin)
         .init_resource::<RocketDimensions>()
+        .init_resource::<RocketMassModel>()
         .init_resource::<RocketFlightParameters>()
         .init_resource::<CameraProperties>()
         .init_resource::<RocketState>()
@@ -1278,11 +1279,17 @@ fn update_rocket_dimensions_system(
         (With<RocketCone>, Without<RocketBody>),
     >,
     mut rb_query: Query<
-        &mut Transform,
+        (
+            &mut Transform,
+            &mut Mass,
+            &mut AngularInertia,
+            &mut CenterOfMass,
+        ),
         (With<RocketMarker>, Without<RocketCone>, Without<RocketBody>),
     >,
     rocket_query: Query<Entity, With<RocketMarker>>,
     mut fins_query: Query<Entity, With<FinMarker>>,
+    mass_model: Res<RocketMassModel>,
     app_state: Res<State<AppState>>,
 ) {
     if !rocket_dims.flag_changed {
@@ -1295,8 +1302,12 @@ fn update_rocket_dimensions_system(
         AppState::Lab | AppState::Store => scene::TABLE_TOP_Y + rocket_dims.length * 0.5,
         _ => rocket_dims.length * 0.5,
     };
-    for mut rb_transform in rb_query.iter_mut() {
+    let mass_properties = rocket_mass_properties(rocket_dims.as_ref(), mass_model.as_ref());
+    for (mut rb_transform, mut mass, mut inertia, mut center_of_mass) in rb_query.iter_mut() {
         rb_transform.translation.y = base_y;
+        *mass = mass_properties.mass;
+        *inertia = mass_properties.angular_inertia;
+        *center_of_mass = mass_properties.center_of_mass;
     }
 
     for (mut mesh_handle, mut collider, _, mat_handle) in body_query.iter_mut() {
@@ -1573,6 +1584,7 @@ mod tests {
             .add_message::<CollisionStart>();
         app.insert_resource(State::new(AppState::Launch));
         app.insert_resource(RocketDimensions::default());
+        app.insert_resource(RocketMassModel::default());
         app.insert_resource(RocketFlightParameters::default());
         app.insert_resource(CameraProperties::default());
         app.insert_resource(RocketState::default());

@@ -61,10 +61,41 @@ pub struct RocketCone;
 #[derive(Component)]
 pub struct FinMarker;
 
-const CONE_DENSITY: f32 = 1.0;
-const FUSELAGE_DENSITY: f32 = 1.0;
+const FIN_THICKNESS_M: f32 = 0.015;
 
 pub const CIRCLE_RESOLUTION: u32 = 16;
+
+#[derive(Resource, Clone)]
+pub struct RocketMassModel {
+    pub body_wall_thickness_m: f32,
+    pub nose_wall_thickness_m: f32,
+    pub fin_density_kg_m3: f32,
+    pub body_density_kg_m3: f32,
+    pub nose_density_kg_m3: f32,
+    pub motor_mass_kg: f32,
+    pub motor_length_m: f32,
+}
+
+impl Default for RocketMassModel {
+    fn default() -> Self {
+        Self {
+            body_wall_thickness_m: 0.0012,
+            nose_wall_thickness_m: 0.0009,
+            fin_density_kg_m3: 500.0,
+            body_density_kg_m3: 700.0,
+            nose_density_kg_m3: 1050.0,
+            motor_mass_kg: 0.040,
+            motor_length_m: 0.070,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PartMassProperties {
+    mass: f32,
+    center_of_mass: Vec3,
+    principal_inertia: Vec3,
+}
 
 #[derive(Resource, Serialize, Deserialize, Clone)]
 pub struct RocketDimensions {
@@ -158,6 +189,150 @@ impl Default for RocketFlightParameters {
     }
 }
 
+fn cylinder_shell_part(
+    radius: f32,
+    length: f32,
+    wall_thickness: f32,
+    density: f32,
+) -> PartMassProperties {
+    let inner_radius = (radius - wall_thickness).max(0.0);
+    let shell_volume =
+        std::f32::consts::PI * (radius * radius - inner_radius * inner_radius) * length;
+    let mass = shell_volume * density;
+    let radial_term = radius * radius + inner_radius * inner_radius;
+    let principal_inertia = Vec3::new(
+        mass * (3.0 * radial_term + length * length) / 12.0,
+        0.5 * mass * radial_term,
+        mass * (3.0 * radial_term + length * length) / 12.0,
+    );
+
+    PartMassProperties {
+        mass,
+        center_of_mass: Vec3::ZERO,
+        principal_inertia,
+    }
+}
+
+fn cone_shell_part(
+    radius: f32,
+    body_length: f32,
+    cone_length: f32,
+    wall_thickness: f32,
+    density: f32,
+) -> PartMassProperties {
+    let slant_height = (radius * radius + cone_length * cone_length).sqrt();
+    let shell_volume = std::f32::consts::PI * radius * slant_height * wall_thickness;
+    let mass = shell_volume * density;
+    let center_of_mass = Vec3::new(0.0, body_length * 0.5 + cone_length / 3.0, 0.0);
+    // Phase 1 approximation: use a matching-radius cylinder inertia for a stable explicit model.
+    let principal_inertia = Vec3::new(
+        mass * (3.0 * radius * radius + cone_length * cone_length) / 12.0,
+        0.5 * mass * radius * radius,
+        mass * (3.0 * radius * radius + cone_length * cone_length) / 12.0,
+    );
+
+    PartMassProperties {
+        mass,
+        center_of_mass,
+        principal_inertia,
+    }
+}
+
+fn motor_part(radius: f32, body_length: f32, model: &RocketMassModel) -> PartMassProperties {
+    let motor_length = model.motor_length_m.min(body_length * 0.6).max(0.02);
+    let motor_radius = (radius * 0.7).max(0.005);
+    let mass = model.motor_mass_kg;
+    let center_of_mass = Vec3::new(0.0, -body_length * 0.5 + motor_length * 0.5, 0.0);
+    let principal_inertia = Vec3::new(
+        mass * (3.0 * motor_radius * motor_radius + motor_length * motor_length) / 12.0,
+        0.5 * mass * motor_radius * motor_radius,
+        mass * (3.0 * motor_radius * motor_radius + motor_length * motor_length) / 12.0,
+    );
+
+    PartMassProperties {
+        mass,
+        center_of_mass,
+        principal_inertia,
+    }
+}
+
+fn fin_parts(rocket_dims: &RocketDimensions, model: &RocketMassModel) -> Vec<PartMassProperties> {
+    let n_fins = rocket_dims.num_fins as usize;
+    let degs_per_fin = 360.0 / n_fins as f32;
+    let fin_volume = 0.5 * rocket_dims.fin_height * rocket_dims.fin_length * FIN_THICKNESS_M;
+    let fin_mass = fin_volume * model.fin_density_kg_m3;
+    let local_fin_com = Vec3::new(
+        rocket_dims.fin_length / 3.0,
+        rocket_dims.fin_height / 3.0,
+        0.0,
+    );
+    let anchor = Vec3::new(0.0, -rocket_dims.length * 0.5, 0.0);
+
+    (0..n_fins)
+        .map(|i| {
+            let angle = i as f32 * degs_per_fin.to_radians();
+            let rotation = Quat::from_rotation_y(angle);
+            let fin_rotation = rotation * Quat::from_rotation_y(-90.0f32.to_radians());
+            let fin_translation = anchor + rotation * Vec3::new(0.0, 0.0, rocket_dims.radius);
+
+            PartMassProperties {
+                mass: fin_mass,
+                center_of_mass: fin_translation + fin_rotation * local_fin_com,
+                principal_inertia: Vec3::ZERO,
+            }
+        })
+        .collect()
+}
+
+pub fn rocket_mass_properties(
+    rocket_dims: &RocketDimensions,
+    mass_model: &RocketMassModel,
+) -> MassPropertiesBundle {
+    let mut parts = Vec::new();
+    parts.push(cylinder_shell_part(
+        rocket_dims.radius,
+        rocket_dims.length,
+        mass_model.body_wall_thickness_m,
+        mass_model.body_density_kg_m3,
+    ));
+    parts.push(cone_shell_part(
+        rocket_dims.radius,
+        rocket_dims.length,
+        rocket_dims.cone_length,
+        mass_model.nose_wall_thickness_m,
+        mass_model.nose_density_kg_m3,
+    ));
+    parts.push(motor_part(
+        rocket_dims.radius,
+        rocket_dims.length,
+        mass_model,
+    ));
+    parts.extend(fin_parts(rocket_dims, mass_model));
+
+    let total_mass: f32 = parts.iter().map(|part| part.mass).sum();
+    let center_of_mass = parts
+        .iter()
+        .map(|part| part.center_of_mass * part.mass)
+        .sum::<Vec3>()
+        / total_mass.max(1e-6);
+
+    let principal_inertia = parts.iter().fold(Vec3::ZERO, |acc, part| {
+        let offset = part.center_of_mass - center_of_mass;
+        acc + part.principal_inertia
+            + Vec3::new(
+                part.mass * (offset.y * offset.y + offset.z * offset.z),
+                part.mass * (offset.x * offset.x + offset.z * offset.z),
+                part.mass * (offset.x * offset.x + offset.y * offset.y),
+            )
+    });
+
+    MassPropertiesBundle {
+        mass: Mass(total_mass.max(1e-6)),
+        angular_inertia: AngularInertia::new(principal_inertia.max(Vec3::splat(1e-6))),
+        center_of_mass: CenterOfMass(center_of_mass),
+    }
+}
+
 pub fn create_rocket_fin_pbr_bundles(
     materials: &mut Assets<StandardMaterial>,
     rocket_dims: &RocketDimensions,
@@ -174,7 +349,7 @@ pub fn create_rocket_fin_pbr_bundles(
     let fin_mesh = Mesh::from(Fin {
         height: rocket_dims.fin_height,
         length: rocket_dims.fin_length,
-        width: 0.015,
+        width: FIN_THICKNESS_M,
     });
 
     let fin_material = StandardMaterial {
@@ -216,6 +391,7 @@ pub fn spawn_rocket_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     rocket_dims: Res<RocketDimensions>,
+    mass_model: Res<RocketMassModel>,
     _rocket_state: ResMut<RocketState>,
 ) {
     let body_material = StandardMaterial {
@@ -237,10 +413,15 @@ pub fn spawn_rocket_system(
 
     // Keep the rocket's body base at y=0 on spawn; cone extends upward from body top.
     let initial_rocket_pos = Transform::from_xyz(0.0, rocket_dims.length * 0.5, 0.0);
+    let mass_properties = rocket_mass_properties(rocket_dims.as_ref(), mass_model.as_ref());
     let rocket_bundle = (
         RigidBody::Dynamic,
         TransformInterpolation,
         RocketMarker,
+        mass_properties,
+        NoAutoMass,
+        NoAutoAngularInertia,
+        NoAutoCenterOfMass,
         AngularVelocity::ZERO,
         LinearVelocity::ZERO,
         LinearDamping(0.4),
@@ -265,7 +446,6 @@ pub fn spawn_rocket_system(
             Collider::cylinder(rocket_dims.radius, rocket_dims.length),
             RocketBody,
             CollisionEventsEnabled,
-            ColliderDensity(FUSELAGE_DENSITY),
             Friction::new(0.7),
             Restitution::new(0.4),
             Name::new("RocketBody"),
@@ -279,7 +459,6 @@ pub fn spawn_rocket_system(
             MeshMaterial3d(materials.add(cone_material)),
             Transform::from_xyz(0.0, rocket_dims.total_length() * 0.5, 0.0),
             Collider::cone(rocket_dims.radius, rocket_dims.cone_length),
-            ColliderDensity(CONE_DENSITY),
             Friction::new(0.7),
             Restitution::new(0.4),
             RocketCone,
@@ -359,5 +538,33 @@ mod tests {
             assert_eq!(short_bundle.2.translation.y, long_bundle.2.translation.y);
             assert_eq!(short_bundle.2.translation.y, -dims_short_cone.length * 0.5);
         }
+    }
+
+    #[test]
+    fn explicit_mass_model_places_center_of_mass_below_body_center() {
+        let dims = RocketDimensions::default();
+        let props = rocket_mass_properties(&dims, &RocketMassModel::default());
+
+        assert!(props.mass.0 > 0.0);
+        assert!(props.center_of_mass.0.y < 0.0);
+        assert!(props.angular_inertia.principal.cmpgt(Vec3::ZERO).all());
+    }
+
+    #[test]
+    fn explicit_mass_model_moves_center_of_mass_up_for_longer_cone() {
+        let short_cone = RocketDimensions {
+            cone_length: 0.05,
+            ..RocketDimensions::default()
+        };
+        let long_cone = RocketDimensions {
+            cone_length: 0.20,
+            ..RocketDimensions::default()
+        };
+
+        let short_props = rocket_mass_properties(&short_cone, &RocketMassModel::default());
+        let long_props = rocket_mass_properties(&long_cone, &RocketMassModel::default());
+
+        assert!(long_props.mass.0 > short_props.mass.0);
+        assert!(long_props.center_of_mass.0.y > short_props.center_of_mass.0.y);
     }
 }
