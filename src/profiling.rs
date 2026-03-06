@@ -28,6 +28,7 @@ struct ProfilingHudState {
     visible: bool,
 }
 
+#[allow(clippy::derivable_impls)] // cfg!() evaluates at compile time; derive would always be false
 impl Default for ProfilingHudState {
     fn default() -> Self {
         Self {
