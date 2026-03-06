@@ -166,7 +166,9 @@ pub fn create_rocket_fin_pbr_bundles(
 ) -> Vec<(Mesh3d, MeshMaterial3d<StandardMaterial>, Transform)> {
     let n_fins = rocket_dims.num_fins as usize;
     let degs_per_fin = 360.0 / n_fins as f32;
-    let central_position = Vec3::new(0.0, -rocket_dims.total_length() * 0.5, 0.0);
+    // Anchor fins to the base of the cylindrical body so nose/cone changes do
+    // not shift body<->fin relative alignment.
+    let central_position = Vec3::new(0.0, -rocket_dims.length * 0.5, 0.0);
     let distance_from_center = rocket_dims.radius;
 
     let fin_mesh = Mesh::from(Fin {
@@ -233,7 +235,8 @@ pub fn spawn_rocket_system(
         ..default()
     };
 
-    let initial_rocket_pos = Transform::from_xyz(0.0, rocket_dims.total_length() * 0.5, 0.0);
+    // Keep the rocket's body base at y=0 on spawn; cone extends upward from body top.
+    let initial_rocket_pos = Transform::from_xyz(0.0, rocket_dims.length * 0.5, 0.0);
     let rocket_bundle = (
         RigidBody::Dynamic,
         TransformInterpolation,
@@ -318,6 +321,43 @@ mod tests {
         for (mesh, material, _) in &bundles {
             assert_eq!(&mesh.0, first_mesh);
             assert_eq!(&material.0, first_material);
+        }
+    }
+
+    #[test]
+    fn fin_anchor_is_independent_of_cone_length() {
+        let mut materials = Assets::<StandardMaterial>::default();
+        let mut meshes = Assets::<Mesh>::default();
+        let dims_short_cone = RocketDimensions {
+            length: 1.0,
+            cone_length: 0.1,
+            num_fins: 3.0,
+            ..RocketDimensions::default()
+        };
+        let dims_long_cone = RocketDimensions {
+            length: 1.0,
+            cone_length: 0.6,
+            num_fins: 3.0,
+            ..RocketDimensions::default()
+        };
+
+        let short = create_rocket_fin_pbr_bundles(
+            &mut materials,
+            &dims_short_cone,
+            &mut meshes,
+            Color::WHITE,
+        );
+        let long = create_rocket_fin_pbr_bundles(
+            &mut materials,
+            &dims_long_cone,
+            &mut meshes,
+            Color::WHITE,
+        );
+
+        assert_eq!(short.len(), long.len());
+        for (short_bundle, long_bundle) in short.iter().zip(long.iter()) {
+            assert_eq!(short_bundle.2.translation.y, long_bundle.2.translation.y);
+            assert_eq!(short_bundle.2.translation.y, -dims_short_cone.length * 0.5);
         }
     }
 }

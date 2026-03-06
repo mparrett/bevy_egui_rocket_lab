@@ -110,7 +110,8 @@ fn spawn_room(
 
     // Front wall (solid, z = +half_z)
     commands.spawn((
-        IndoorRoom, despawn.clone(),
+        IndoorRoom,
+        despawn.clone(),
         Mesh3d(meshes.add(Cuboid::new(ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS))),
         MeshMaterial3d(wall_mat.clone()),
         Transform::from_xyz(0.0, ROOM_HEIGHT / 2.0, half_z),
@@ -118,7 +119,8 @@ fn spawn_room(
 
     // Right wall (solid, x = +half_x)
     commands.spawn((
-        IndoorRoom, despawn.clone(),
+        IndoorRoom,
+        despawn.clone(),
         Mesh3d(meshes.add(Cuboid::new(WALL_THICKNESS, ROOM_HEIGHT, ROOM_DEPTH))),
         MeshMaterial3d(wall_mat.clone()),
         Transform::from_xyz(half_x, ROOM_HEIGHT / 2.0, 0.0),
@@ -161,7 +163,8 @@ fn spawn_room(
     let sec_a_len = half_z + door_center_z - door_w / 2.0;
     if sec_a_len > 0.01 {
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(meshes.add(Cuboid::new(WALL_THICKNESS, ROOM_HEIGHT, sec_a_len))),
             MeshMaterial3d(wall_mat.clone()),
             Transform::from_xyz(wall_x, ROOM_HEIGHT / 2.0, -half_z + sec_a_len / 2.0),
@@ -171,7 +174,8 @@ fn spawn_room(
     let sec_b_len = half_z - door_center_z - door_w / 2.0;
     if sec_b_len > 0.01 {
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(meshes.add(Cuboid::new(WALL_THICKNESS, ROOM_HEIGHT, sec_b_len))),
             MeshMaterial3d(wall_mat.clone()),
             Transform::from_xyz(wall_x, ROOM_HEIGHT / 2.0, half_z - sec_b_len / 2.0),
@@ -181,7 +185,8 @@ fn spawn_room(
     let above_door_h = ROOM_HEIGHT - door_h;
     if above_door_h > 0.01 {
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(meshes.add(Cuboid::new(WALL_THICKNESS, above_door_h, door_w))),
             MeshMaterial3d(wall_mat.clone()),
             Transform::from_xyz(wall_x, door_h + above_door_h / 2.0, door_center_z),
@@ -198,7 +203,8 @@ fn spawn_room(
         // Left section
         let left_w = half_x - win_w / 2.0;
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(meshes.add(Cuboid::new(left_w, ROOM_HEIGHT, WALL_THICKNESS))),
             MeshMaterial3d(wall_mat.clone()),
             Transform::from_xyz(-(half_x - left_w / 2.0), ROOM_HEIGHT / 2.0, wall_z),
@@ -206,14 +212,16 @@ fn spawn_room(
         // Right section
         let right_w = half_x - win_w / 2.0;
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(meshes.add(Cuboid::new(right_w, ROOM_HEIGHT, WALL_THICKNESS))),
             MeshMaterial3d(wall_mat.clone()),
             Transform::from_xyz(half_x - right_w / 2.0, ROOM_HEIGHT / 2.0, wall_z),
         ));
         // Below window
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(meshes.add(Cuboid::new(win_w, win_bottom, WALL_THICKNESS))),
             MeshMaterial3d(wall_mat.clone()),
             Transform::from_xyz(0.0, win_bottom / 2.0, wall_z),
@@ -221,14 +229,16 @@ fn spawn_room(
         // Above window
         let above_h = ROOM_HEIGHT - win_top;
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(meshes.add(Cuboid::new(win_w, above_h, WALL_THICKNESS))),
             MeshMaterial3d(wall_mat),
             Transform::from_xyz(0.0, win_top + above_h / 2.0, wall_z),
         ));
     } else {
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(meshes.add(Cuboid::new(ROOM_WIDTH, ROOM_HEIGHT, WALL_THICKNESS))),
             MeshMaterial3d(wall_mat),
             Transform::from_xyz(0.0, ROOM_HEIGHT / 2.0, wall_z),
@@ -378,7 +388,8 @@ fn spawn_store_room(
     let counter_z = -half_z + counter_d / 2.0 + WALL_THICKNESS + 0.3;
     // Top
     commands.spawn((
-        IndoorRoom, despawn.clone(),
+        IndoorRoom,
+        despawn.clone(),
         RigidBody::Static,
         Collider::cuboid(counter_w, counter_top_thickness, counter_d),
         Mesh3d(meshes.add(Cuboid::new(counter_w, counter_top_thickness, counter_d))),
@@ -390,7 +401,8 @@ fn spawn_store_room(
     let base_inset = 0.04;
     let base_h = counter_h - counter_top_thickness / 2.0;
     commands.spawn((
-        IndoorRoom, despawn.clone(),
+        IndoorRoom,
+        despawn.clone(),
         Mesh3d(meshes.add(Cuboid::new(
             counter_w - base_inset * 2.0,
             base_h,
@@ -414,7 +426,8 @@ fn spawn_store_room(
     let shelf_z = -half_z + shelf_d / 2.0 + WALL_THICKNESS;
     for y in [bottom_shelf_y, 1.8] {
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(shelf_mesh.clone()),
             MeshMaterial3d(shelf_mat.clone()),
             Transform::from_xyz(0.0, y, shelf_z),
@@ -433,7 +446,8 @@ fn spawn_store_room(
     let motor_mesh = meshes.add(Cylinder::new(motor_radius, motor_length));
     for x in [-0.63, -0.58, -0.53, -0.48] {
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(motor_mesh.clone()),
             MeshMaterial3d(motor_mat.clone()),
             Transform::from_xyz(x, bottom_shelf_y + shelf_h / 2.0 + motor_radius, shelf_z),
@@ -450,7 +464,8 @@ fn spawn_store_room(
     let light_y = ROOM_HEIGHT - 0.15;
     for (x, z) in [(-1.2, -1.0), (1.2, -1.0), (-1.2, 1.2), (1.2, 1.2)] {
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             PointLight {
                 intensity: 120_000.0,
                 range: 8.0,
@@ -461,7 +476,8 @@ fn spawn_store_room(
             Transform::from_xyz(x, light_y, z),
         ));
         commands.spawn((
-            IndoorRoom, despawn.clone(),
+            IndoorRoom,
+            despawn.clone(),
             Mesh3d(fixture_mesh.clone()),
             MeshMaterial3d(fixture_mat.clone()),
             Transform::from_xyz(x, ROOM_HEIGHT - 0.02, z),
@@ -484,7 +500,10 @@ fn enter_indoor(
     rocket_state: &mut RocketState,
     rocket_dims: &RocketDimensions,
     camera_properties: &mut CameraProperties,
-    camera_query: &mut Query<(Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping), With<Camera3d>>,
+    camera_query: &mut Query<
+        (Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping),
+        With<Camera3d>,
+    >,
     commands: &mut Commands,
     show_rocket: bool,
 ) {
@@ -511,9 +530,13 @@ fn enter_indoor(
     if let Ok((rocket_ent, mut transform, mut lin_vel, mut ang_vel, mut locked)) =
         rocket_query.single_mut()
     {
-        let rocket_vis = if show_rocket { Visibility::Inherited } else { Visibility::Hidden };
+        let rocket_vis = if show_rocket {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
         commands.entity(rocket_ent).insert(rocket_vis);
-        let rocket_half = rocket_dims.total_length() * 0.5;
+        let rocket_half = rocket_dims.length * 0.5;
         transform.translation = Vec3::new(0.0, TABLE_TOP_Y + rocket_half, 0.0);
         transform.rotation = Quat::IDENTITY;
         *lin_vel = LinearVelocity::ZERO;
@@ -547,7 +570,10 @@ fn enter_lab(
     mut rocket_state: ResMut<RocketState>,
     rocket_dims: Res<RocketDimensions>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<(Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping), With<Camera3d>>,
+    mut camera_query: Query<
+        (Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping),
+        With<Camera3d>,
+    >,
     mut commands: Commands,
     mut sky_props: ResMut<SkyProperties>,
 ) {
@@ -580,7 +606,10 @@ fn enter_store(
     mut rocket_state: ResMut<RocketState>,
     rocket_dims: Res<RocketDimensions>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<(Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping), With<Camera3d>>,
+    mut camera_query: Query<
+        (Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping),
+        With<Camera3d>,
+    >,
     mut commands: Commands,
     mut sky_props: ResMut<SkyProperties>,
 ) {
@@ -642,7 +671,7 @@ fn enter_launch(
         rocket_query.single_mut()
     {
         commands.entity(rocket_ent).insert(Visibility::Inherited);
-        let rocket_half = rocket_dims.total_length() * 0.5;
+        let rocket_half = rocket_dims.length * 0.5;
         transform.translation = Vec3::new(0.0, rocket_half, 0.0);
         transform.rotation = Quat::IDENTITY;
         *lin_vel = LinearVelocity::ZERO;

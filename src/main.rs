@@ -620,8 +620,8 @@ fn on_reset_event(
     }
 
     let base_y = match *app_state.get() {
-        AppState::Lab | AppState::Store => scene::TABLE_TOP_Y + rocket_dims.total_length() * 0.5,
-        _ => rocket_dims.total_length() * 0.5,
+        AppState::Lab | AppState::Store => scene::TABLE_TOP_Y + rocket_dims.length * 0.5,
+        _ => rocket_dims.length * 0.5,
     };
 
     if let Ok((rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity)) =
@@ -1292,8 +1292,8 @@ fn update_rocket_dimensions_system(
     debug!("Updating rocket dimensions");
 
     let base_y = match *app_state.get() {
-        AppState::Lab | AppState::Store => scene::TABLE_TOP_Y + rocket_dims.total_length() * 0.5,
-        _ => rocket_dims.total_length() * 0.5,
+        AppState::Lab | AppState::Store => scene::TABLE_TOP_Y + rocket_dims.length * 0.5,
+        _ => rocket_dims.length * 0.5,
     };
     for mut rb_transform in rb_query.iter_mut() {
         rb_transform.translation.y = base_y;
@@ -1692,7 +1692,7 @@ mod tests {
         app.update();
 
         let dims = app.world().resource::<RocketDimensions>();
-        let expected_y = dims.total_length() * 0.5;
+        let expected_y = dims.length * 0.5;
         let expected_locked_bits = lock_all_axes(LockedAxes::new()).to_bits();
 
         let entity = app.world().entity(rocket);
