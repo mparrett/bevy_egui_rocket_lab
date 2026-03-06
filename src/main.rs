@@ -67,7 +67,10 @@ pub enum AppState {
 }
 
 fn in_gameplay(state: Res<State<AppState>>) -> bool {
-    matches!(state.get(), AppState::Lab | AppState::Launch | AppState::Store)
+    matches!(
+        state.get(),
+        AppState::Lab | AppState::Launch | AppState::Store
+    )
 }
 
 #[derive(Message)]
@@ -221,7 +224,15 @@ fn main() {
             )
                 .run_if(in_state(AppState::Launch)),
         )
-        .add_systems(Update, (fps_text_update_system, fps_counter_showhide, music_crossfade_system, toggle_physics_debug))
+        .add_systems(
+            Update,
+            (
+                fps_text_update_system,
+                fps_counter_showhide,
+                music_crossfade_system,
+                toggle_physics_debug,
+            ),
+        )
         .add_systems(
             PostUpdate,
             (
@@ -241,10 +252,7 @@ fn main() {
     );
 
     app.add_systems(Startup, spawn_regular_sky_map);
-    app.add_systems(
-        Update,
-        (cubemap_asset_loaded, check_loading_complete),
-    );
+    app.add_systems(Update, (cubemap_asset_loaded, check_loading_complete));
     app.add_systems(
         Update,
         (
@@ -303,7 +311,15 @@ fn sync_sky_render_mode_system(
     mut scattering_media: ResMut<Assets<ScatteringMedium>>,
     mut cached_medium: Local<Option<Handle<ScatteringMedium>>>,
     mut commands: Commands,
-    mut camera_query: Query<(Entity, Option<&Skybox>, Option<&Atmosphere>, &mut Tonemapping), With<Camera3d>>,
+    mut camera_query: Query<
+        (
+            Entity,
+            Option<&Skybox>,
+            Option<&Atmosphere>,
+            &mut Tonemapping,
+        ),
+        With<Camera3d>,
+    >,
 ) {
     if !sky_mode.is_changed() {
         return;
@@ -478,8 +494,7 @@ fn rocket_position_system(
     let Ok((transform, velocity)) = rocket_query.single() else {
         return;
     };
-    if *app_state.get() == AppState::Launch
-        && camera_properties.follow_mode != FollowMode::FreeLook
+    if *app_state.get() == AppState::Launch && camera_properties.follow_mode != FollowMode::FreeLook
     {
         camera_properties.target = transform.translation;
     }
@@ -767,7 +782,10 @@ fn ui_system(
                     .show(ui, |ui| {
                         let mut changed = false;
                         changed |= ui
-                            .add(egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5).text("radius"))
+                            .add(
+                                egui::Slider::new(&mut rocket_dims.radius, 0.025..=0.5)
+                                    .text("radius"),
+                            )
                             .changed();
                         changed |= ui
                             .add(
@@ -865,10 +883,8 @@ fn ui_system(
                     egui::CollapsingHeader::new("Rocket Saves")
                         .default_open(false)
                         .show(ui, |ui| {
-                            let player_label = save_state
-                                .player_name
-                                .as_deref()
-                                .unwrap_or("New Player");
+                            let player_label =
+                                save_state.player_name.as_deref().unwrap_or("New Player");
                             ui.label(format!("Player: {player_label}"));
                             ui.separator();
 
@@ -899,8 +915,7 @@ fn ui_system(
                                     if ui.button("Save").clicked()
                                         && !save_state.rocket_name_buf.trim().is_empty()
                                     {
-                                        let rname =
-                                            save_state.rocket_name_buf.trim().to_string();
+                                        let rname = save_state.rocket_name_buf.trim().to_string();
                                         match save::save_rocket(
                                             &player,
                                             &rname,
@@ -973,150 +988,167 @@ fn ui_system(
             }
 
             if is_launch {
-            ui.add_space(6.0);
-            egui::CollapsingHeader::new("Sky")
-                .default_open(false)
-                .show(ui, |ui| {
-                    let is_cubemap_mode = *sky_mode == SkyRenderMode::Cubemap;
-                    let mode_label = match *sky_mode {
-                        SkyRenderMode::Cubemap => "Cubemap",
-                        SkyRenderMode::Atmosphere => "Atmosphere",
-                    };
-                    egui::ComboBox::from_label("sky mode")
-                        .selected_text(mode_label)
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut *sky_mode, SkyRenderMode::Cubemap, "Cubemap");
-                            // Atmosphere mode crashes with bevy_firework's render pipeline
-                            // (bind group layout mismatch, bevyengine/bevy#21784)
-                            ui.disable();
-                            ui.selectable_value(
-                                &mut *sky_mode,
-                                SkyRenderMode::Atmosphere,
-                                "Atmosphere (needs particle fix)",
-                            );
-                        });
-
-                    ui.separator();
-                    ui.add(egui::Slider::new(&mut sky_props.time_of_day, 0.0..=24.0).text("time"));
-                    ui.add(egui::Slider::new(&mut sky_props.day_speed, 0.0..=600.0).text("speed"));
-                    ui.add(
-                        egui::Slider::new(&mut sky_props.ambient_floor, 0.0..=1.0)
-                            .text("ambient floor"),
-                    );
-                    ui.label(format!("  ambient brightness: {:.3}", ambient_light.brightness));
-                    if let Ok(sun) = sun_query.single() {
-                        ui.label(format!("  sun illuminance: {:.1} lux", sun.illuminance));
-                    }
-
-                    ui.separator();
-                    if is_cubemap_mode {
-                        let current_name = SKYBOXES[sky_props.skybox_index].name;
-                        let mut changed = false;
-                        egui::ComboBox::from_label("skybox")
-                            .selected_text(current_name)
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new("Sky")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        let is_cubemap_mode = *sky_mode == SkyRenderMode::Cubemap;
+                        let mode_label = match *sky_mode {
+                            SkyRenderMode::Cubemap => "Cubemap",
+                            SkyRenderMode::Atmosphere => "Atmosphere",
+                        };
+                        egui::ComboBox::from_label("sky mode")
+                            .selected_text(mode_label)
                             .show_ui(ui, |ui| {
-                                for (i, entry) in SKYBOXES.iter().enumerate() {
-                                    if ui
-                                        .selectable_value(&mut sky_props.skybox_index, i, entry.name)
-                                        .changed()
-                                    {
-                                        changed = true;
-                                    }
-                                }
-                            });
-                        if changed {
-                            sky_props.lab_skybox_index = sky_props.skybox_index;
-                            sky_props.skybox_changed = true;
-                            if sky_props.fog_enabled
-                                && let Ok(mut fog_settings) = fog_query.single_mut()
-                            {
-                                apply_fog_mode(
-                                    &mut fog_settings,
-                                    sky_props.fog_mode,
-                                    sky_props.fog_visibility,
-                                    sky_props.skybox_index,
+                                ui.selectable_value(
+                                    &mut *sky_mode,
+                                    SkyRenderMode::Cubemap,
+                                    "Cubemap",
                                 );
-                            }
+                                // Atmosphere mode crashes with bevy_firework's render pipeline
+                                // (bind group layout mismatch, bevyengine/bevy#21784)
+                                ui.disable();
+                                ui.selectable_value(
+                                    &mut *sky_mode,
+                                    SkyRenderMode::Atmosphere,
+                                    "Atmosphere (needs particle fix)",
+                                );
+                            });
+
+                        ui.separator();
+                        ui.add(
+                            egui::Slider::new(&mut sky_props.time_of_day, 0.0..=24.0).text("time"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut sky_props.day_speed, 0.0..=600.0).text("speed"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut sky_props.ambient_floor, 0.0..=1.0)
+                                .text("ambient floor"),
+                        );
+                        ui.label(format!(
+                            "  ambient brightness: {:.3}",
+                            ambient_light.brightness
+                        ));
+                        if let Ok(sun) = sun_query.single() {
+                            ui.label(format!("  sun illuminance: {:.1} lux", sun.illuminance));
                         }
 
                         ui.separator();
-                        ui.checkbox(&mut sun_disc_settings.enabled, "Sun disc");
-                        ui.add(
-                            egui::Slider::new(
-                                &mut sun_disc_settings.emissive_strength,
-                                1000.0..=80000.0,
-                            )
-                            .logarithmic(true)
-                            .text("sun emissive"),
-                        );
-                        ui.add(
-                            egui::Slider::new(
-                                &mut sun_disc_settings.angular_diameter_deg,
-                                0.1..=1.5,
-                            )
-                            .text("sun size (deg)"),
-                        );
-                        ui.separator();
-                    } else {
-                        ui.label("Cubemap-only controls are hidden in Atmosphere mode.");
-                        ui.separator();
-                    }
-
-                    if let Ok(mut bloom) = bloom_query.single_mut() {
-                        ui.add(egui::Slider::new(&mut bloom.intensity, 0.0..=1.0).text("bloom"));
-                        ui.add(
-                            egui::Slider::new(&mut bloom.high_pass_frequency, 0.0..=1.0)
-                                .text("bloom high-pass"),
-                        );
-                    }
-
-                    ui.separator();
-                    ui.checkbox(
-                        &mut sky_props.volumetrics_enabled,
-                        "Volumetrics (opt-in, GPU heavy)",
-                    );
-
-                    ui.separator();
-                    let mut fog_changed = false;
-                    let fog_label = match sky_props.fog_mode {
-                        1 => "Atmospheric",
-                        2 => "Dense",
-                        _ => "Off",
-                    };
-                    egui::ComboBox::from_label("Fog")
-                        .selected_text(fog_label)
-                        .show_ui(ui, |ui| {
-                            for (m, label) in [(0, "Off"), (1, "Atmospheric"), (2, "Dense")] {
-                                if ui
-                                    .selectable_value(&mut sky_props.fog_mode, m, label)
-                                    .changed()
+                        if is_cubemap_mode {
+                            let current_name = SKYBOXES[sky_props.skybox_index].name;
+                            let mut changed = false;
+                            egui::ComboBox::from_label("skybox")
+                                .selected_text(current_name)
+                                .show_ui(ui, |ui| {
+                                    for (i, entry) in SKYBOXES.iter().enumerate() {
+                                        if ui
+                                            .selectable_value(
+                                                &mut sky_props.skybox_index,
+                                                i,
+                                                entry.name,
+                                            )
+                                            .changed()
+                                        {
+                                            changed = true;
+                                        }
+                                    }
+                                });
+                            if changed {
+                                sky_props.lab_skybox_index = sky_props.skybox_index;
+                                sky_props.skybox_changed = true;
+                                if sky_props.fog_enabled
+                                    && let Ok(mut fog_settings) = fog_query.single_mut()
                                 {
-                                    sky_props.fog_enabled = m > 0;
-                                    fog_changed = true;
+                                    apply_fog_mode(
+                                        &mut fog_settings,
+                                        sky_props.fog_mode,
+                                        sky_props.fog_visibility,
+                                        sky_props.skybox_index,
+                                    );
                                 }
                             }
-                        });
 
-                    if sky_props.fog_enabled
-                        && ui
-                            .add(
-                                egui::Slider::new(&mut sky_props.fog_visibility, 10.0..=200.0)
-                                    .text("visibility"),
-                            )
-                            .changed()
-                    {
-                        fog_changed = true;
-                    }
+                            ui.separator();
+                            ui.checkbox(&mut sun_disc_settings.enabled, "Sun disc");
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut sun_disc_settings.emissive_strength,
+                                    1000.0..=80000.0,
+                                )
+                                .logarithmic(true)
+                                .text("sun emissive"),
+                            );
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut sun_disc_settings.angular_diameter_deg,
+                                    0.1..=1.5,
+                                )
+                                .text("sun size (deg)"),
+                            );
+                            ui.separator();
+                        } else {
+                            ui.label("Cubemap-only controls are hidden in Atmosphere mode.");
+                            ui.separator();
+                        }
 
-                    if fog_changed && let Ok(mut fog_settings) = fog_query.single_mut() {
-                        apply_fog_mode(
-                            &mut fog_settings,
-                            sky_props.fog_mode,
-                            sky_props.fog_visibility,
-                            sky_props.skybox_index,
+                        if let Ok(mut bloom) = bloom_query.single_mut() {
+                            ui.add(
+                                egui::Slider::new(&mut bloom.intensity, 0.0..=1.0).text("bloom"),
+                            );
+                            ui.add(
+                                egui::Slider::new(&mut bloom.high_pass_frequency, 0.0..=1.0)
+                                    .text("bloom high-pass"),
+                            );
+                        }
+
+                        ui.separator();
+                        ui.checkbox(
+                            &mut sky_props.volumetrics_enabled,
+                            "Volumetrics (opt-in, GPU heavy)",
                         );
-                    }
-                });
+
+                        ui.separator();
+                        let mut fog_changed = false;
+                        let fog_label = match sky_props.fog_mode {
+                            1 => "Atmospheric",
+                            2 => "Dense",
+                            _ => "Off",
+                        };
+                        egui::ComboBox::from_label("Fog")
+                            .selected_text(fog_label)
+                            .show_ui(ui, |ui| {
+                                for (m, label) in [(0, "Off"), (1, "Atmospheric"), (2, "Dense")] {
+                                    if ui
+                                        .selectable_value(&mut sky_props.fog_mode, m, label)
+                                        .changed()
+                                    {
+                                        sky_props.fog_enabled = m > 0;
+                                        fog_changed = true;
+                                    }
+                                }
+                            });
+
+                        if sky_props.fog_enabled
+                            && ui
+                                .add(
+                                    egui::Slider::new(&mut sky_props.fog_visibility, 10.0..=200.0)
+                                        .text("visibility"),
+                                )
+                                .changed()
+                        {
+                            fog_changed = true;
+                        }
+
+                        if fog_changed && let Ok(mut fog_settings) = fog_query.single_mut() {
+                            apply_fog_mode(
+                                &mut fog_settings,
+                                sky_props.fog_mode,
+                                sky_props.fog_visibility,
+                                sky_props.skybox_index,
+                            );
+                        }
+                    });
             }
 
             if is_launch {
@@ -1124,10 +1156,14 @@ fn ui_system(
                 egui::CollapsingHeader::new("Wind")
                     .default_open(true)
                     .show(ui, |ui| {
-                        ui.add(
-                            egui::Slider::new(&mut wind.strength, 0.0..=1.0)
-                                .text("strength"),
-                        );
+                        ui.add(egui::Slider::new(&mut wind.strength, 0.0..=1.0).text("strength"));
+                        let horizontal_speed =
+                            Vec2::new(wind.wind_velocity_world.x, wind.wind_velocity_world.z)
+                                .length();
+                        ui.label(format!(
+                            "horiz: {:.1} m/s  vertical: {:+.1} m/s",
+                            horizontal_speed, wind.wind_velocity_world.y
+                        ));
 
                         let size = 80.0;
                         let (response, painter) =
@@ -1138,11 +1174,7 @@ fn ui_system(
                         let wind_color = egui::Color32::from_rgb(100, 200, 255);
                         let dim_color = egui::Color32::from_rgba_premultiplied(100, 200, 255, 60);
 
-                        painter.circle_stroke(
-                            center,
-                            radius,
-                            egui::Stroke::new(1.0, dim_color),
-                        );
+                        painter.circle_stroke(center, radius, egui::Stroke::new(1.0, dim_color));
 
                         let label_offset = radius + 8.0;
                         let font = egui::FontId::proportional(10.0);
@@ -1167,11 +1199,7 @@ fn ui_system(
                             let dir_screen =
                                 egui::vec2(wind.direction.x, -wind.direction.y).normalized();
                             let tip = center + dir_screen * arrow_len;
-                            painter.arrow(
-                                center,
-                                tip - center,
-                                egui::Stroke::new(2.0, wind_color),
-                            );
+                            painter.arrow(center, tip - center, egui::Stroke::new(2.0, wind_color));
                         }
                     });
             }
@@ -1355,7 +1383,11 @@ fn music_crossfade_system(
     mut lab_query: Query<&mut AudioSink, (With<LabMusicMarker>, Without<LaunchMusicMarker>)>,
     mut launch_query: Query<&mut AudioSink, (With<LaunchMusicMarker>, Without<LabMusicMarker>)>,
 ) {
-    let master = if audio_settings.music_enabled { 1.0_f32 } else { 0.0 };
+    let master = if audio_settings.music_enabled {
+        1.0_f32
+    } else {
+        0.0
+    };
     let (lab_target, launch_target) = match app_state.get() {
         AppState::Lab => (master, 0.0),
         AppState::Launch => (0.0, master),
