@@ -406,13 +406,6 @@ fn init_egui_ui_input_system(
     mut next_state: ResMut<NextState<AppState>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
-    if ctx.wants_keyboard_input() {
-        return Ok(());
-    }
-
-    if ctx.input(|i| i.key_pressed(Key::Q)) {
-        app_exit.write(AppExit::Success);
-    }
 
     if ctx.input(|i| i.key_pressed(Key::Tab)) {
         match app_state.get() {
@@ -421,6 +414,14 @@ fn init_egui_ui_input_system(
             AppState::Store => next_state.set(AppState::Lab),
             _ => {}
         }
+    }
+
+    if ctx.wants_keyboard_input() {
+        return Ok(());
+    }
+
+    if ctx.input(|i| i.key_pressed(Key::Q)) {
+        app_exit.write(AppExit::Success);
     }
 
     if ctx.input(|i| i.key_pressed(Key::R)) {
