@@ -302,6 +302,7 @@ fn menu_action(
     mut audio_settings: ResMut<AudioSettings>,
     mut save_state: ResMut<SaveState>,
     mut player_balance: ResMut<crate::save::PlayerBalance>,
+    mut owned_materials: ResMut<crate::save::OwnedMaterials>,
     mut rocket_dims: ResMut<crate::rocket::RocketDimensions>,
     mut flight_params: ResMut<crate::rocket::RocketFlightParameters>,
     mut app_exit: MessageWriter<AppExit>,
@@ -323,10 +324,11 @@ fn menu_action(
             }
             #[cfg(not(target_arch = "wasm32"))]
             MenuButtonAction::SelectPlayer(name) => {
-                save_state.player_name = Some(name.clone());
+                save_state.player_name = name.clone();
                 save_state.rocket_saves = crate::save::list_rockets(name);
                 if let Ok(meta) = crate::save::load_player_meta(name) {
                     player_balance.0 = meta.balance;
+                    owned_materials.0 = meta.owned_materials;
                 }
                 if let Some(first) = save_state.rocket_saves.first()
                     && let Ok(data) = crate::save::load_rocket(name, first)

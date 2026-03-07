@@ -1,9 +1,25 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::rocket::{RocketDimensions, RocketFlightParameters};
+use crate::rocket::{RocketDimensions, RocketFlightParameters, RocketMaterial};
 
 pub const STARTING_BALANCE: f64 = 50.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Resource)]
+pub enum GameMode {
+    #[default]
+    Sandbox,
+    Gameplay,
+}
+
+#[derive(Resource)]
+pub struct OwnedMaterials(pub Vec<RocketMaterial>);
+
+impl Default for OwnedMaterials {
+    fn default() -> Self {
+        Self(vec![RocketMaterial::Light])
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RocketSave {
@@ -17,6 +33,7 @@ pub struct PlayerMeta {
     pub name: String,
     #[serde(default = "default_balance")]
     pub balance: f64,
+    pub owned_materials: Vec<RocketMaterial>,
 }
 
 fn default_balance() -> f64 {
@@ -32,13 +49,25 @@ impl Default for PlayerBalance {
     }
 }
 
-#[derive(Resource, Default)]
+pub const DEFAULT_PLAYER_NAME: &str = "Player";
+
+#[derive(Resource)]
 pub struct SaveState {
-    pub player_name: Option<String>,
+    pub player_name: String,
     pub rocket_saves: Vec<String>,
     pub rocket_name_buf: String,
-    pub player_name_buf: String,
     pub status_message: Option<String>,
+}
+
+impl Default for SaveState {
+    fn default() -> Self {
+        Self {
+            player_name: DEFAULT_PLAYER_NAME.to_string(),
+            rocket_saves: Vec::new(),
+            rocket_name_buf: String::new(),
+            status_message: None,
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -129,6 +158,7 @@ mod io {
             let meta = PlayerMeta {
                 name: player.to_string(),
                 balance: STARTING_BALANCE,
+                owned_materials: vec![RocketMaterial::Light],
             };
             let json = serde_json::to_string_pretty(&meta)
                 .map_err(|e| format!("Failed to serialize player meta: {e}"))?;

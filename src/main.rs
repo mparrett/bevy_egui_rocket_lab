@@ -194,6 +194,8 @@ fn main() {
         .init_resource::<AudioSettings>()
         .init_resource::<save::SaveState>()
         .init_resource::<save::PlayerBalance>()
+        .init_resource::<save::GameMode>()
+        .init_resource::<save::OwnedMaterials>()
         .init_resource::<wind::WindProperties>()
         .add_systems(
             Startup,
@@ -752,6 +754,8 @@ fn update_wind_hud_system(
 struct SaveUiParams<'w> {
     save_state: ResMut<'w, save::SaveState>,
     balance: ResMut<'w, save::PlayerBalance>,
+    game_mode: ResMut<'w, save::GameMode>,
+    owned_materials: ResMut<'w, save::OwnedMaterials>,
 }
 
 fn ui_system(
@@ -777,6 +781,8 @@ fn ui_system(
 ) -> Result {
     let save_state = &mut save_params.save_state;
     let balance = &mut save_params.balance;
+    let game_mode = &mut save_params.game_mode;
+    let owned_materials = &mut save_params.owned_materials;
     let is_lab = *app_state.get() == AppState::Lab;
     let is_launch = *app_state.get() == AppState::Launch;
     let is_store = *app_state.get() == AppState::Store;
@@ -786,6 +792,18 @@ fn ui_system(
     egui::SidePanel::left("left_panel")
         .resizable(true)
         .show(ctx, |ui| {
+            ui.add_space(4.0);
+
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut **game_mode, save::GameMode::Sandbox, "Sandbox");
+                ui.selectable_value(&mut **game_mode, save::GameMode::Gameplay, "Gameplay");
+            });
+            if **game_mode == save::GameMode::Gameplay
+                && !owned_materials.0.contains(&rocket_dims.material)
+            {
+                rocket_dims.material = RocketMaterial::Light;
+                rocket_dims.flag_changed = true;
+            }
             ui.add_space(4.0);
 
             egui::CollapsingHeader::new("Camera")
@@ -918,13 +936,23 @@ fn ui_system(
 
                         ui.separator();
                         let prev_mat = rocket_dims.material;
+                        let available_materials: Vec<RocketMaterial> =
+                            if **game_mode == save::GameMode::Gameplay {
+                                RocketMaterial::ALL
+                                    .iter()
+                                    .copied()
+                                    .filter(|m| owned_materials.0.contains(m))
+                                    .collect()
+                            } else {
+                                RocketMaterial::ALL.to_vec()
+                            };
                         egui::ComboBox::from_label("material")
                             .selected_text(rocket_dims.material.label())
                             .show_ui(ui, |ui| {
-                                for preset in RocketMaterial::ALL {
+                                for preset in &available_materials {
                                     ui.selectable_value(
                                         &mut rocket_dims.material,
-                                        preset,
+                                        *preset,
                                         preset.label(),
                                     );
                                 }
@@ -966,33 +994,11 @@ fn ui_system(
                     egui::CollapsingHeader::new("Rocket Saves")
                         .default_open(false)
                         .show(ui, |ui| {
-                            let player_label =
-                                save_state.player_name.as_deref().unwrap_or("New Player");
-                            ui.label(format!("Player: {player_label}"));
+                            ui.label(format!("Player: {}", save_state.player_name));
                             ui.separator();
 
-                            if save_state.player_name.is_none() {
-                                ui.label("Enter player name to start saving:");
-                                ui.text_edit_singleline(&mut save_state.player_name_buf);
-                                if ui.button("Create Player").clicked()
-                                    && !save_state.player_name_buf.trim().is_empty()
-                                {
-                                    let name = save_state.player_name_buf.trim().to_string();
-                                    match save::ensure_player_dir(&name) {
-                                        Ok(()) => {
-                                            save_state.rocket_saves = save::list_rockets(&name);
-                                            save_state.player_name = Some(name);
-                                            save_state.player_name_buf.clear();
-                                            save_state.status_message =
-                                                Some("Player created!".to_string());
-                                        }
-                                        Err(e) => {
-                                            save_state.status_message = Some(e);
-                                        }
-                                    }
-                                }
-                            } else {
-                                let player = save_state.player_name.clone().unwrap();
+                            {
+                                let player = save_state.player_name.clone();
                                 ui.horizontal(|ui| {
                                     ui.text_edit_singleline(&mut save_state.rocket_name_buf);
                                     if ui.button("Save").clicked()
@@ -1273,7 +1279,18 @@ fn ui_system(
                 egui::CollapsingHeader::new("Shop")
                     .default_open(true)
                     .show(ui, |ui| {
-                        let player = save_state.player_name.clone().unwrap_or_else(|| "Player".to_string());
+                        if **game_mode == save::GameMode::Sandbox {
+                            ui.label("Sandbox mode — everything unlocked.");
+                            return;
+                        }
+
+                        let player = save_state.player_name.clone();
+                        if let Err(e) = save::ensure_player_dir(&player) {
+                            save_state.status_message = Some(format!("Error: {e}"));
+                            return;
+                        }
+
+                        // Starter rocket purchase
                         let owns_starter = save_state.rocket_saves.contains(&"Starter".to_string());
                         if owns_starter {
                             ui.label("Starter Rocket — Purchased!");
@@ -1281,13 +1298,6 @@ fn ui_system(
                             let can_afford = balance.0 >= 10.0;
                             let btn = egui::Button::new("Buy Starter Rocket — $10");
                             if ui.add_enabled(can_afford, btn).clicked() {
-                                if save_state.player_name.is_none() {
-                                    if let Err(e) = save::ensure_player_dir(&player) {
-                                        save_state.status_message = Some(format!("Error: {e}"));
-                                        return;
-                                    }
-                                    save_state.player_name = Some(player.clone());
-                                }
                                 let starter_dims = RocketDimensions {
                                     radius: 0.02,
                                     length: 0.35,
@@ -1309,6 +1319,7 @@ fn ui_system(
                                     let meta = save::PlayerMeta {
                                         name: player.clone(),
                                         balance: balance.0,
+                                        owned_materials: owned_materials.0.clone(),
                                     };
                                     let _ = save::save_player_meta(&meta);
                                     save_state.rocket_saves = save::list_rockets(&player);
@@ -1317,6 +1328,35 @@ fn ui_system(
                             }
                             if !can_afford {
                                 ui.label("Not enough funds.");
+                            }
+                        }
+
+                        ui.separator();
+                        ui.label("Materials");
+                        for mat in RocketMaterial::ALL {
+                            if mat.price() == 0.0 {
+                                continue;
+                            }
+                            if owned_materials.0.contains(&mat) {
+                                ui.label(format!("{} — Owned", mat.label()));
+                            } else {
+                                let price = mat.price();
+                                let can_afford = balance.0 >= price;
+                                let btn = egui::Button::new(format!("Buy {} — ${}", mat.label(), price));
+                                if ui.add_enabled(can_afford, btn).clicked() {
+                                    balance.0 -= price;
+                                    owned_materials.0.push(mat);
+                                    let meta = save::PlayerMeta {
+                                        name: player.clone(),
+                                        balance: balance.0,
+                                        owned_materials: owned_materials.0.clone(),
+                                    };
+                                    let _ = save::save_player_meta(&meta);
+                                    save_state.status_message = Some(format!("Purchased {}!", mat.label()));
+                                }
+                                if !can_afford {
+                                    ui.label("Not enough funds.");
+                                }
                             }
                         }
                     });

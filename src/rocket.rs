@@ -69,6 +69,15 @@ impl RocketMaterial {
         }
     }
 
+    pub fn price(self) -> f64 {
+        match self {
+            Self::Light => 0.0,
+            Self::Medium => 5.0,
+            Self::Heavy => 10.0,
+            Self::VeryHeavy => 20.0,
+        }
+    }
+
     pub fn to_mass_model(self) -> RocketMassModel {
         match self {
             Self::Light => RocketMassModel {
