@@ -3,11 +3,33 @@ use serde::{Deserialize, Serialize};
 
 use crate::rocket::{RocketDimensions, RocketFlightParameters};
 
+pub const STARTING_BALANCE: f64 = 50.0;
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RocketSave {
     pub name: String,
     pub dimensions: RocketDimensions,
     pub flight_params: RocketFlightParameters,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PlayerMeta {
+    pub name: String,
+    #[serde(default = "default_balance")]
+    pub balance: f64,
+}
+
+fn default_balance() -> f64 {
+    STARTING_BALANCE
+}
+
+#[derive(Resource)]
+pub struct PlayerBalance(pub f64);
+
+impl Default for PlayerBalance {
+    fn default() -> Self {
+        Self(STARTING_BALANCE)
+    }
 }
 
 #[derive(Resource, Default)]
@@ -104,12 +126,30 @@ mod io {
         }
         fs::create_dir_all(&dir).map_err(|e| format!("Failed to create player dir: {e}"))?;
         if !meta_path.exists() {
-            let meta = serde_json::json!({ "name": player });
+            let meta = PlayerMeta {
+                name: player.to_string(),
+                balance: STARTING_BALANCE,
+            };
             let json = serde_json::to_string_pretty(&meta)
                 .map_err(|e| format!("Failed to serialize player meta: {e}"))?;
             fs::write(&meta_path, json).map_err(|e| format!("Failed to write player.json: {e}"))?;
         }
         Ok(())
+    }
+
+    pub fn load_player_meta(player: &str) -> Result<PlayerMeta, String> {
+        let path = player_dir(player).join("player.json");
+        let json =
+            fs::read_to_string(&path).map_err(|e| format!("Failed to read player.json: {e}"))?;
+        serde_json::from_str(&json).map_err(|e| format!("Failed to parse player.json: {e}"))
+    }
+
+    pub fn save_player_meta(meta: &PlayerMeta) -> Result<(), String> {
+        ensure_player_dir(&meta.name)?;
+        let path = player_dir(&meta.name).join("player.json");
+        let json = serde_json::to_string_pretty(meta)
+            .map_err(|e| format!("Failed to serialize player meta: {e}"))?;
+        fs::write(&path, json).map_err(|e| format!("Failed to write player.json: {e}"))
     }
 
     pub fn save_rocket(

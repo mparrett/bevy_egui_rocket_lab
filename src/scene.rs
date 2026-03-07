@@ -454,6 +454,35 @@ fn spawn_store_room(
         ));
     }
 
+    // Starter rocket on bottom shelf
+    let rocket_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.93, 0.93, 1.0),
+        metallic: 0.3,
+        perceptual_roughness: 0.4,
+        ..default()
+    });
+    let shelf_surface = bottom_shelf_y + shelf_h / 2.0;
+    let rocket_body_h = 0.35;
+    let rocket_cone_h = 0.08;
+    commands.spawn((
+        IndoorRoom,
+        despawn.clone(),
+        Mesh3d(meshes.add(Cylinder::new(0.02, rocket_body_h))),
+        MeshMaterial3d(rocket_mat.clone()),
+        Transform::from_xyz(0.5, shelf_surface + rocket_body_h / 2.0, shelf_z),
+    ));
+    commands.spawn((
+        IndoorRoom,
+        despawn.clone(),
+        Mesh3d(meshes.add(crate::cone::Cone {
+            radius: 0.02,
+            height: rocket_cone_h,
+            segments: 16,
+        })),
+        MeshMaterial3d(rocket_mat),
+        Transform::from_xyz(0.5, shelf_surface + rocket_body_h + rocket_cone_h / 2.0, shelf_z),
+    ));
+
     // Overhead light fixtures (4 in a grid)
     let fixture_mat = materials.add(StandardMaterial {
         base_color: Color::srgb(0.9, 0.9, 0.9),

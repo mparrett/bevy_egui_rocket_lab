@@ -2,6 +2,7 @@ use bevy::{
     camera::Exposure,
     core_pipeline::{Skybox, tonemapping::Tonemapping},
     diagnostic::FrameTimeDiagnosticsPlugin,
+    ecs::system::SystemParam,
     image::{CompressedImageFormats, ImageAddressMode, ImageSamplerDescriptor},
     input::common_conditions::input_toggle_active,
     light::AtmosphereEnvironmentMapLight,
@@ -192,6 +193,7 @@ fn main() {
         .init_resource::<RocketState>()
         .init_resource::<AudioSettings>()
         .init_resource::<save::SaveState>()
+        .init_resource::<save::PlayerBalance>()
         .init_resource::<wind::WindProperties>()
         .add_systems(
             Startup,
@@ -210,6 +212,10 @@ fn main() {
         .add_systems(OnEnter(AppState::Launch), setup_launch_hud)
         .add_systems(OnEnter(AppState::Lab), setup_lab_hud)
         .add_systems(OnEnter(AppState::Store), setup_store_hud)
+        .add_systems(
+            Update,
+            update_store_balance_text.run_if(in_state(AppState::Store)),
+        )
         .add_systems(
             EguiPrimaryContextPass,
             (ui_system, init_egui_ui_input_system).run_if(in_gameplay),
@@ -741,6 +747,12 @@ fn update_wind_hud_system(
     }
 }
 
+#[derive(SystemParam)]
+struct SaveUiParams<'w> {
+    save_state: ResMut<'w, save::SaveState>,
+    balance: ResMut<'w, save::PlayerBalance>,
+}
+
 fn ui_system(
     mut contexts: EguiContexts,
     mut rocket_dims: ResMut<RocketDimensions>,
@@ -750,7 +762,7 @@ fn ui_system(
     mut sky_mode: ResMut<SkyRenderMode>,
     mut sun_disc_settings: ResMut<SunDiscSettings>,
     mut wind: ResMut<wind::WindProperties>,
-    mut save_state: ResMut<save::SaveState>,
+    mut save_params: SaveUiParams,
     ambient_light: Res<GlobalAmbientLight>,
     sun_query: Query<&DirectionalLight, With<sky::SunLightMarker>>,
     rocket_query: Query<
@@ -762,6 +774,8 @@ fn ui_system(
     app_state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
 ) -> Result {
+    let save_state = &mut save_params.save_state;
+    let balance = &mut save_params.balance;
     let is_lab = *app_state.get() == AppState::Lab;
     let is_launch = *app_state.get() == AppState::Launch;
     let is_store = *app_state.get() == AppState::Store;
@@ -1252,6 +1266,61 @@ fn ui_system(
                 }
             }
 
+            #[cfg(not(target_arch = "wasm32"))]
+            if is_store {
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new("Shop")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        let player = save_state.player_name.clone().unwrap_or_else(|| "Player".to_string());
+                        let owns_starter = save_state.rocket_saves.contains(&"Starter".to_string());
+                        if owns_starter {
+                            ui.label("Starter Rocket — Purchased!");
+                        } else {
+                            let can_afford = balance.0 >= 10.0;
+                            let btn = egui::Button::new("Buy Starter Rocket — $10");
+                            if ui.add_enabled(can_afford, btn).clicked() {
+                                if save_state.player_name.is_none() {
+                                    if let Err(e) = save::ensure_player_dir(&player) {
+                                        save_state.status_message = Some(format!("Error: {e}"));
+                                        return;
+                                    }
+                                    save_state.player_name = Some(player.clone());
+                                }
+                                let starter_dims = RocketDimensions {
+                                    radius: 0.02,
+                                    length: 0.35,
+                                    cone_length: 0.08,
+                                    num_fins: 3.0,
+                                    fin_height: 0.15,
+                                    fin_length: 0.08,
+                                    body_color: ColorPreset::White,
+                                    cone_color: ColorPreset::White,
+                                    fin_color: ColorPreset::White,
+                                    material: RocketMaterial::Light,
+                                    flag_changed: false,
+                                };
+                                let default_params = RocketFlightParameters::default();
+                                if let Err(e) = save::save_rocket(&player, "Starter", &starter_dims, &default_params) {
+                                    save_state.status_message = Some(format!("Error: {e}"));
+                                } else {
+                                    balance.0 -= 10.0;
+                                    let meta = save::PlayerMeta {
+                                        name: player.clone(),
+                                        balance: balance.0,
+                                    };
+                                    let _ = save::save_player_meta(&meta);
+                                    save_state.rocket_saves = save::list_rockets(&player);
+                                    save_state.status_message = Some("Purchased Starter Rocket!".to_string());
+                                }
+                            }
+                            if !can_afford {
+                                ui.label("Not enough funds.");
+                            }
+                        }
+                    });
+            }
+
             ui.add_space(6.0);
             egui::CollapsingHeader::new("Keys")
                 .default_open(false)
@@ -1620,7 +1689,10 @@ fn setup_lab_hud(mut commands: Commands) {
         ));
 }
 
-fn setup_store_hud(mut commands: Commands) {
+#[derive(Component)]
+struct StoreBalanceText;
+
+fn setup_store_hud(mut commands: Commands, balance: Res<save::PlayerBalance>) {
     commands
         .spawn((
             DespawnOnExit(AppState::Store),
@@ -1635,13 +1707,29 @@ fn setup_store_hud(mut commands: Commands) {
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         ))
         .with_child((
-            Text::new("Store\nTab: lab  Q: quit"),
+            StoreBalanceText,
+            Text::new(format!(
+                "Store  ${:.2}\nTab: lab  Q: quit",
+                balance.0
+            )),
             TextFont {
                 font_size: 13.,
                 ..default()
             },
             TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
         ));
+}
+
+fn update_store_balance_text(
+    balance: Res<save::PlayerBalance>,
+    mut query: Query<&mut Text, With<StoreBalanceText>>,
+) {
+    if !balance.is_changed() {
+        return;
+    }
+    for mut text in &mut query {
+        **text = format!("Store  ${:.2}\nTab: lab  Q: quit", balance.0);
+    }
 }
 
 #[cfg(test)]
