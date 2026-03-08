@@ -220,6 +220,7 @@ impl Default for RocketDimensions {
 pub enum RocketStateEnum {
     Initial,
     Launched,
+    Descending,
     Grounded,
 }
 

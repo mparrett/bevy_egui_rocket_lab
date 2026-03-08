@@ -117,7 +117,10 @@ pub fn apply_wind_force_system(
     rocket_dims: Res<RocketDimensions>,
     mut query: Query<(&Transform, Forces), With<RocketMarker>>,
 ) {
-    if rocket_state.state != RocketStateEnum::Launched {
+    if !matches!(
+        rocket_state.state,
+        RocketStateEnum::Launched | RocketStateEnum::Descending
+    ) {
         return;
     }
     let Ok((transform, mut forces)) = query.single_mut() else {

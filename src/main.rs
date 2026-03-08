@@ -50,6 +50,7 @@ mod fin;
 mod fps;
 mod ground;
 mod menu;
+mod parachute;
 mod particles;
 mod physics;
 mod profiling;
@@ -167,6 +168,7 @@ fn main() {
     app.add_message::<DownedEvent>();
     app.add_message::<ResetEvent>();
     app.add_message::<RocketGeometryChangedEvent>();
+    app.add_message::<parachute::DeployParachuteEvent>();
 
     app.add_plugins(ParticleSystemPlugin::default())
         .add_plugins(PhysicsPlugins::default())
@@ -197,6 +199,7 @@ fn main() {
         .init_resource::<save::GameMode>()
         .init_resource::<save::OwnedMaterials>()
         .init_resource::<wind::WindProperties>()
+        .init_resource::<parachute::ParachuteConfig>()
         .add_systems(
             Startup,
             (
@@ -240,6 +243,9 @@ fn main() {
                 update_stats_system,
                 update_wind_hud_system,
                 wind::update_wind_system,
+                parachute::deploy_parachute_system,
+                parachute::update_shock_cord_system,
+                parachute::cleanup_parachute_system,
             )
                 .run_if(in_state(AppState::Launch)),
         )
@@ -265,7 +271,11 @@ fn main() {
         );
     app.add_systems(
         FixedPostUpdate,
-        (update_forces_system, wind::apply_wind_force_system)
+        (
+            update_forces_system,
+            wind::apply_wind_force_system,
+            parachute::parachute_drag_system,
+        )
             .in_set(PhysicsSystems::First)
             .run_if(in_state(AppState::Launch)),
     );
@@ -438,6 +448,7 @@ fn do_launch_system(
     mut contexts: EguiContexts,
     mut camera_properties: ResMut<CameraProperties>,
     mut launch_event_writer: MessageWriter<LaunchEvent>,
+    mut deploy_chute_writer: MessageWriter<parachute::DeployParachuteEvent>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     if ctx.wants_keyboard_input() {
@@ -502,6 +513,10 @@ fn do_launch_system(
         info!("Begin launch sequence!");
         launch_event_writer.write(LaunchEvent);
     }
+
+    if ctx.input(|i| i.key_pressed(Key::P)) {
+        deploy_chute_writer.write(parachute::DeployParachuteEvent);
+    }
     Ok(())
 }
 
@@ -522,7 +537,10 @@ fn rocket_position_system(
         rocket_state.launch_origin_y = transform.translation.y;
     }
 
-    if rocket_state.state == RocketStateEnum::Launched {
+    if matches!(
+        rocket_state.state,
+        RocketStateEnum::Launched | RocketStateEnum::Descending
+    ) {
         let current_altitude = (transform.translation.y - rocket_state.launch_origin_y).max(0.0);
         rocket_state.max_height = current_altitude.max(rocket_state.max_height);
         rocket_state.max_velocity = velocity.length().max(rocket_state.max_velocity);
@@ -665,7 +683,10 @@ fn detect_landing_from_collision_system(
     mut rocket_state: ResMut<RocketState>,
     mut crash_events: MessageWriter<DownedEvent>,
 ) {
-    if rocket_state.state != RocketStateEnum::Launched {
+    if !matches!(
+        rocket_state.state,
+        RocketStateEnum::Launched | RocketStateEnum::Descending
+    ) {
         return;
     }
 
@@ -756,6 +777,7 @@ struct SaveUiParams<'w> {
     balance: ResMut<'w, save::PlayerBalance>,
     game_mode: ResMut<'w, save::GameMode>,
     owned_materials: ResMut<'w, save::OwnedMaterials>,
+    parachute_config: ResMut<'w, parachute::ParachuteConfig>,
 }
 
 fn ui_system(
@@ -783,6 +805,7 @@ fn ui_system(
     let balance = &mut save_params.balance;
     let game_mode = &mut save_params.game_mode;
     let owned_materials = &mut save_params.owned_materials;
+    let parachute_config = &mut save_params.parachute_config;
     let is_lab = *app_state.get() == AppState::Lab;
     let is_launch = *app_state.get() == AppState::Launch;
     let is_store = *app_state.get() == AppState::Store;
@@ -985,6 +1008,17 @@ fn ui_system(
                         ui.add(
                             egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
                                 .text("duration"),
+                        );
+                    });
+
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new("Parachute")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Slider::new(&mut parachute_config.diameter, 0.1..=1.0)
+                                .step_by(0.01)
+                                .text("diameter (m)"),
                         );
                     });
 
@@ -1369,6 +1403,7 @@ fn ui_system(
                     ui.spacing_mut().item_spacing.y = 2.0;
                     for line in [
                         "Tab: cycle Lab/Launch/Store",
+                        "P: deploy parachute",
                         "WASD: move (FreeLook)",
                         "Hold `/~: slow motion",
                         "Arrows: orbit / distance",
@@ -1621,7 +1656,7 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         ))
         .with_child((
-            Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Tab: lab  Q: quit"),
+            Text::new("Enter/Space: launch  P: deploy chute\nR: reset  C: camera\nZ: zoom  Tab: lab  Q: quit"),
             TextFont {
                 font_size: 13.,
                 ..default()
