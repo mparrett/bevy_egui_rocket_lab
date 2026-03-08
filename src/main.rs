@@ -45,6 +45,7 @@ use crate::{
 };
 
 mod camera;
+mod canopy;
 mod cone;
 mod fin;
 mod fps;
@@ -246,6 +247,8 @@ fn main() {
                 parachute::auto_deploy_parachute_system,
                 parachute::deploy_parachute_system,
                 parachute::update_shock_cord_system,
+                parachute::animate_canopy_system,
+                parachute::update_shroud_lines_system,
                 parachute::cleanup_parachute_system,
             )
                 .run_if(in_state(AppState::Launch)),
