@@ -139,3 +139,41 @@ impl From<SphericalCap> for Mesh {
         m
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::mesh::VertexAttributeValues;
+
+    fn triangle_alignment(indices: &[u32], positions: &[[f32; 3]], center_y: f32, offset: usize) -> f32 {
+        let a = Vec3::from_array(positions[indices[offset] as usize]);
+        let b = Vec3::from_array(positions[indices[offset + 1] as usize]);
+        let c = Vec3::from_array(positions[indices[offset + 2] as usize]);
+        let face_normal = (b - a).cross(c - a);
+        let outward = Vec3::new(a.x, a.y - center_y, a.z).normalize();
+        face_normal.dot(outward)
+    }
+
+    #[test]
+    fn spherical_cap_faces_match_outward_normals() {
+        let cap = SphericalCap::default();
+        let mesh = Mesh::from(cap);
+        let positions = match mesh.attribute(Mesh::ATTRIBUTE_POSITION) {
+            Some(VertexAttributeValues::Float32x3(positions)) => positions,
+            other => panic!("unexpected position attribute: {other:?}"),
+        };
+        let indices = match mesh.indices() {
+            Some(Indices::U32(indices)) => indices,
+            other => panic!("unexpected indices: {other:?}"),
+        };
+
+        let sphere_r = (cap.radius * cap.radius + cap.depth * cap.depth) / (2.0 * cap.depth);
+        let center_y = cap.depth - sphere_r;
+        let fan_dot = triangle_alignment(indices, positions, center_y, 0);
+        let strip_dot =
+            triangle_alignment(indices, positions, center_y, cap.radial_segments as usize * 3);
+
+        assert!(fan_dot > 0.0, "apex fan should face outward, got {fan_dot}");
+        assert!(strip_dot > 0.0, "strip triangle should face outward, got {strip_dot}");
+    }
+}

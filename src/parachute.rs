@@ -75,18 +75,29 @@ pub struct DeployParachuteEvent;
 
 pub fn auto_deploy_parachute_system(
     time: Res<Time>,
-    mut query: Query<(Entity, &mut EjectionTimer), With<RocketMarker>>,
+    rocket_state: Res<RocketState>,
+    mut query: Query<(Entity, &mut EjectionTimer, &LinearVelocity), With<RocketMarker>>,
     mut deploy_writer: MessageWriter<DeployParachuteEvent>,
     mut commands: Commands,
 ) {
-    let Ok((entity, mut ejection)) = query.single_mut() else {
+    if rocket_state.state != RocketStateEnum::Launched {
+        return;
+    }
+
+    let Ok((entity, mut ejection, velocity)) = query.single_mut() else {
         return;
     };
+
     ejection.timer.tick(time.delta());
-    if ejection.timer.just_finished() {
-        deploy_writer.write(DeployParachuteEvent);
-        commands.entity(entity).remove::<EjectionTimer>();
+
+    // Keep the timer armed after the configured delay, but wait until the
+    // rocket has actually stopped climbing before deployment.
+    if !ejection.timer.is_finished() || velocity.y > 0.0 {
+        return;
     }
+
+    deploy_writer.write(DeployParachuteEvent);
+    commands.entity(entity).remove::<EjectionTimer>();
 }
 
 pub fn deploy_parachute_system(
@@ -442,4 +453,53 @@ pub fn cleanup_parachute_system(
 
     parachute_config.deployed = false;
     rocket_dims.flag_changed = true;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bevy::ecs::message::Messages;
+    use std::time::Duration;
+
+    #[test]
+    fn auto_deploy_waits_until_rocket_is_descending() {
+        let mut app = App::new();
+        app.add_message::<DeployParachuteEvent>();
+        app.insert_resource(Time::<()>::default());
+        app.insert_resource(RocketState {
+            state: RocketStateEnum::Launched,
+            ..Default::default()
+        });
+        app.add_systems(Update, auto_deploy_parachute_system);
+
+        let rocket = app
+            .world_mut()
+            .spawn((
+                RocketMarker,
+                LinearVelocity(Vec3::Y),
+                EjectionTimer {
+                    timer: Timer::from_seconds(0.5, TimerMode::Once),
+                },
+            ))
+            .id();
+
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(1));
+        app.update();
+
+        assert_eq!(app.world().resource::<Messages<DeployParachuteEvent>>().len(), 0);
+        assert!(app.world().entity(rocket).contains::<EjectionTimer>());
+
+        app.world_mut()
+            .entity_mut(rocket)
+            .insert(LinearVelocity(Vec3::new(0.0, -0.1, 0.0)));
+        app.world_mut()
+            .resource_mut::<Time<()>>()
+            .advance_by(Duration::from_secs(0));
+        app.update();
+
+        assert_eq!(app.world().resource::<Messages<DeployParachuteEvent>>().len(), 1);
+        assert!(!app.world().entity(rocket).contains::<EjectionTimer>());
+    }
 }
