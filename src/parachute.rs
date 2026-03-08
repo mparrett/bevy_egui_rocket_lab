@@ -6,6 +6,13 @@ use crate::rocket::{
 };
 use crate::ResetEvent;
 
+pub const EJECTION_DELAY_SECS: f32 = 3.0;
+
+#[derive(Component)]
+pub struct EjectionTimer {
+    pub timer: Timer,
+}
+
 #[derive(Component)]
 pub struct DetachedCone;
 
@@ -32,6 +39,22 @@ impl Default for ParachuteConfig {
 
 #[derive(Message)]
 pub struct DeployParachuteEvent;
+
+pub fn auto_deploy_parachute_system(
+    time: Res<Time>,
+    mut query: Query<(Entity, &mut EjectionTimer), With<RocketMarker>>,
+    mut deploy_writer: MessageWriter<DeployParachuteEvent>,
+    mut commands: Commands,
+) {
+    let Ok((entity, mut ejection)) = query.single_mut() else {
+        return;
+    };
+    ejection.timer.tick(time.delta());
+    if ejection.timer.just_finished() {
+        deploy_writer.write(DeployParachuteEvent);
+        commands.entity(entity).remove::<EjectionTimer>();
+    }
+}
 
 pub fn deploy_parachute_system(
     mut commands: Commands,
@@ -188,10 +211,16 @@ pub fn cleanup_parachute_system(
     cone_query: Query<Entity, With<DetachedCone>>,
     cord_query: Query<Entity, With<ShockCord>>,
     chute_query: Query<Entity, With<ParachuteVisual>>,
+    rocket_query: Query<Entity, (With<RocketMarker>, With<EjectionTimer>)>,
 ) {
     if reset_events.read().next().is_none() {
         return;
     }
+
+    for entity in &rocket_query {
+        commands.entity(entity).remove::<EjectionTimer>();
+    }
+
     if !parachute_config.deployed {
         return;
     }

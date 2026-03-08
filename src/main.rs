@@ -243,6 +243,7 @@ fn main() {
                 update_stats_system,
                 update_wind_hud_system,
                 wind::update_wind_system,
+                parachute::auto_deploy_parachute_system,
                 parachute::deploy_parachute_system,
                 parachute::update_shock_cord_system,
                 parachute::cleanup_parachute_system,
@@ -448,7 +449,6 @@ fn do_launch_system(
     mut contexts: EguiContexts,
     mut camera_properties: ResMut<CameraProperties>,
     mut launch_event_writer: MessageWriter<LaunchEvent>,
-    mut deploy_chute_writer: MessageWriter<parachute::DeployParachuteEvent>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     if ctx.wants_keyboard_input() {
@@ -514,9 +514,6 @@ fn do_launch_system(
         launch_event_writer.write(LaunchEvent);
     }
 
-    if ctx.input(|i| i.key_pressed(Key::P)) {
-        deploy_chute_writer.write(parachute::DeployParachuteEvent);
-    }
     Ok(())
 }
 
@@ -601,7 +598,15 @@ fn on_launch_event(
             torque: None,
             sync_rotation_with_entity: true,
         };
-        commands.entity(rocket_ent).insert(force_timer);
+        let ejection_timer = parachute::EjectionTimer {
+            timer: Timer::from_seconds(
+                rocket_flight_parameters.duration + parachute::EJECTION_DELAY_SECS,
+                TimerMode::Once,
+            ),
+        };
+        commands
+            .entity(rocket_ent)
+            .insert((force_timer, ejection_timer));
     }
 }
 
@@ -1403,7 +1408,6 @@ fn ui_system(
                     ui.spacing_mut().item_spacing.y = 2.0;
                     for line in [
                         "Tab: cycle Lab/Launch/Store",
-                        "P: deploy parachute",
                         "WASD: move (FreeLook)",
                         "Hold `/~: slow motion",
                         "Arrows: orbit / distance",
@@ -1656,7 +1660,7 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         ))
         .with_child((
-            Text::new("Enter/Space: launch  P: deploy chute\nR: reset  C: camera\nZ: zoom  Tab: lab  Q: quit"),
+            Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Tab: lab  Q: quit"),
             TextFont {
                 font_size: 13.,
                 ..default()
