@@ -261,12 +261,12 @@ pub fn parachute_drag_system(
 
 pub fn animate_canopy_system(
     time: Res<Time>,
-    rocket_state: Res<RocketState>,
+    parachute_config: Res<ParachuteConfig>,
     mut canopy_query: Query<(&mut CanopyAnimation, &mut Transform, &Mesh3d), With<ParachuteVisual>>,
     mut meshes: ResMut<Assets<Mesh>>,
     rocket_query: Query<&LinearVelocity, With<RocketMarker>>,
 ) {
-    if rocket_state.state != RocketStateEnum::Descending {
+    if !parachute_config.deployed {
         return;
     }
     let Ok((mut anim, mut canopy_tf, mesh3d)) = canopy_query.single_mut() else {
@@ -332,41 +332,44 @@ pub fn animate_canopy_system(
 }
 
 pub fn update_shroud_lines_system(
-    rocket_state: Res<RocketState>,
+    parachute_config: Res<ParachuteConfig>,
     rocket_query: Query<&Transform, With<RocketMarker>>,
     rocket_dims: Res<RocketDimensions>,
-    canopy_query: Query<(&GlobalTransform, &CanopyAnimation), With<ParachuteVisual>>,
+    canopy_query: Query<(&Transform, &CanopyAnimation), With<ParachuteVisual>>,
     mut line_query: Query<
         (&ShroudLine, &mut Transform),
         (Without<RocketMarker>, Without<ParachuteVisual>),
     >,
 ) {
-    if rocket_state.state != RocketStateEnum::Descending {
+    if !parachute_config.deployed {
         return;
     }
     let Ok(rocket_tf) = rocket_query.single() else {
         return;
     };
-    let Ok((canopy_global, anim)) = canopy_query.single() else {
+    let Ok((canopy_local_tf, anim)) = canopy_query.single() else {
         return;
     };
 
     let tube_top = rocket_tf.translation
         + rocket_tf.rotation * (Vec3::Y * rocket_dims.length * 0.5);
 
+    // Derive canopy world transform from rocket (parent) + canopy local,
+    // since GlobalTransform isn't propagated yet during Update.
+    let canopy_world_pos = rocket_tf.translation
+        + rocket_tf.rotation * canopy_local_tf.translation;
+    let canopy_world_rot = rocket_tf.rotation * canopy_local_tf.rotation;
+
     let tau = std::f32::consts::TAU;
-    let canopy_rot = canopy_global.to_isometry().rotation;
-    let canopy_pos = canopy_global.translation();
 
     for (shroud, mut line_tf) in &mut line_query {
         let phi = shroud.rim_index as f32 / RADIAL_SEGMENTS as f32 * tau;
-        // Rim vertex in canopy local space (rim is at y=0 in the cap mesh)
         let local_rim = Vec3::new(
             anim.rim_radius * phi.cos(),
             0.0,
             anim.rim_radius * phi.sin(),
         );
-        let rim_world = canopy_pos + canopy_rot * local_rim;
+        let rim_world = canopy_world_pos + canopy_world_rot * local_rim;
 
         let midpoint = (tube_top + rim_world) * 0.5;
         let diff = rim_world - tube_top;
@@ -382,13 +385,13 @@ pub fn update_shroud_lines_system(
 }
 
 pub fn update_shock_cord_system(
-    rocket_state: Res<RocketState>,
+    parachute_config: Res<ParachuteConfig>,
     rocket_query: Query<&Transform, With<RocketMarker>>,
     cone_query: Query<&Transform, With<DetachedCone>>,
     rocket_dims: Res<RocketDimensions>,
     mut cord_query: Query<&mut Transform, (With<ShockCord>, Without<RocketMarker>, Without<DetachedCone>)>,
 ) {
-    if rocket_state.state != RocketStateEnum::Descending {
+    if !parachute_config.deployed {
         return;
     }
     let Ok(rocket_tf) = rocket_query.single() else {
