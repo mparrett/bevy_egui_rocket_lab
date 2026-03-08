@@ -571,6 +571,7 @@ fn on_launch_event(
     mut rocket_state: ResMut<RocketState>,
     mut commands: Commands,
     rocket_flight_parameters: Res<RocketFlightParameters>,
+    parachute_config: Res<parachute::ParachuteConfig>,
     mut rocket_query: Query<(Entity, &Transform), (With<RocketMarker>, Without<Camera>)>,
 ) {
     for _ in launch_events.read() {
@@ -603,7 +604,7 @@ fn on_launch_event(
         };
         let ejection_timer = parachute::EjectionTimer {
             timer: Timer::from_seconds(
-                rocket_flight_parameters.duration + parachute::EJECTION_DELAY_SECS,
+                rocket_flight_parameters.duration + parachute_config.deploy_delay,
                 TimerMode::Once,
             ),
         };
@@ -1027,6 +1028,11 @@ fn ui_system(
                             egui::Slider::new(&mut parachute_config.diameter, 0.1..=1.0)
                                 .step_by(0.01)
                                 .text("diameter (m)"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut parachute_config.deploy_delay, 0.5..=10.0)
+                                .step_by(0.1)
+                                .text("deploy delay (s)"),
                         );
                     });
 
@@ -1836,6 +1842,7 @@ mod tests {
         app.insert_resource(RocketFlightParameters::default());
         app.insert_resource(CameraProperties::default());
         app.insert_resource(RocketState::default());
+        app.insert_resource(parachute::ParachuteConfig::default());
         app
     }
 

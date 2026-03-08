@@ -56,6 +56,7 @@ pub struct CanopyAnimation {
 #[derive(Resource)]
 pub struct ParachuteConfig {
     pub diameter: f32,
+    pub deploy_delay: f32,
     pub deployed: bool,
 }
 
@@ -63,6 +64,7 @@ impl Default for ParachuteConfig {
     fn default() -> Self {
         Self {
             diameter: 0.3,
+            deploy_delay: EJECTION_DELAY_SECS,
             deployed: false,
         }
     }
