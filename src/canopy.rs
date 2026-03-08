@@ -100,12 +100,12 @@ impl From<SphericalCap> for Mesh {
 
         let segs = cap.radial_segments + 1; // verts per ring (including UV seam dup)
 
-        // Triangle fan: apex to ring 1
+        // Triangle fan: apex to ring 1 (CCW winding for outward-facing normals)
         for seg in 0..cap.radial_segments {
-            let ring1_base = 1; // first ring starts at index 1
+            let ring1_base = 1;
             mesh.indices.push(0);
-            mesh.indices.push(ring1_base + seg);
             mesh.indices.push(ring1_base + seg + 1);
+            mesh.indices.push(ring1_base + seg);
         }
 
         // Quad strips between consecutive rings
@@ -119,12 +119,12 @@ impl From<SphericalCap> for Mesh {
                 let br = next_base + seg + 1;
 
                 mesh.indices.push(tl);
-                mesh.indices.push(bl);
                 mesh.indices.push(tr);
+                mesh.indices.push(bl);
 
                 mesh.indices.push(tr);
-                mesh.indices.push(bl);
                 mesh.indices.push(br);
+                mesh.indices.push(bl);
             }
         }
 
