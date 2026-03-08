@@ -18,6 +18,8 @@ const FLUTTER_AMPLITUDE: f32 = 0.08;
 const FLUTTER_FREQ: f32 = 4.0;
 const MAX_TILT_RAD: f32 = 15.0 * std::f32::consts::PI / 180.0;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
+const TETHER_LENGTH: f32 = 0.5;
+const TETHER_STIFFNESS: f32 = 40.0;
 
 #[derive(Component)]
 pub struct EjectionTimer {
@@ -418,6 +420,34 @@ pub fn update_shock_cord_system(
     }
 }
 
+pub fn tether_cone_system(
+    parachute_config: Res<ParachuteConfig>,
+    rocket_query: Query<&Transform, (With<RocketMarker>, Without<DetachedCone>)>,
+    rocket_dims: Res<RocketDimensions>,
+    mut cone_query: Query<(&Transform, Forces), With<DetachedCone>>,
+) {
+    if !parachute_config.deployed {
+        return;
+    }
+    let Ok(rocket_tf) = rocket_query.single() else {
+        return;
+    };
+    let Ok((cone_tf, mut forces)) = cone_query.single_mut() else {
+        return;
+    };
+
+    let tube_top = rocket_tf.translation
+        + rocket_tf.rotation * (Vec3::Y * rocket_dims.length * 0.5);
+    let diff = cone_tf.translation - tube_top;
+    let distance = diff.length();
+
+    if distance > TETHER_LENGTH {
+        let overshoot = distance - TETHER_LENGTH;
+        let dir = diff / distance;
+        forces.apply_force(-dir * overshoot * TETHER_STIFFNESS);
+    }
+}
+
 pub fn cleanup_parachute_system(
     mut commands: Commands,
     mut reset_events: MessageReader<ResetEvent>,
@@ -427,13 +457,14 @@ pub fn cleanup_parachute_system(
     cord_query: Query<Entity, With<ShockCord>>,
     chute_query: Query<Entity, With<ParachuteVisual>>,
     shroud_query: Query<Entity, With<ShroudLine>>,
-    rocket_query: Query<Entity, (With<RocketMarker>, With<EjectionTimer>)>,
+    ejection_query: Query<Entity, (With<RocketMarker>, With<EjectionTimer>)>,
+    rocket_query: Query<Entity, With<RocketMarker>>,
 ) {
     if reset_events.read().next().is_none() {
         return;
     }
 
-    for entity in &rocket_query {
+    for entity in &ejection_query {
         commands.entity(entity).remove::<EjectionTimer>();
     }
 
@@ -441,9 +472,21 @@ pub fn cleanup_parachute_system(
         return;
     }
 
+    // Re-parent cone back to rocket instead of despawning
+    let rocket_ent = rocket_query.single();
     for entity in &cone_query {
-        commands.entity(entity).despawn();
+        commands.entity(entity).remove::<(
+            DetachedCone,
+            RigidBody,
+            LinearDamping,
+            LinearVelocity,
+        )>();
+        commands.entity(entity).insert(RocketCone);
+        if let Ok(rocket) = rocket_ent {
+            commands.entity(entity).set_parent_in_place(rocket);
+        }
     }
+
     for entity in &cord_query {
         commands.entity(entity).despawn();
     }
