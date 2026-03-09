@@ -1,5 +1,5 @@
 ---
-priority: P3
+priority: P2
 ---
 
 # Parachute Simulation
@@ -12,32 +12,45 @@ Add a deployable parachute system that slows the rocket's descent after apogee, 
 
 Parachute deployment is a core part of model rocketry — most real launches use single or dual-deploy recovery systems. This adds a meaningful player decision (when to deploy) and a success condition beyond just going high.
 
-## Behavior
+## v1 — Deployment mechanics (current focus)
 
-- **Deploy trigger**: Player-activated (keypress) or automatic at apogee / below a configurable altitude
-- **Drag model**: Once deployed, apply an upward drag force proportional to descent velocity squared (simplified parachute drag: `F = 0.5 * Cd * A * rho * v^2`)
-- **Visual**: Spawn a parachute mesh (cone/hemisphere + lines) as a child entity above the rocket, billowing effect optional
-- **Descent rate**: Should settle to a realistic terminal velocity based on chute size — tunable via UI
+Focus on the deployment flow and drag physics. Visual is a placeholder (ball gizmo on a cord, or simple streamer). The deployment sequence mirrors real model rockets:
 
-## Rocket lifecycle integration
+1. Player presses deploy key (e.g. `P`) while rocket is descending
+2. Nose cone pops off — becomes a separate rigid body with small upward impulse
+3. Shock cord visual (thin cylinder) connects cone to tube
+4. Placeholder chute visual spawns above tube (ball gizmo or streamer)
+5. Drag force applies to rocket: `F = 0.5 * Cd * A * rho * v²` opposing velocity
+6. Rocket descends at terminal velocity, lands softly
+
+### Rocket lifecycle
 
 - New state: `RocketStateEnum::Descending` (chute deployed) between `Launched` and `Grounded`
-- Deploy only valid when rocket is above a minimum altitude and descending (negative vertical velocity)
-- Landing with chute deployed = soft landing; without = crash (tie into future launch history scoring)
+- Deploy only valid when rocket is above a minimum altitude and has been launched
+- Landing with chute deployed = soft landing; without = crash
 
-## UI
+### UI
 
-- Deploy button or keybind (e.g. `P` or `Space` after apogee)
-- Chute diameter slider in the Lab panel (affects drag area)
+- Deploy keybind (`P`)
+- Chute diameter slider in Lab panel (affects drag area `A`)
 - Status indicator: "Chute: stowed / deployed / landed"
 
-## Open questions
+### What v1 does NOT include
 
-- Single deploy vs dual deploy (drogue at apogee, main at low altitude)?
-- Should the chute be a physics object with its own collider, or just a force modifier on the rocket?
-- Tangling / failure modes for added challenge?
-- How does wind (if implemented) interact with the chute?
+- Proper canopy mesh (ball/streamer placeholder only)
+- Cloth simulation
+- Wind interaction with chute
+- Tangling / failure modes
+- Dual deploy
 
-## Priority
+## v2 — Spherical cap canopy
 
-Medium-high — central to the model rocketry experience and natural next step for the flight lifecycle.
+Replace placeholder with a procedural spherical cap mesh. Add secondary motion via shape relaxation (inflation parameter, sinusoidal flutter, velocity lag). Shroud lines as thin cylinders from rim to tube. State-driven deployment animation (packed → deploying → inflating → open).
+
+## v3 — Cloth-like canopy
+
+Verlet integration + distance constraints on a low-poly radial mesh (~49 verts: 12 segments × 4 rings). Parachute-specific dome/inflation bias forces. Proper wind interaction. Possibly bevy_silk integration. See design notes in conversation for detailed approach.
+
+## References
+
+- bevy_silk: https://github.com/ManevilleF/bevy_silk (v2/v3 candidate)
