@@ -150,23 +150,27 @@ pub fn deploy_parachute_system(
     let cone_mass =
         std::f32::consts::PI * r * slant * mass_model.nose_wall_thickness_m * mass_model.nose_density_kg_m3;
 
-    commands.spawn((
-        DetachedCone,
-        RigidBody::Dynamic,
-        Collider::cone(r, cl),
-        Mass(cone_mass.max(1e-4)),
-        LinearVelocity(Vec3::new(0.2, 1.5, 0.1)),
-        LinearDamping(0.0),
-        AngularDamping(2.0),
-        CollisionLayers::new([GameLayer::Debris], [GameLayer::Ground]),
-        Restitution::new(0.3),
-        Friction::new(0.5),
-        Mesh3d(cone_mesh_handle),
-        MeshMaterial3d(cone_mat_handle),
-        Transform::from_translation(cone_world_pos).with_rotation(cone_world_rot),
-        Visibility::default(),
-        Name::new("DetachedCone"),
-    ));
+    commands
+        .spawn((
+            DetachedCone,
+            RigidBody::Dynamic,
+            TransformInterpolation,
+            Collider::cone(r, cl),
+            Mass(cone_mass.max(1e-4)),
+            LinearVelocity(Vec3::new(0.2, 1.5, 0.1)),
+            LinearDamping(0.0),
+            AngularDamping(2.0),
+            CollisionLayers::new([GameLayer::Debris], [GameLayer::Ground]),
+            Restitution::new(0.3),
+            Friction::new(0.5),
+        ))
+        .insert((
+            Mesh3d(cone_mesh_handle),
+            MeshMaterial3d(cone_mat_handle),
+            Transform::from_translation(cone_world_pos).with_rotation(cone_world_rot),
+            Visibility::default(),
+            Name::new("DetachedCone"),
+        ));
 
     // Shock cord
     let cord_mesh = meshes.add(
@@ -422,27 +426,27 @@ pub fn update_shock_cord_system(
 
 pub fn update_detached_cone_system(
     parachute_config: Res<ParachuteConfig>,
-    rocket_query: Query<&Transform, (With<RocketMarker>, Without<DetachedCone>)>,
+    rocket_query: Query<(&Position, &Rotation), (With<RocketMarker>, Without<DetachedCone>)>,
     rocket_dims: Res<RocketDimensions>,
-    mut cone_query: Query<(&mut Transform, &mut LinearVelocity), With<DetachedCone>>,
+    mut cone_query: Query<(&mut Position, &mut LinearVelocity), With<DetachedCone>>,
 ) {
     if !parachute_config.deployed {
         return;
     }
-    let Ok(rocket_tf) = rocket_query.single() else {
+    let Ok((rocket_pos, rocket_rot)) = rocket_query.single() else {
         return;
     };
-    let Ok((mut cone_tf, mut cone_vel)) = cone_query.single_mut() else {
+    let Ok((mut cone_pos, mut cone_vel)) = cone_query.single_mut() else {
         return;
     };
 
-    let tube_top = rocket_tf.translation
-        + rocket_tf.rotation * (Vec3::Y * rocket_dims.length * 0.5);
-    let diff = cone_tf.translation - tube_top;
+    let tube_top = rocket_pos.0
+        + rocket_rot.0 * (Vec3::Y * rocket_dims.length * 0.5);
+    let diff = cone_pos.0 - tube_top;
     let distance = diff.length();
     if distance > TETHER_LENGTH {
         let dir = diff / distance;
-        cone_tf.translation = tube_top + dir * TETHER_LENGTH;
+        cone_pos.0 = tube_top + dir * TETHER_LENGTH;
 
         let outward_speed = cone_vel.0.dot(dir);
         if outward_speed > 0.0 {

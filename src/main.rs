@@ -272,11 +272,10 @@ fn main() {
         .add_systems(
             PostUpdate,
             (
-                rocket_position_system,
+                (rocket_position_system, update_camera_transform_system).chain(),
                 parachute::update_shock_cord_system,
                 parachute::update_shroud_lines_system,
                 update_camera_zoom_perspective_system,
-                update_camera_transform_system,
             )
                 .run_if(in_gameplay)
                 .after(PhysicsSystems::Writeback)
@@ -290,9 +289,15 @@ fn main() {
             drag::apply_aerodynamic_drag_system,
             drag::apply_cone_drag_system,
             parachute::parachute_drag_system,
-            parachute::update_detached_cone_system,
         )
             .in_set(PhysicsSystems::First)
+            .run_if(in_state(AppState::Launch)),
+    );
+    app.add_systems(
+        FixedPostUpdate,
+        parachute::update_detached_cone_system
+            .after(PhysicsSystems::StepSimulation)
+            .before(PhysicsSystems::Writeback)
             .run_if(in_state(AppState::Launch)),
     );
 
