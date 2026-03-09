@@ -18,6 +18,7 @@ const INFLATION_SECS: f32 = 0.8;
 const FLUTTER_AMPLITUDE: f32 = 0.08;
 const FLUTTER_FREQ: f32 = 4.0;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
+const SEGMENTS_PER_LINE: u32 = 3;
 const TETHER_LENGTH: f32 = 1.0;
 
 #[derive(Component)]
@@ -40,6 +41,7 @@ pub struct ParachuteVisual;
 #[derive(Component)]
 pub struct ShroudLine {
     pub rim_index: u32,
+    pub segment_index: u32,
 }
 
 pub enum CanopyPhase {
@@ -265,14 +267,19 @@ pub fn deploy_parachute_system(
     });
     for i in 0..SHROUD_LINE_COUNT {
         let rim_index = i * 2; // every other segment
-        commands.spawn((
-            Mesh3d(line_mesh.clone()),
-            MeshMaterial3d(line_material.clone()),
-            Transform::default(),
-            ShroudLine { rim_index },
-            Visibility::default(),
-            Name::new(format!("ShroudLine_{}", i)),
-        ));
+        for seg in 0..SEGMENTS_PER_LINE {
+            commands.spawn((
+                Mesh3d(line_mesh.clone()),
+                MeshMaterial3d(line_material.clone()),
+                Transform::default(),
+                ShroudLine {
+                    rim_index,
+                    segment_index: seg,
+                },
+                Visibility::default(),
+                Name::new(format!("ShroudLine_{}_{}", i, seg)),
+            ));
+        }
     }
 
     info!(
@@ -373,6 +380,11 @@ pub fn animate_canopy_system(
     }
 }
 
+fn bezier_point(a: Vec3, control: Vec3, b: Vec3, t: f32) -> Vec3 {
+    let inv = 1.0 - t;
+    inv * inv * a + 2.0 * inv * t * control + t * t * b
+}
+
 pub fn update_shroud_lines_system(
     parachute_config: Res<ParachuteConfig>,
     rocket_dims: Res<RocketDimensions>,
@@ -398,6 +410,8 @@ pub fn update_shroud_lines_system(
         + cone_tf.rotation * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
     let rim_radius = parachute_config.diameter * 0.5;
     let shroud_line_length = parachute_config.diameter;
+    let rest_len = parachute_config.diameter * 1.15;
+    let segs = SEGMENTS_PER_LINE as f32;
 
     for (shroud, mut line_tf) in &mut line_query {
         let phi = shroud.rim_index as f32 / RADIAL_SEGMENTS as f32 * tau;
@@ -408,11 +422,21 @@ pub fn update_shroud_lines_system(
         );
         let rim_world = chute_body_tf.translation + chute_body_tf.rotation * local_rim;
 
-        let midpoint = (bottom + rim_world) * 0.5;
-        let diff = rim_world - bottom;
+        let d = (rim_world - bottom).length();
+        let sag = 0.5 * (rest_len * rest_len - d * d).max(0.0).sqrt();
+        let mid = (bottom + rim_world) * 0.5;
+        let control = mid + Vec3::NEG_Y * sag;
+
+        let t0 = shroud.segment_index as f32 / segs;
+        let t1 = (shroud.segment_index + 1) as f32 / segs;
+        let p0 = bezier_point(bottom, control, rim_world, t0);
+        let p1 = bezier_point(bottom, control, rim_world, t1);
+
+        let seg_mid = (p0 + p1) * 0.5;
+        let diff = p1 - p0;
         let distance = diff.length();
 
-        line_tf.translation = midpoint;
+        line_tf.translation = seg_mid;
         line_tf.scale = Vec3::new(1.0, distance, 1.0);
         if distance > 1e-4 {
             let dir = diff / distance;
