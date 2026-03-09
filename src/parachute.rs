@@ -29,6 +29,9 @@ pub struct EjectionTimer {
 pub struct DetachedCone;
 
 #[derive(Component)]
+pub struct ParachuteBody;
+
+#[derive(Component)]
 pub struct ShockCord;
 
 #[derive(Component)]
@@ -230,6 +233,26 @@ pub fn deploy_parachute_system(
         Name::new("ParachuteVisual"),
     ));
 
+    // Parachute physics body — invisible cone for ground interaction
+    let cone_base = cone_world_pos + cone_world_rot * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
+    let chute_body_rot = Quat::from_rotation_z(std::f32::consts::PI);
+    let chute_body_center = cone_base + Vec3::Y * shroud_line_length * 0.5;
+    commands.spawn((
+        ParachuteBody,
+        RigidBody::Dynamic,
+        TransformInterpolation,
+        Collider::cone(rim_radius, shroud_line_length),
+        Mass(0.005),
+        LinearVelocity(Vec3::new(0.2, 1.5, 0.1)),
+        AngularDamping(0.5),
+        LinearDamping(0.0),
+        CollisionLayers::new([GameLayer::Debris], [GameLayer::Ground]),
+        Restitution::new(0.1),
+        Friction::new(0.8),
+        Transform::from_translation(chute_body_center).with_rotation(chute_body_rot),
+        Name::new("ParachuteBody"),
+    ));
+
     // Shroud lines (every other radial segment → 6 lines from 12 segments)
     let line_mesh = meshes.add(
         Cylinder::new(SHROUD_CORD_RADIUS, 1.0)
@@ -260,7 +283,7 @@ pub fn deploy_parachute_system(
 
 pub fn parachute_drag_system(
     parachute_config: Res<ParachuteConfig>,
-    mut query: Query<Forces, With<DetachedCone>>,
+    mut query: Query<Forces, With<ParachuteBody>>,
 ) {
     if !parachute_config.deployed {
         return;
@@ -289,10 +312,9 @@ pub fn parachute_drag_system(
 pub fn animate_canopy_system(
     time: Res<Time>,
     parachute_config: Res<ParachuteConfig>,
-    rocket_dims: Res<RocketDimensions>,
     mut canopy_query: Query<(&mut CanopyAnimation, &mut Transform, &Mesh3d), With<ParachuteVisual>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    cone_query: Query<&Transform, (With<DetachedCone>, Without<ParachuteVisual>)>,
+    chute_body_query: Query<&Transform, (With<ParachuteBody>, Without<ParachuteVisual>)>,
 ) {
     if !parachute_config.deployed {
         return;
@@ -300,7 +322,7 @@ pub fn animate_canopy_system(
     let Ok((mut anim, mut canopy_tf, mesh3d)) = canopy_query.single_mut() else {
         return;
     };
-    let Ok(cone_tf) = cone_query.single() else {
+    let Ok(chute_body_tf) = chute_body_query.single() else {
         return;
     };
 
@@ -324,11 +346,12 @@ pub fn animate_canopy_system(
         }
     }
 
-    let cone_base = cone_tf.translation
-        + cone_tf.rotation * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
-    let shroud_line_length = parachute_config.diameter * 1.0;
-    canopy_tf.translation = cone_base + Vec3::Y * shroud_line_length;
-    canopy_tf.rotation = Quat::IDENTITY;
+    let shroud_line_length = parachute_config.diameter;
+    let base_pos = chute_body_tf.translation
+        + chute_body_tf.rotation * (Vec3::NEG_Y * shroud_line_length * 0.5);
+    canopy_tf.translation = base_pos;
+    let base_up = chute_body_tf.rotation * Vec3::NEG_Y;
+    canopy_tf.rotation = Quat::from_rotation_arc(Vec3::Y, base_up);
 
     if let Some(mesh) = meshes.get_mut(&mesh3d.0) {
         let new_mesh = Mesh::from(SphericalCap {
@@ -354,10 +377,10 @@ pub fn update_shroud_lines_system(
     parachute_config: Res<ParachuteConfig>,
     rocket_dims: Res<RocketDimensions>,
     cone_query: Query<&Transform, With<DetachedCone>>,
-    canopy_query: Query<(&Transform, &CanopyAnimation), (With<ParachuteVisual>, Without<DetachedCone>)>,
+    chute_body_query: Query<&Transform, (With<ParachuteBody>, Without<DetachedCone>, Without<ShroudLine>)>,
     mut line_query: Query<
         (&ShroudLine, &mut Transform),
-        (Without<DetachedCone>, Without<ParachuteVisual>),
+        (Without<DetachedCone>, Without<ParachuteBody>),
     >,
 ) {
     if !parachute_config.deployed {
@@ -366,22 +389,24 @@ pub fn update_shroud_lines_system(
     let Ok(cone_tf) = cone_query.single() else {
         return;
     };
-    let Ok((canopy_tf, anim)) = canopy_query.single() else {
+    let Ok(chute_body_tf) = chute_body_query.single() else {
         return;
     };
 
     let tau = std::f32::consts::TAU;
     let bottom = cone_tf.translation
         + cone_tf.rotation * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
+    let rim_radius = parachute_config.diameter * 0.5;
+    let shroud_line_length = parachute_config.diameter;
 
     for (shroud, mut line_tf) in &mut line_query {
         let phi = shroud.rim_index as f32 / RADIAL_SEGMENTS as f32 * tau;
         let local_rim = Vec3::new(
-            anim.rim_radius * phi.cos(),
-            0.0,
-            anim.rim_radius * phi.sin(),
+            rim_radius * phi.cos(),
+            -shroud_line_length * 0.5,
+            rim_radius * phi.sin(),
         );
-        let rim_world = canopy_tf.translation + canopy_tf.rotation * local_rim;
+        let rim_world = chute_body_tf.translation + chute_body_tf.rotation * local_rim;
 
         let midpoint = (bottom + rim_world) * 0.5;
         let diff = rim_world - bottom;
@@ -466,6 +491,43 @@ pub fn update_detached_cone_system(
 }
 
 
+pub fn update_parachute_tether_system(
+    parachute_config: Res<ParachuteConfig>,
+    rocket_dims: Res<RocketDimensions>,
+    cone_query: Query<(&Position, &Rotation), (With<DetachedCone>, Without<ParachuteBody>)>,
+    mut chute_query: Query<(&mut Position, &Rotation, &mut LinearVelocity), With<ParachuteBody>>,
+) {
+    if !parachute_config.deployed {
+        return;
+    }
+    let Ok((cone_pos, cone_rot)) = cone_query.single() else {
+        return;
+    };
+    let Ok((mut chute_pos, chute_rot, mut chute_vel)) = chute_query.single_mut() else {
+        return;
+    };
+
+    let cone_base = cone_pos.0
+        + cone_rot.0 * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
+    let shroud_line_length = parachute_config.diameter;
+    let tip_offset = chute_rot.0 * (Vec3::Y * shroud_line_length * 0.5);
+    let tip_world = chute_pos.0 + tip_offset;
+
+    let diff = tip_world - cone_base;
+    let distance = diff.length();
+    let max_dist = 0.05;
+    if distance > max_dist {
+        let dir = diff / distance;
+        let correction = dir * (distance - max_dist);
+        chute_pos.0 -= correction;
+
+        let outward_speed = chute_vel.0.dot(dir);
+        if outward_speed > 0.0 {
+            chute_vel.0 -= dir * outward_speed;
+        }
+    }
+}
+
 pub fn cleanup_parachute_system(
     mut commands: Commands,
     mut reset_events: MessageReader<ResetEvent>,
@@ -476,6 +538,7 @@ pub fn cleanup_parachute_system(
     cord_query: Query<Entity, With<ShockCord>>,
     chute_query: Query<Entity, With<ParachuteVisual>>,
     shroud_query: Query<Entity, With<ShroudLine>>,
+    chute_body_query: Query<Entity, With<ParachuteBody>>,
     ejection_query: Query<Entity, (With<RocketMarker>, With<EjectionTimer>)>,
 ) {
     if reset_events.read().next().is_none() {
@@ -506,6 +569,9 @@ pub fn cleanup_parachute_system(
         commands.entity(entity).despawn();
     }
     for entity in &shroud_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &chute_body_query {
         commands.entity(entity).despawn();
     }
 

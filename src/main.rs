@@ -295,7 +295,11 @@ fn main() {
     );
     app.add_systems(
         FixedPostUpdate,
-        parachute::update_detached_cone_system
+        (
+            parachute::update_detached_cone_system,
+            parachute::update_parachute_tether_system,
+        )
+            .chain()
             .after(PhysicsSystems::StepSimulation)
             .before(PhysicsSystems::Writeback)
             .run_if(in_state(AppState::Launch)),
