@@ -19,7 +19,6 @@ const FLUTTER_FREQ: f32 = 4.0;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
 const TETHER_LENGTH: f32 = 1.0;
 const TETHER_STIFFNESS: f32 = 40.0;
-const GRAVITY: f32 = 9.81;
 const CONE_DAMPING: f32 = 2.0;
 
 #[derive(Component)]
@@ -28,9 +27,7 @@ pub struct EjectionTimer {
 }
 
 #[derive(Component)]
-pub struct DetachedCone {
-    pub velocity: Vec3,
-}
+pub struct DetachedCone;
 
 #[derive(Component)]
 pub struct ShockCord;
@@ -110,6 +107,7 @@ pub fn deploy_parachute_system(
     mut deploy_events: MessageReader<DeployParachuteEvent>,
     mut rocket_state: ResMut<RocketState>,
     mut parachute_config: ResMut<ParachuteConfig>,
+    rocket_dims: Res<RocketDimensions>,
     rocket_query: Query<&Transform, With<RocketMarker>>,
     cone_query: Query<
         (Entity, &GlobalTransform, &Mesh3d, &MeshMaterial3d<StandardMaterial>),
@@ -146,12 +144,14 @@ pub fn deploy_parachute_system(
     let cone_mat_handle = cone_mat.0.clone();
     commands.entity(cone_ent).insert(Visibility::Hidden);
 
-    // Spawn a visual-only detached cone (no Collider/RigidBody) with
-    // custom velocity for simple tether physics.
     commands.spawn((
-        DetachedCone {
-            velocity: Vec3::new(0.2, 1.5, 0.1),
-        },
+        DetachedCone,
+        RigidBody::Dynamic,
+        Collider::cone(rocket_dims.radius, rocket_dims.cone_length),
+        Mass(0.01),
+        Restitution::new(0.3),
+        LinearDamping(CONE_DAMPING),
+        LinearVelocity(Vec3::new(0.2, 1.5, 0.1)),
         Mesh3d(cone_mesh_handle),
         MeshMaterial3d(cone_mat_handle),
         Transform::from_translation(cone_world_pos).with_rotation(cone_world_rot),
@@ -414,11 +414,10 @@ pub fn update_shock_cord_system(
 }
 
 pub fn update_detached_cone_system(
-    time: Res<Time>,
     parachute_config: Res<ParachuteConfig>,
     rocket_query: Query<&Transform, (With<RocketMarker>, Without<DetachedCone>)>,
     rocket_dims: Res<RocketDimensions>,
-    mut cone_query: Query<(&mut Transform, &mut DetachedCone)>,
+    mut cone_query: Query<(Forces, &Transform), With<DetachedCone>>,
 ) {
     if !parachute_config.deployed {
         return;
@@ -426,19 +425,11 @@ pub fn update_detached_cone_system(
     let Ok(rocket_tf) = rocket_query.single() else {
         return;
     };
-    let Ok((mut cone_tf, mut cone)) = cone_query.single_mut() else {
+    let Ok((mut forces, cone_tf)) = cone_query.single_mut() else {
         return;
     };
 
-    let dt = time.delta_secs();
-
-    // Gravity
-    cone.velocity.y -= GRAVITY * dt;
-
-    // Damping
-    cone.velocity *= 1.0 - CONE_DAMPING * dt;
-
-    // Tether spring
+    // Tether spring — pull cone back toward tube top when it exceeds tether length
     let tube_top = rocket_tf.translation
         + rocket_tf.rotation * (Vec3::Y * rocket_dims.length * 0.5);
     let diff = cone_tf.translation - tube_top;
@@ -446,10 +437,8 @@ pub fn update_detached_cone_system(
     if distance > TETHER_LENGTH {
         let overshoot = distance - TETHER_LENGTH;
         let dir = diff / distance;
-        cone.velocity -= dir * overshoot * TETHER_STIFFNESS * dt;
+        forces.apply_force(-dir * overshoot * TETHER_STIFFNESS);
     }
-
-    cone_tf.translation += cone.velocity * dt;
 }
 
 pub fn cleanup_parachute_system(
