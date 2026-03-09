@@ -16,9 +16,8 @@ const CAP_DEPTH_RATIO: f32 = 0.4;
 const INFLATION_SECS: f32 = 0.8;
 const FLUTTER_AMPLITUDE: f32 = 0.08;
 const FLUTTER_FREQ: f32 = 4.0;
-const MAX_TILT_RAD: f32 = 15.0 * std::f32::consts::PI / 180.0;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
-const TETHER_LENGTH: f32 = 0.5;
+const TETHER_LENGTH: f32 = 1.0;
 const TETHER_STIFFNESS: f32 = 40.0;
 const GRAVITY: f32 = 9.81;
 const CONE_DAMPING: f32 = 2.0;
@@ -111,8 +110,7 @@ pub fn deploy_parachute_system(
     mut deploy_events: MessageReader<DeployParachuteEvent>,
     mut rocket_state: ResMut<RocketState>,
     mut parachute_config: ResMut<ParachuteConfig>,
-    rocket_dims: Res<RocketDimensions>,
-    rocket_query: Query<(Entity, &Transform), With<RocketMarker>>,
+    rocket_query: Query<&Transform, With<RocketMarker>>,
     cone_query: Query<
         (Entity, &GlobalTransform, &Mesh3d, &MeshMaterial3d<StandardMaterial>),
         With<RocketCone>,
@@ -130,7 +128,7 @@ pub fn deploy_parachute_system(
         return;
     }
 
-    let Ok((rocket_ent, rocket_transform)) = rocket_query.single() else {
+    let Ok(rocket_transform) = rocket_query.single() else {
         return;
     };
     let Ok((cone_ent, cone_global, cone_mesh, cone_mat)) = cone_query.single() else {
@@ -200,24 +198,22 @@ pub fn deploy_parachute_system(
         ..default()
     });
 
-    let tube_top_offset = Vec3::Y * rocket_dims.length * 0.5;
-    commands.entity(rocket_ent).with_children(|parent| {
-        parent.spawn((
-            Mesh3d(chute_mesh),
-            MeshMaterial3d(chute_material),
-            Transform::from_translation(tube_top_offset + Vec3::Y * 0.08),
-            ParachuteVisual,
-            CanopyAnimation {
-                timer: Timer::from_seconds(INFLATION_SECS, TimerMode::Once),
-                phase: CanopyPhase::Inflating,
-                flutter_time: 0.0,
-                target_depth,
-                current_depth: initial_depth,
-                rim_radius,
-            },
-            Name::new("ParachuteVisual"),
-        ));
-    });
+    commands.spawn((
+        Mesh3d(chute_mesh),
+        MeshMaterial3d(chute_material),
+        Transform::from_translation(cone_world_pos + Vec3::Y * 0.08),
+        ParachuteVisual,
+        CanopyAnimation {
+            timer: Timer::from_seconds(INFLATION_SECS, TimerMode::Once),
+            phase: CanopyPhase::Inflating,
+            flutter_time: 0.0,
+            target_depth,
+            current_depth: initial_depth,
+            rim_radius,
+        },
+        Visibility::default(),
+        Name::new("ParachuteVisual"),
+    ));
 
     // Shroud lines (every other radial segment → 6 lines from 12 segments)
     let line_mesh = meshes.add(
@@ -281,12 +277,15 @@ pub fn animate_canopy_system(
     parachute_config: Res<ParachuteConfig>,
     mut canopy_query: Query<(&mut CanopyAnimation, &mut Transform, &Mesh3d), With<ParachuteVisual>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    rocket_query: Query<&LinearVelocity, With<RocketMarker>>,
+    cone_query: Query<&Transform, (With<DetachedCone>, Without<ParachuteVisual>)>,
 ) {
     if !parachute_config.deployed {
         return;
     }
     let Ok((mut anim, mut canopy_tf, mesh3d)) = canopy_query.single_mut() else {
+        return;
+    };
+    let Ok(cone_tf) = cone_query.single() else {
         return;
     };
 
@@ -297,7 +296,6 @@ pub fn animate_canopy_system(
         CanopyPhase::Inflating => {
             anim.timer.tick(time.delta());
             let t = anim.timer.fraction();
-            // Ease-out: 1 - (1-t)^2
             let eased = 1.0 - (1.0 - t) * (1.0 - t);
             anim.current_depth = 0.001_f32.lerp(anim.target_depth, eased);
             if anim.timer.is_finished() {
@@ -331,53 +329,33 @@ pub fn animate_canopy_system(
         }
     }
 
-    // Velocity-lag tilt
-    if let Ok(vel) = rocket_query.single() {
-        let horizontal = Vec3::new(vel.x, 0.0, vel.z);
-        let h_speed = horizontal.length();
-        if h_speed > 0.1 {
-            let tilt_amount = (h_speed * 0.1).min(MAX_TILT_RAD);
-            let tilt_dir = horizontal.normalize();
-            let tilt_axis = Vec3::Y.cross(tilt_dir).normalize();
-            if tilt_axis.length_squared() > 0.5 {
-                canopy_tf.rotation = Quat::from_axis_angle(tilt_axis, tilt_amount);
-            }
-        } else {
-            canopy_tf.rotation = Quat::IDENTITY;
-        }
-    }
+    // Position canopy above the cone — shroud lines span roughly 1× diameter
+    let shroud_line_length = parachute_config.diameter * 1.0;
+    canopy_tf.translation = cone_tf.translation + Vec3::Y * shroud_line_length;
+    canopy_tf.rotation = Quat::IDENTITY;
 }
 
 pub fn update_shroud_lines_system(
     parachute_config: Res<ParachuteConfig>,
-    rocket_query: Query<&Transform, With<RocketMarker>>,
-    rocket_dims: Res<RocketDimensions>,
-    canopy_query: Query<(&Transform, &CanopyAnimation), With<ParachuteVisual>>,
+    cone_query: Query<&Transform, With<DetachedCone>>,
+    canopy_query: Query<(&Transform, &CanopyAnimation), (With<ParachuteVisual>, Without<DetachedCone>)>,
     mut line_query: Query<
         (&ShroudLine, &mut Transform),
-        (Without<RocketMarker>, Without<ParachuteVisual>),
+        (Without<DetachedCone>, Without<ParachuteVisual>),
     >,
 ) {
     if !parachute_config.deployed {
         return;
     }
-    let Ok(rocket_tf) = rocket_query.single() else {
+    let Ok(cone_tf) = cone_query.single() else {
         return;
     };
-    let Ok((canopy_local_tf, anim)) = canopy_query.single() else {
+    let Ok((canopy_tf, anim)) = canopy_query.single() else {
         return;
     };
-
-    let tube_top = rocket_tf.translation
-        + rocket_tf.rotation * (Vec3::Y * rocket_dims.length * 0.5);
-
-    // Derive canopy world transform from rocket (parent) + canopy local,
-    // since GlobalTransform isn't propagated yet during Update.
-    let canopy_world_pos = rocket_tf.translation
-        + rocket_tf.rotation * canopy_local_tf.translation;
-    let canopy_world_rot = rocket_tf.rotation * canopy_local_tf.rotation;
 
     let tau = std::f32::consts::TAU;
+    let bottom = cone_tf.translation;
 
     for (shroud, mut line_tf) in &mut line_query {
         let phi = shroud.rim_index as f32 / RADIAL_SEGMENTS as f32 * tau;
@@ -386,10 +364,10 @@ pub fn update_shroud_lines_system(
             0.0,
             anim.rim_radius * phi.sin(),
         );
-        let rim_world = canopy_world_pos + canopy_world_rot * local_rim;
+        let rim_world = canopy_tf.translation + canopy_tf.rotation * local_rim;
 
-        let midpoint = (tube_top + rim_world) * 0.5;
-        let diff = rim_world - tube_top;
+        let midpoint = (bottom + rim_world) * 0.5;
+        let diff = rim_world - bottom;
         let distance = diff.length();
 
         line_tf.translation = midpoint;
