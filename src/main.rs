@@ -246,10 +246,14 @@ fn main() {
                 wind::update_wind_system,
                 parachute::auto_deploy_parachute_system,
                 parachute::deploy_parachute_system,
-                parachute::update_shock_cord_system,
-                parachute::animate_canopy_system,
-                parachute::update_shroud_lines_system,
                 parachute::update_detached_cone_system,
+                (
+                    parachute::animate_canopy_system,
+                    parachute::update_shock_cord_system,
+                )
+                    .after(parachute::update_detached_cone_system),
+                parachute::update_shroud_lines_system
+                    .after(parachute::animate_canopy_system),
                 parachute::cleanup_parachute_system,
             )
                 .run_if(in_state(AppState::Launch)),
