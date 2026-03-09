@@ -48,6 +48,7 @@ use crate::{
 mod camera;
 mod canopy;
 mod cone;
+mod drag;
 mod fin;
 mod fps;
 mod ground;
@@ -286,6 +287,7 @@ fn main() {
         (
             update_forces_system,
             wind::apply_wind_force_system,
+            drag::apply_aerodynamic_drag_system,
             parachute::parachute_drag_system,
             parachute::update_detached_cone_system,
         )

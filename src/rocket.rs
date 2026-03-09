@@ -491,7 +491,7 @@ pub fn spawn_rocket_system(
         NoAutoCenterOfMass,
         AngularVelocity::ZERO,
         LinearVelocity::ZERO,
-        LinearDamping(0.4),
+        LinearDamping(0.0),
         AngularDamping(1.0),
         initial_rocket_pos,
         Visibility::default(),
