@@ -280,7 +280,6 @@ fn main() {
             wind::apply_wind_force_system,
             parachute::parachute_drag_system,
             parachute::update_detached_cone_system,
-            parachute::update_canopy_tether_system,
         )
             .in_set(PhysicsSystems::First)
             .run_if(in_state(AppState::Launch)),

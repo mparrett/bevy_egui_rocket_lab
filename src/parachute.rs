@@ -19,9 +19,8 @@ const FLUTTER_FREQ: f32 = 4.0;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
 const TETHER_LENGTH: f32 = 1.0;
 const TETHER_STIFFNESS: f32 = 40.0;
-const SHROUD_STIFFNESS: f32 = 30.0;
+const GRAVITY: f32 = 9.81;
 const CONE_DAMPING: f32 = 2.0;
-const CANOPY_DAMPING: f32 = 3.0;
 
 #[derive(Component)]
 pub struct EjectionTimer {
@@ -29,7 +28,9 @@ pub struct EjectionTimer {
 }
 
 #[derive(Component)]
-pub struct DetachedCone;
+pub struct DetachedCone {
+    pub velocity: Vec3,
+}
 
 #[derive(Component)]
 pub struct ShockCord;
@@ -146,12 +147,9 @@ pub fn deploy_parachute_system(
     commands.entity(cone_ent).insert(Visibility::Hidden);
 
     commands.spawn((
-        DetachedCone,
-        RigidBody::Dynamic,
-        Mass(0.01),
-        Restitution::new(0.3),
-        LinearDamping(CONE_DAMPING),
-        LinearVelocity(Vec3::new(0.2, 1.5, 0.1)),
+        DetachedCone {
+            velocity: Vec3::new(0.2, 1.5, 0.1),
+        },
         Mesh3d(cone_mesh_handle),
         MeshMaterial3d(cone_mat_handle),
         Transform::from_translation(cone_world_pos).with_rotation(cone_world_rot),
@@ -203,11 +201,6 @@ pub fn deploy_parachute_system(
         Mesh3d(chute_mesh),
         MeshMaterial3d(chute_material),
         Transform::from_translation(cone_world_pos + Vec3::Y * shroud_line_length),
-        RigidBody::Dynamic,
-        Collider::cylinder(rim_radius, 0.01),
-        Mass(0.05),
-        Restitution::new(0.1),
-        LinearDamping(CANOPY_DAMPING),
         ParachuteVisual,
         CanopyAnimation {
             timer: Timer::from_seconds(INFLATION_SECS, TimerMode::Once),
@@ -281,13 +274,17 @@ pub fn parachute_drag_system(
 pub fn animate_canopy_system(
     time: Res<Time>,
     parachute_config: Res<ParachuteConfig>,
-    mut canopy_query: Query<(&mut CanopyAnimation, &Mesh3d), With<ParachuteVisual>>,
+    mut canopy_query: Query<(&mut CanopyAnimation, &mut Transform, &Mesh3d), With<ParachuteVisual>>,
     mut meshes: ResMut<Assets<Mesh>>,
+    cone_query: Query<&Transform, (With<DetachedCone>, Without<ParachuteVisual>)>,
 ) {
     if !parachute_config.deployed {
         return;
     }
-    let Ok((mut anim, mesh3d)) = canopy_query.single_mut() else {
+    let Ok((mut anim, mut canopy_tf, mesh3d)) = canopy_query.single_mut() else {
+        return;
+    };
+    let Ok(cone_tf) = cone_query.single() else {
         return;
     };
 
@@ -310,6 +307,10 @@ pub fn animate_canopy_system(
             anim.current_depth = anim.target_depth + flutter;
         }
     }
+
+    let shroud_line_length = parachute_config.diameter * 1.0;
+    canopy_tf.translation = cone_tf.translation + Vec3::Y * shroud_line_length;
+    canopy_tf.rotation = Quat::IDENTITY;
 
     if let Some(mesh) = meshes.get_mut(&mesh3d.0) {
         let new_mesh = Mesh::from(SphericalCap {
@@ -410,10 +411,11 @@ pub fn update_shock_cord_system(
 }
 
 pub fn update_detached_cone_system(
+    time: Res<Time<Fixed>>,
     parachute_config: Res<ParachuteConfig>,
     rocket_query: Query<&Transform, (With<RocketMarker>, Without<DetachedCone>)>,
     rocket_dims: Res<RocketDimensions>,
-    mut cone_query: Query<(Forces, &Transform), With<DetachedCone>>,
+    mut cone_query: Query<(&mut Transform, &mut DetachedCone)>,
 ) {
     if !parachute_config.deployed {
         return;
@@ -421,11 +423,15 @@ pub fn update_detached_cone_system(
     let Ok(rocket_tf) = rocket_query.single() else {
         return;
     };
-    let Ok((mut forces, cone_tf)) = cone_query.single_mut() else {
+    let Ok((mut cone_tf, mut cone)) = cone_query.single_mut() else {
         return;
     };
 
-    // Tether spring — pull cone back toward tube top when it exceeds tether length
+    let dt = time.delta_secs();
+
+    cone.velocity.y -= GRAVITY * dt;
+    cone.velocity *= 1.0 - CONE_DAMPING * dt;
+
     let tube_top = rocket_tf.translation
         + rocket_tf.rotation * (Vec3::Y * rocket_dims.length * 0.5);
     let diff = cone_tf.translation - tube_top;
@@ -433,36 +439,10 @@ pub fn update_detached_cone_system(
     if distance > TETHER_LENGTH {
         let overshoot = distance - TETHER_LENGTH;
         let dir = diff / distance;
-        forces.apply_force(-dir * overshoot * TETHER_STIFFNESS);
+        cone.velocity -= dir * overshoot * TETHER_STIFFNESS * dt;
     }
-}
 
-pub fn update_canopy_tether_system(
-    parachute_config: Res<ParachuteConfig>,
-    cone_query: Query<&Transform, (With<DetachedCone>, Without<ParachuteVisual>)>,
-    mut canopy_query: Query<(Forces, &Transform), With<ParachuteVisual>>,
-) {
-    if !parachute_config.deployed {
-        return;
-    }
-    let Ok(cone_tf) = cone_query.single() else {
-        return;
-    };
-    let Ok((mut forces, canopy_tf)) = canopy_query.single_mut() else {
-        return;
-    };
-
-    let shroud_line_length = parachute_config.diameter * 1.0;
-    let diff = canopy_tf.translation - cone_tf.translation;
-    let distance = diff.length();
-    if distance > shroud_line_length {
-        let overshoot = distance - shroud_line_length;
-        let dir = diff / distance;
-        let vel = forces.linear_velocity();
-        let radial_vel = vel.dot(dir);
-        let spring = -dir * (overshoot * SHROUD_STIFFNESS + radial_vel * SHROUD_STIFFNESS * 0.5);
-        forces.apply_force(spring);
-    }
+    cone_tf.translation += cone.velocity * dt;
 }
 
 
