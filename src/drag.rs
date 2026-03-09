@@ -63,18 +63,20 @@ pub fn apply_aerodynamic_drag_system(
     forces.apply_force(total_drag);
 }
 
-const CD_CONE: f32 = 1.0;
+const CD_CONE_AXIAL: f32 = 0.5;
+const CD_CONE_LATERAL: f32 = 1.2;
+const CONE_DRAG_OFFSET_FRAC: f32 = 0.25;
 
 pub fn apply_cone_drag_system(
     parachute_config: Res<ParachuteConfig>,
     rocket_dims: Res<RocketDimensions>,
     wind: Res<wind::WindProperties>,
-    mut query: Query<Forces, With<DetachedCone>>,
+    mut query: Query<(&Transform, &CenterOfMass, Forces), With<DetachedCone>>,
 ) {
     if !parachute_config.deployed {
         return;
     }
-    let Ok(mut forces) = query.single_mut() else {
+    let Ok((transform, center_of_mass, mut forces)) = query.single_mut() else {
         return;
     };
 
@@ -84,9 +86,37 @@ pub fn apply_cone_drag_system(
         return;
     }
 
+    let body_axis = transform.rotation * Vec3::Y;
     let r = rocket_dims.radius;
-    let area = std::f32::consts::PI * r * r;
-    let speed = speed_sq.sqrt();
-    let drag_mag = (0.5 * CD_CONE * area * AIR_DENSITY * speed_sq).min(MAX_DRAG_FORCE);
-    forces.apply_force(-relative_velocity / speed * drag_mag);
+    let cl = rocket_dims.cone_length;
+
+    let axial_speed = relative_velocity.dot(body_axis);
+    let axial_component = body_axis * axial_speed;
+    let lateral_component = relative_velocity - axial_component;
+
+    let axial_area = std::f32::consts::PI * r * r;
+    let axial_speed_sq = axial_component.length_squared();
+    let axial_drag_mag = 0.5 * CD_CONE_AXIAL * axial_area * AIR_DENSITY * axial_speed_sq;
+    let axial_drag = if axial_speed_sq > 1e-8 {
+        -axial_component.normalize() * axial_drag_mag
+    } else {
+        Vec3::ZERO
+    };
+
+    let lateral_area = cl * 2.0 * r;
+    let lateral_speed_sq = lateral_component.length_squared();
+    let lateral_drag_mag = 0.5 * CD_CONE_LATERAL * lateral_area * AIR_DENSITY * lateral_speed_sq;
+    let lateral_drag = if lateral_speed_sq > 1e-8 {
+        -lateral_component.normalize() * lateral_drag_mag
+    } else {
+        Vec3::ZERO
+    };
+
+    let total_drag = (axial_drag + lateral_drag).clamp_length_max(MAX_DRAG_FORCE);
+
+    // Apply lateral drag offset toward the base (wide end) to generate
+    // aerodynamic torque — the base catches more air and swings into the wind.
+    let base_offset = transform.rotation * (Vec3::NEG_Y * cl * CONE_DRAG_OFFSET_FRAC);
+    let world_point = transform.translation + center_of_mass.0 + base_offset;
+    forces.apply_force_at_point(total_drag, world_point);
 }
