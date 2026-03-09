@@ -21,6 +21,7 @@ just serve-dev-wasm   # dev-wasm + serve on :8080
 just release-wasm     # wasm32 + wasm-bindgen using the wasm-release profile
 just serve-wasm       # release-wasm + serve on :8080
 just serve-opt-wasm   # release-wasm + wasm-opt -Oz + serve on :8080
+just watch            # cargo watch -s 'just run' (live reload, requires cargo-watch)
 just deps             # cargo tree
 ```
 
