@@ -5,9 +5,15 @@ use crate::parachute::{DetachedCone, ParachuteConfig};
 use crate::rocket::{RocketDimensions, RocketMarker, RocketState, RocketStateEnum};
 use crate::wind;
 
-const CD_AXIAL: f32 = 0.4;
 const CD_LATERAL: f32 = 1.2;
 const AIR_DENSITY: f32 = 1.225;
+
+fn cone_cd_axial(radius: f32, cone_length: f32) -> f32 {
+    let half_angle = radius.atan2(cone_length).to_degrees();
+    let t = (half_angle / 45.0).clamp(0.0, 1.0);
+    0.15 + t * (0.50 - 0.15)
+}
+
 const MAX_DRAG_FORCE: f32 = 20.0;
 
 pub fn apply_aerodynamic_drag_system(
@@ -43,7 +49,8 @@ pub fn apply_aerodynamic_drag_system(
 
     let axial_area = std::f32::consts::PI * radius * radius;
     let axial_speed_sq = axial_component.length_squared();
-    let axial_drag_mag = 0.5 * CD_AXIAL * axial_area * AIR_DENSITY * axial_speed_sq;
+    let cd_axial = cone_cd_axial(radius, rocket_dims.cone_length);
+    let axial_drag_mag = 0.5 * cd_axial * axial_area * AIR_DENSITY * axial_speed_sq;
     let axial_drag = if axial_speed_sq > 1e-8 {
         -axial_component.normalize() * axial_drag_mag
     } else {
@@ -63,7 +70,6 @@ pub fn apply_aerodynamic_drag_system(
     forces.apply_force(total_drag);
 }
 
-const CD_CONE_AXIAL: f32 = 0.5;
 const CD_CONE_LATERAL: f32 = 1.2;
 const CONE_DRAG_OFFSET_FRAC: f32 = 0.25;
 
@@ -96,7 +102,8 @@ pub fn apply_cone_drag_system(
 
     let axial_area = std::f32::consts::PI * r * r;
     let axial_speed_sq = axial_component.length_squared();
-    let axial_drag_mag = 0.5 * CD_CONE_AXIAL * axial_area * AIR_DENSITY * axial_speed_sq;
+    let cd_axial = cone_cd_axial(r, cl);
+    let axial_drag_mag = 0.5 * cd_axial * axial_area * AIR_DENSITY * axial_speed_sq;
     let axial_drag = if axial_speed_sq > 1e-8 {
         -axial_component.normalize() * axial_drag_mag
     } else {
