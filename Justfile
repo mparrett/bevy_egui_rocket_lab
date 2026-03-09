@@ -1,6 +1,9 @@
 run:
     cargo run
 
+watch:
+    cargo watch -s 'just run'
+
 debug:
     RUST_BACKTRACE=full cargo run
 
