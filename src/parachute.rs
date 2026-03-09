@@ -19,7 +19,9 @@ const FLUTTER_FREQ: f32 = 4.0;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
 const TETHER_LENGTH: f32 = 1.0;
 const TETHER_STIFFNESS: f32 = 40.0;
+const SHROUD_STIFFNESS: f32 = 30.0;
 const CONE_DAMPING: f32 = 2.0;
+const CANOPY_DAMPING: f32 = 3.0;
 
 #[derive(Component)]
 pub struct EjectionTimer {
@@ -107,7 +109,6 @@ pub fn deploy_parachute_system(
     mut deploy_events: MessageReader<DeployParachuteEvent>,
     mut rocket_state: ResMut<RocketState>,
     mut parachute_config: ResMut<ParachuteConfig>,
-    rocket_dims: Res<RocketDimensions>,
     rocket_query: Query<&Transform, With<RocketMarker>>,
     cone_query: Query<
         (Entity, &GlobalTransform, &Mesh3d, &MeshMaterial3d<StandardMaterial>),
@@ -147,7 +148,6 @@ pub fn deploy_parachute_system(
     commands.spawn((
         DetachedCone,
         RigidBody::Dynamic,
-        Collider::cone(rocket_dims.radius, rocket_dims.cone_length),
         Mass(0.01),
         Restitution::new(0.3),
         LinearDamping(CONE_DAMPING),
@@ -198,10 +198,16 @@ pub fn deploy_parachute_system(
         ..default()
     });
 
+    let shroud_line_length = parachute_config.diameter * 1.0;
     commands.spawn((
         Mesh3d(chute_mesh),
         MeshMaterial3d(chute_material),
-        Transform::from_translation(cone_world_pos + Vec3::Y * 0.08),
+        Transform::from_translation(cone_world_pos + Vec3::Y * shroud_line_length),
+        RigidBody::Dynamic,
+        Collider::cylinder(rim_radius, 0.01),
+        Mass(0.05),
+        Restitution::new(0.1),
+        LinearDamping(CANOPY_DAMPING),
         ParachuteVisual,
         CanopyAnimation {
             timer: Timer::from_seconds(INFLATION_SECS, TimerMode::Once),
@@ -275,17 +281,13 @@ pub fn parachute_drag_system(
 pub fn animate_canopy_system(
     time: Res<Time>,
     parachute_config: Res<ParachuteConfig>,
-    mut canopy_query: Query<(&mut CanopyAnimation, &mut Transform, &Mesh3d), With<ParachuteVisual>>,
+    mut canopy_query: Query<(&mut CanopyAnimation, &Mesh3d), With<ParachuteVisual>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    cone_query: Query<&Transform, (With<DetachedCone>, Without<ParachuteVisual>)>,
 ) {
     if !parachute_config.deployed {
         return;
     }
-    let Ok((mut anim, mut canopy_tf, mesh3d)) = canopy_query.single_mut() else {
-        return;
-    };
-    let Ok(cone_tf) = cone_query.single() else {
+    let Ok((mut anim, mesh3d)) = canopy_query.single_mut() else {
         return;
     };
 
@@ -309,7 +311,6 @@ pub fn animate_canopy_system(
         }
     }
 
-    // Update mesh in-place
     if let Some(mesh) = meshes.get_mut(&mesh3d.0) {
         let new_mesh = Mesh::from(SphericalCap {
             radius: anim.rim_radius,
@@ -328,11 +329,6 @@ pub fn animate_canopy_system(
             mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, new_normals.clone());
         }
     }
-
-    // Position canopy above the cone — shroud lines span roughly 1× diameter
-    let shroud_line_length = parachute_config.diameter * 1.0;
-    canopy_tf.translation = cone_tf.translation + Vec3::Y * shroud_line_length;
-    canopy_tf.rotation = Quat::IDENTITY;
 }
 
 pub fn update_shroud_lines_system(
@@ -441,6 +437,35 @@ pub fn update_detached_cone_system(
     }
 }
 
+pub fn update_canopy_tether_system(
+    parachute_config: Res<ParachuteConfig>,
+    cone_query: Query<&Transform, (With<DetachedCone>, Without<ParachuteVisual>)>,
+    mut canopy_query: Query<(Forces, &Transform), With<ParachuteVisual>>,
+) {
+    if !parachute_config.deployed {
+        return;
+    }
+    let Ok(cone_tf) = cone_query.single() else {
+        return;
+    };
+    let Ok((mut forces, canopy_tf)) = canopy_query.single_mut() else {
+        return;
+    };
+
+    let shroud_line_length = parachute_config.diameter * 1.0;
+    let diff = canopy_tf.translation - cone_tf.translation;
+    let distance = diff.length();
+    if distance > shroud_line_length {
+        let overshoot = distance - shroud_line_length;
+        let dir = diff / distance;
+        let vel = forces.linear_velocity();
+        let radial_vel = vel.dot(dir);
+        let spring = -dir * (overshoot * SHROUD_STIFFNESS + radial_vel * SHROUD_STIFFNESS * 0.5);
+        forces.apply_force(spring);
+    }
+}
+
+
 pub fn cleanup_parachute_system(
     mut commands: Commands,
     mut reset_events: MessageReader<ResetEvent>,
@@ -534,5 +559,51 @@ mod tests {
 
         assert_eq!(app.world().resource::<Messages<DeployParachuteEvent>>().len(), 1);
         assert!(!app.world().entity(rocket).contains::<EjectionTimer>());
+    }
+
+    #[test]
+    fn deploy_spawns_visual_cone_without_collider() {
+        let mut app = App::new();
+        app.add_message::<DeployParachuteEvent>();
+        app.insert_resource(RocketState {
+            state: RocketStateEnum::Launched,
+            ..Default::default()
+        });
+        app.insert_resource(ParachuteConfig::default());
+        app.insert_resource(RocketDimensions::default());
+        app.insert_resource(Assets::<Mesh>::default());
+        app.insert_resource(Assets::<StandardMaterial>::default());
+        app.add_systems(Update, deploy_parachute_system);
+
+        let mesh_handle = {
+            let mut meshes = app.world_mut().resource_mut::<Assets<Mesh>>();
+            meshes.add(Mesh::from(Cylinder::new(0.01, 0.05)))
+        };
+        let material_handle = {
+            let mut materials = app
+                .world_mut()
+                .resource_mut::<Assets<StandardMaterial>>();
+            materials.add(StandardMaterial::default())
+        };
+
+        app.world_mut().spawn((RocketMarker, Transform::default()));
+        app.world_mut().spawn((
+            RocketCone,
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            Transform::from_translation(Vec3::Y * 0.3),
+            GlobalTransform::from_translation(Vec3::Y * 0.3),
+        ));
+
+        app.world_mut()
+            .write_message(DeployParachuteEvent);
+        app.update();
+
+        let detached = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<Entity, With<DetachedCone>>();
+            query.single(world).expect("detached cone should spawn")
+        };
+        assert!(!app.world().entity(detached).contains::<Collider>());
     }
 }

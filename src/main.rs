@@ -246,14 +246,7 @@ fn main() {
                 wind::update_wind_system,
                 parachute::auto_deploy_parachute_system,
                 parachute::deploy_parachute_system,
-                parachute::update_detached_cone_system,
-                (
-                    parachute::animate_canopy_system,
-                    parachute::update_shock_cord_system,
-                )
-                    .after(parachute::update_detached_cone_system),
-                parachute::update_shroud_lines_system
-                    .after(parachute::animate_canopy_system),
+                parachute::animate_canopy_system,
                 parachute::cleanup_parachute_system,
             )
                 .run_if(in_state(AppState::Launch)),
@@ -271,6 +264,8 @@ fn main() {
             PostUpdate,
             (
                 rocket_position_system,
+                parachute::update_shock_cord_system,
+                parachute::update_shroud_lines_system,
                 update_camera_zoom_perspective_system,
                 update_camera_transform_system,
             )
@@ -284,6 +279,8 @@ fn main() {
             update_forces_system,
             wind::apply_wind_force_system,
             parachute::parachute_drag_system,
+            parachute::update_detached_cone_system,
+            parachute::update_canopy_tether_system,
         )
             .in_set(PhysicsSystems::First)
             .run_if(in_state(AppState::Launch)),
