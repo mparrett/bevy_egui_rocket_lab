@@ -99,6 +99,9 @@ struct WindHudMarker;
 #[derive(Component, Default)]
 struct WindIconMarker;
 
+#[derive(Component)]
+struct NavButton(AppState);
+
 #[derive(Resource)]
 pub struct AudioSettings {
     pub music_enabled: bool,
@@ -220,7 +223,11 @@ fn main() {
         .add_systems(OnEnter(AppState::Store), setup_store_hud)
         .add_systems(
             Update,
-            update_store_balance_text.run_if(in_state(AppState::Store)),
+            (
+                handle_nav_button_clicks,
+                update_store_balance_text.run_if(in_state(AppState::Store)),
+            )
+                .run_if(in_gameplay),
         )
         .add_systems(
             EguiPrimaryContextPass,
@@ -425,10 +432,12 @@ fn init_egui_ui_input_system(
     let ctx = contexts.ctx_mut()?;
 
     if ctx.input(|i| i.key_pressed(Key::Tab)) {
-        match app_state.get() {
-            AppState::Lab => next_state.set(AppState::Launch),
-            AppState::Launch => next_state.set(AppState::Store),
-            AppState::Store => next_state.set(AppState::Lab),
+        let shift = ctx.input(|i| i.modifiers.shift);
+        match (app_state.get(), shift) {
+            (AppState::Lab, false) => next_state.set(AppState::Launch),
+            (AppState::Lab, true) => next_state.set(AppState::Store),
+            (AppState::Launch, _) => next_state.set(AppState::Lab),
+            (AppState::Store, _) => next_state.set(AppState::Lab),
             _ => {}
         }
     }
@@ -809,7 +818,6 @@ fn ui_system(
     mut fog_query: Query<&mut DistanceFog>,
     mut bloom_query: Query<&mut Bloom, With<Camera3d>>,
     app_state: Res<State<AppState>>,
-    mut next_state: ResMut<NextState<AppState>>,
 ) -> Result {
     let save_state = &mut save_params.save_state;
     let balance = &mut save_params.balance;
@@ -1298,30 +1306,6 @@ fn ui_system(
                     });
             }
 
-            ui.add_space(6.0);
-            if is_lab {
-                if ui.button("Go to Launch Pad").clicked() {
-                    next_state.set(AppState::Launch);
-                }
-                if ui.button("Go to Store").clicked() {
-                    next_state.set(AppState::Store);
-                }
-            } else if is_launch {
-                if ui.button("Back to Lab").clicked() {
-                    next_state.set(AppState::Lab);
-                }
-                if ui.button("Go to Store").clicked() {
-                    next_state.set(AppState::Store);
-                }
-            } else if is_store {
-                if ui.button("Back to Lab").clicked() {
-                    next_state.set(AppState::Lab);
-                }
-                if ui.button("Go to Launch Pad").clicked() {
-                    next_state.set(AppState::Launch);
-                }
-            }
-
             #[cfg(not(target_arch = "wasm32"))]
             if is_store {
                 ui.add_space(6.0);
@@ -1656,6 +1640,39 @@ fn setup_camera_system(
     ));
 }
 
+fn spawn_nav_button(parent: &mut ChildSpawnerCommands, label: &str, target: AppState) {
+    parent
+        .spawn((
+            Button,
+            NavButton(target),
+            Node {
+                padding: UiRect::new(Val::Px(10.0), Val::Px(10.0), Val::Px(5.0), Val::Px(5.0)),
+                border_radius: BorderRadius::all(Val::Px(4.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+        ))
+        .with_child((
+            Text::new(label.to_string()),
+            TextFont {
+                font_size: 13.0,
+                ..default()
+            },
+            TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+        ));
+}
+
+fn handle_nav_button_clicks(
+    query: Query<(&Interaction, &NavButton), Changed<Interaction>>,
+    mut next_state: ResMut<NextState<AppState>>,
+) {
+    for (interaction, nav) in &query {
+        if *interaction == Interaction::Pressed {
+            next_state.set(nav.0);
+        }
+    }
+}
+
 fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn((
@@ -1678,6 +1695,21 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             },
             TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
         ));
+
+    commands
+        .spawn((
+            DespawnOnExit(AppState::Launch),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(80.0),
+                left: Val::Px(296.0),
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            spawn_nav_button(parent, "\u{2190} Lab", AppState::Lab);
+        });
 
     let mono_font = asset_server.load("fonts/FiraMono-Medium.ttf");
 
@@ -1778,6 +1810,22 @@ fn setup_lab_hud(mut commands: Commands) {
             },
             TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
         ));
+
+    commands
+        .spawn((
+            DespawnOnExit(AppState::Lab),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(56.0),
+                left: Val::Px(296.0),
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            spawn_nav_button(parent, "\u{2190} Shop", AppState::Store);
+            spawn_nav_button(parent, "Launch \u{2192}", AppState::Launch);
+        });
 }
 
 #[derive(Component)]
@@ -1809,6 +1857,21 @@ fn setup_store_hud(mut commands: Commands, balance: Res<save::PlayerBalance>) {
             },
             TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
         ));
+
+    commands
+        .spawn((
+            DespawnOnExit(AppState::Store),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(56.0),
+                left: Val::Px(296.0),
+                column_gap: Val::Px(6.0),
+                ..default()
+            },
+        ))
+        .with_children(|parent| {
+            spawn_nav_button(parent, "Lab \u{2192}", AppState::Lab);
+        });
 }
 
 fn update_store_balance_text(
