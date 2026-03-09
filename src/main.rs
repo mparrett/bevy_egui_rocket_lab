@@ -249,6 +249,7 @@ fn main() {
                 parachute::update_shock_cord_system,
                 parachute::animate_canopy_system,
                 parachute::update_shroud_lines_system,
+                parachute::update_detached_cone_system,
                 parachute::cleanup_parachute_system,
             )
                 .run_if(in_state(AppState::Launch)),
@@ -279,7 +280,6 @@ fn main() {
             update_forces_system,
             wind::apply_wind_force_system,
             parachute::parachute_drag_system,
-            parachute::tether_cone_system,
         )
             .in_set(PhysicsSystems::First)
             .run_if(in_state(AppState::Launch)),
@@ -1494,6 +1494,11 @@ fn update_rocket_dimensions_system(
         *center_of_mass = mass_properties.center_of_mass;
     }
 
+    let Ok(rocket) = rocket_query.single() else {
+        warn!("Rocket dimension update requested but no rocket entity exists");
+        return;
+    };
+
     for (mut mesh_handle, mut collider, _, mat_handle) in body_query.iter_mut() {
         *mesh_handle = Mesh3d(
             meshes.add(
@@ -1527,10 +1532,6 @@ fn update_rocket_dimensions_system(
         commands.entity(fin).despawn();
     }
     // Add fins
-    let Ok(rocket) = rocket_query.single() else {
-        warn!("Rocket dimension update requested but no rocket entity exists");
-        return;
-    };
     let rocket_fin_pbr_bundles = create_rocket_fin_pbr_bundles(
         materials.as_mut(),
         rocket_dims.as_ref(),

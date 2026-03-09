@@ -20,6 +20,8 @@ const MAX_TILT_RAD: f32 = 15.0 * std::f32::consts::PI / 180.0;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
 const TETHER_LENGTH: f32 = 0.5;
 const TETHER_STIFFNESS: f32 = 40.0;
+const GRAVITY: f32 = 9.81;
+const CONE_DAMPING: f32 = 2.0;
 
 #[derive(Component)]
 pub struct EjectionTimer {
@@ -27,7 +29,9 @@ pub struct EjectionTimer {
 }
 
 #[derive(Component)]
-pub struct DetachedCone;
+pub struct DetachedCone {
+    pub velocity: Vec3,
+}
 
 #[derive(Component)]
 pub struct ShockCord;
@@ -109,7 +113,10 @@ pub fn deploy_parachute_system(
     mut parachute_config: ResMut<ParachuteConfig>,
     rocket_dims: Res<RocketDimensions>,
     rocket_query: Query<(Entity, &Transform), With<RocketMarker>>,
-    cone_query: Query<(Entity, &GlobalTransform), With<RocketCone>>,
+    cone_query: Query<
+        (Entity, &GlobalTransform, &Mesh3d, &MeshMaterial3d<StandardMaterial>),
+        With<RocketCone>,
+    >,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -126,25 +133,33 @@ pub fn deploy_parachute_system(
     let Ok((rocket_ent, rocket_transform)) = rocket_query.single() else {
         return;
     };
-    let Ok((cone_ent, cone_global)) = cone_query.single() else {
+    let Ok((cone_ent, cone_global, cone_mesh, cone_mat)) = cone_query.single() else {
         return;
     };
 
     rocket_state.state = RocketStateEnum::Descending;
     parachute_config.deployed = true;
 
-    // Detach cone
+    // Hide the cone child instead of despawning it — removing a child
+    // collider from avian3d's compound body causes AABB panics.
     let cone_world_pos = cone_global.translation();
     let cone_world_rot = cone_global.to_isometry().rotation;
-    commands.entity(cone_ent).remove_parent_in_place();
-    commands.entity(cone_ent).insert((
-        DetachedCone,
+    let cone_mesh_handle = cone_mesh.0.clone();
+    let cone_mat_handle = cone_mat.0.clone();
+    commands.entity(cone_ent).insert(Visibility::Hidden);
+
+    // Spawn a visual-only detached cone (no Collider/RigidBody) with
+    // custom velocity for simple tether physics.
+    commands.spawn((
+        DetachedCone {
+            velocity: Vec3::new(0.2, 1.5, 0.1),
+        },
+        Mesh3d(cone_mesh_handle),
+        MeshMaterial3d(cone_mat_handle),
         Transform::from_translation(cone_world_pos).with_rotation(cone_world_rot),
-        RigidBody::Dynamic,
-        LinearDamping(2.0),
-        LinearVelocity(Vec3::new(0.2, 1.5, 0.1)),
+        Visibility::default(),
+        Name::new("DetachedCone"),
     ));
-    commands.entity(cone_ent).remove::<RocketCone>();
 
     // Shock cord
     let cord_mesh = meshes.add(
@@ -420,11 +435,12 @@ pub fn update_shock_cord_system(
     }
 }
 
-pub fn tether_cone_system(
+pub fn update_detached_cone_system(
+    time: Res<Time>,
     parachute_config: Res<ParachuteConfig>,
     rocket_query: Query<&Transform, (With<RocketMarker>, Without<DetachedCone>)>,
     rocket_dims: Res<RocketDimensions>,
-    mut cone_query: Query<(&Transform, Forces), With<DetachedCone>>,
+    mut cone_query: Query<(&mut Transform, &mut DetachedCone)>,
 ) {
     if !parachute_config.deployed {
         return;
@@ -432,20 +448,30 @@ pub fn tether_cone_system(
     let Ok(rocket_tf) = rocket_query.single() else {
         return;
     };
-    let Ok((cone_tf, mut forces)) = cone_query.single_mut() else {
+    let Ok((mut cone_tf, mut cone)) = cone_query.single_mut() else {
         return;
     };
 
+    let dt = time.delta_secs();
+
+    // Gravity
+    cone.velocity.y -= GRAVITY * dt;
+
+    // Damping
+    cone.velocity *= 1.0 - CONE_DAMPING * dt;
+
+    // Tether spring
     let tube_top = rocket_tf.translation
         + rocket_tf.rotation * (Vec3::Y * rocket_dims.length * 0.5);
     let diff = cone_tf.translation - tube_top;
     let distance = diff.length();
-
     if distance > TETHER_LENGTH {
         let overshoot = distance - TETHER_LENGTH;
         let dir = diff / distance;
-        forces.apply_force(-dir * overshoot * TETHER_STIFFNESS);
+        cone.velocity -= dir * overshoot * TETHER_STIFFNESS * dt;
     }
+
+    cone_tf.translation += cone.velocity * dt;
 }
 
 pub fn cleanup_parachute_system(
@@ -453,12 +479,12 @@ pub fn cleanup_parachute_system(
     mut reset_events: MessageReader<ResetEvent>,
     mut parachute_config: ResMut<ParachuteConfig>,
     mut rocket_dims: ResMut<RocketDimensions>,
-    cone_query: Query<Entity, With<DetachedCone>>,
+    detached_cone_query: Query<Entity, With<DetachedCone>>,
+    hidden_cone_query: Query<Entity, With<RocketCone>>,
     cord_query: Query<Entity, With<ShockCord>>,
     chute_query: Query<Entity, With<ParachuteVisual>>,
     shroud_query: Query<Entity, With<ShroudLine>>,
     ejection_query: Query<Entity, (With<RocketMarker>, With<EjectionTimer>)>,
-    rocket_query: Query<Entity, With<RocketMarker>>,
 ) {
     if reset_events.read().next().is_none() {
         return;
@@ -472,19 +498,13 @@ pub fn cleanup_parachute_system(
         return;
     }
 
-    // Re-parent cone back to rocket instead of despawning
-    let rocket_ent = rocket_query.single();
-    for entity in &cone_query {
-        commands.entity(entity).remove::<(
-            DetachedCone,
-            RigidBody,
-            LinearDamping,
-            LinearVelocity,
-        )>();
-        commands.entity(entity).insert(RocketCone);
-        if let Ok(rocket) = rocket_ent {
-            commands.entity(entity).set_parent_in_place(rocket);
-        }
+    // Despawn the visual-only detached cone
+    for entity in &detached_cone_query {
+        commands.entity(entity).despawn();
+    }
+    // Restore the hidden cone child on the rocket
+    for entity in &hidden_cone_query {
+        commands.entity(entity).insert(Visibility::Inherited);
     }
 
     for entity in &cord_query {
