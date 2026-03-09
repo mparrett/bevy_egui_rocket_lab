@@ -1,5 +1,6 @@
 use bevy::{
     camera::Exposure,
+    window::{CursorIcon, SystemCursorIcon},
     core_pipeline::{Skybox, tonemapping::Tonemapping},
     diagnostic::FrameTimeDiagnosticsPlugin,
     ecs::system::SystemParam,
@@ -1645,6 +1646,7 @@ fn spawn_nav_button(parent: &mut ChildSpawnerCommands, label: &str, target: AppS
         .spawn((
             Button,
             NavButton(target),
+            CursorIcon::System(SystemCursorIcon::Pointer),
             Node {
                 padding: UiRect::new(Val::Px(10.0), Val::Px(10.0), Val::Px(5.0), Val::Px(5.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
