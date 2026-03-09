@@ -2,8 +2,9 @@ use avian3d::prelude::*;
 use bevy::{math::primitives::Cylinder, mesh::VertexAttributeValues, prelude::*};
 
 use crate::canopy::SphericalCap;
+use crate::physics::GameLayer;
 use crate::rocket::{
-    RocketCone, RocketDimensions, RocketMarker, RocketState, RocketStateEnum,
+    RocketCone, RocketDimensions, RocketMarker, RocketMassModel, RocketState, RocketStateEnum,
 };
 use crate::ResetEvent;
 
@@ -18,9 +19,6 @@ const FLUTTER_AMPLITUDE: f32 = 0.08;
 const FLUTTER_FREQ: f32 = 4.0;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
 const TETHER_LENGTH: f32 = 1.0;
-const TETHER_STIFFNESS: f32 = 40.0;
-const GRAVITY: f32 = 9.81;
-const CONE_DAMPING: f32 = 2.0;
 
 #[derive(Component)]
 pub struct EjectionTimer {
@@ -28,9 +26,7 @@ pub struct EjectionTimer {
 }
 
 #[derive(Component)]
-pub struct DetachedCone {
-    pub velocity: Vec3,
-}
+pub struct DetachedCone;
 
 #[derive(Component)]
 pub struct ShockCord;
@@ -111,6 +107,8 @@ pub fn deploy_parachute_system(
     mut rocket_state: ResMut<RocketState>,
     mut parachute_config: ResMut<ParachuteConfig>,
     rocket_query: Query<&Transform, With<RocketMarker>>,
+    rocket_dims: Res<RocketDimensions>,
+    mass_model: Res<RocketMassModel>,
     cone_query: Query<
         (Entity, &GlobalTransform, &Mesh3d, &MeshMaterial3d<StandardMaterial>),
         With<RocketCone>,
@@ -146,10 +144,23 @@ pub fn deploy_parachute_system(
     let cone_mat_handle = cone_mat.0.clone();
     commands.entity(cone_ent).insert(Visibility::Hidden);
 
+    let r = rocket_dims.radius;
+    let cl = rocket_dims.cone_length;
+    let slant = (r * r + cl * cl).sqrt();
+    let cone_mass =
+        std::f32::consts::PI * r * slant * mass_model.nose_wall_thickness_m * mass_model.nose_density_kg_m3;
+
     commands.spawn((
-        DetachedCone {
-            velocity: Vec3::new(0.2, 1.5, 0.1),
-        },
+        DetachedCone,
+        RigidBody::Dynamic,
+        Collider::cone(r, cl),
+        Mass(cone_mass.max(1e-4)),
+        LinearVelocity(Vec3::new(0.2, 1.5, 0.1)),
+        LinearDamping(0.0),
+        AngularDamping(2.0),
+        CollisionLayers::new([GameLayer::Debris], [GameLayer::Ground]),
+        Restitution::new(0.3),
+        Friction::new(0.5),
         Mesh3d(cone_mesh_handle),
         MeshMaterial3d(cone_mat_handle),
         Transform::from_translation(cone_world_pos).with_rotation(cone_world_rot),
@@ -243,11 +254,10 @@ pub fn deploy_parachute_system(
 }
 
 pub fn parachute_drag_system(
-    rocket_state: Res<RocketState>,
     parachute_config: Res<ParachuteConfig>,
-    mut query: Query<Forces, With<RocketMarker>>,
+    mut query: Query<Forces, With<DetachedCone>>,
 ) {
-    if rocket_state.state != RocketStateEnum::Descending {
+    if !parachute_config.deployed {
         return;
     }
     let Ok(mut forces) = query.single_mut() else {
@@ -411,11 +421,10 @@ pub fn update_shock_cord_system(
 }
 
 pub fn update_detached_cone_system(
-    time: Res<Time<Fixed>>,
     parachute_config: Res<ParachuteConfig>,
     rocket_query: Query<&Transform, (With<RocketMarker>, Without<DetachedCone>)>,
     rocket_dims: Res<RocketDimensions>,
-    mut cone_query: Query<(&mut Transform, &mut DetachedCone)>,
+    mut cone_query: Query<(&mut Transform, &mut LinearVelocity), With<DetachedCone>>,
 ) {
     if !parachute_config.deployed {
         return;
@@ -423,26 +432,23 @@ pub fn update_detached_cone_system(
     let Ok(rocket_tf) = rocket_query.single() else {
         return;
     };
-    let Ok((mut cone_tf, mut cone)) = cone_query.single_mut() else {
+    let Ok((mut cone_tf, mut cone_vel)) = cone_query.single_mut() else {
         return;
     };
-
-    let dt = time.delta_secs();
-
-    cone.velocity.y -= GRAVITY * dt;
-    cone.velocity *= 1.0 - CONE_DAMPING * dt;
 
     let tube_top = rocket_tf.translation
         + rocket_tf.rotation * (Vec3::Y * rocket_dims.length * 0.5);
     let diff = cone_tf.translation - tube_top;
     let distance = diff.length();
     if distance > TETHER_LENGTH {
-        let overshoot = distance - TETHER_LENGTH;
         let dir = diff / distance;
-        cone.velocity -= dir * overshoot * TETHER_STIFFNESS * dt;
-    }
+        cone_tf.translation = tube_top + dir * TETHER_LENGTH;
 
-    cone_tf.translation += cone.velocity * dt;
+        let outward_speed = cone_vel.0.dot(dir);
+        if outward_speed > 0.0 {
+            cone_vel.0 -= dir * outward_speed;
+        }
+    }
 }
 
 
@@ -542,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn deploy_spawns_visual_cone_without_collider() {
+    fn deploy_spawns_cone_as_physics_body() {
         let mut app = App::new();
         app.add_message::<DeployParachuteEvent>();
         app.insert_resource(RocketState {
@@ -551,6 +557,7 @@ mod tests {
         });
         app.insert_resource(ParachuteConfig::default());
         app.insert_resource(RocketDimensions::default());
+        app.insert_resource(RocketMassModel::default());
         app.insert_resource(Assets::<Mesh>::default());
         app.insert_resource(Assets::<StandardMaterial>::default());
         app.add_systems(Update, deploy_parachute_system);
@@ -584,6 +591,7 @@ mod tests {
             let mut query = world.query_filtered::<Entity, With<DetachedCone>>();
             query.single(world).expect("detached cone should spawn")
         };
-        assert!(!app.world().entity(detached).contains::<Collider>());
+        assert!(app.world().entity(detached).contains::<Collider>());
+        assert!(app.world().entity(detached).contains::<RigidBody>());
     }
 }

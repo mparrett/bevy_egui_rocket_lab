@@ -1,6 +1,14 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
+#[derive(PhysicsLayer, Default)]
+pub enum GameLayer {
+    #[default]
+    Ground,
+    Rocket,
+    Debris,
+}
+
 use std::{
     hash::{Hash, Hasher},
     sync::atomic::{AtomicUsize, Ordering},

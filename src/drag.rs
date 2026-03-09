@@ -1,6 +1,7 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
+use crate::parachute::{DetachedCone, ParachuteConfig};
 use crate::rocket::{RocketDimensions, RocketMarker, RocketState, RocketStateEnum};
 use crate::wind;
 
@@ -60,4 +61,32 @@ pub fn apply_aerodynamic_drag_system(
 
     let total_drag = (axial_drag + lateral_drag).clamp_length_max(MAX_DRAG_FORCE);
     forces.apply_force(total_drag);
+}
+
+const CD_CONE: f32 = 1.0;
+
+pub fn apply_cone_drag_system(
+    parachute_config: Res<ParachuteConfig>,
+    rocket_dims: Res<RocketDimensions>,
+    wind: Res<wind::WindProperties>,
+    mut query: Query<Forces, With<DetachedCone>>,
+) {
+    if !parachute_config.deployed {
+        return;
+    }
+    let Ok(mut forces) = query.single_mut() else {
+        return;
+    };
+
+    let relative_velocity = forces.linear_velocity() - wind.wind_velocity_world;
+    let speed_sq = relative_velocity.length_squared();
+    if speed_sq < 1e-6 {
+        return;
+    }
+
+    let r = rocket_dims.radius;
+    let area = std::f32::consts::PI * r * r;
+    let speed = speed_sq.sqrt();
+    let drag_mag = (0.5 * CD_CONE * area * AIR_DENSITY * speed_sq).min(MAX_DRAG_FORCE);
+    forces.apply_force(-relative_velocity / speed * drag_mag);
 }

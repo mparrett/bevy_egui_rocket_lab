@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cone::Cone;
 use crate::fin::Fin;
-use crate::physics::lock_all_axes;
+use crate::physics::{GameLayer, lock_all_axes};
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ColorPreset {
@@ -511,6 +511,7 @@ pub fn spawn_rocket_system(
             MeshMaterial3d(materials.add(body_material)),
             Transform::from_xyz(0.0, 0.0, 0.0),
             Collider::cylinder(rocket_dims.radius, rocket_dims.length),
+            CollisionLayers::new([GameLayer::Rocket], [GameLayer::Ground]),
             RocketBody,
             CollisionEventsEnabled,
             Friction::new(0.7),
@@ -526,6 +527,7 @@ pub fn spawn_rocket_system(
             MeshMaterial3d(materials.add(cone_material)),
             Transform::from_xyz(0.0, rocket_dims.total_length() * 0.5, 0.0),
             Collider::cone(rocket_dims.radius, rocket_dims.cone_length),
+            CollisionLayers::new([GameLayer::Rocket], [GameLayer::Ground]),
             Friction::new(0.7),
             Restitution::new(0.4),
             RocketCone,

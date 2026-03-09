@@ -1,6 +1,8 @@
 use avian3d::prelude::*;
 use bevy::prelude::*;
 
+use crate::physics::GameLayer;
+
 const GROUND_SIZE: f32 = 1000.0;
 const GROUND_TILE_REPEAT: f32 = 80.0;
 const GROUND_HEIGHT: f32 = 0.01;
@@ -39,6 +41,7 @@ pub fn setup_ground_system(
         Mesh3d(ground_mesh_handle),
         MeshMaterial3d(ground_material_handle),
         Collider::cuboid(GROUND_SIZE, GROUND_HEIGHT, GROUND_SIZE),
+        CollisionLayers::new([GameLayer::Ground], LayerMask::ALL),
         Friction::new(0.7),
         Restitution::new(0.2),
         Transform::from_xyz(0.0, GROUND_HEIGHT, 0.0),
