@@ -40,9 +40,9 @@ Tests exist (`just test`) for launch/reset/landing core-loop behavior. Use `just
 
 **Resources as config:** `RocketDimensions`, `RocketFlightParameters`, `CameraProperties`, `SkyProperties` are Bevy resources modified via the egui panel and read by systems.
 
-**System scheduling:** Startup systems spawn entities (ground, camera, rocket, sky). Update systems handle input, forces, UI, and position tracking. PostUpdate handles camera transforms.
+**System scheduling:** Startup systems spawn entities (ground, camera, rocket, sky). Update systems handle input, forces, UI, and position tracking. PostUpdate handles camera transforms. See ADR-005 in `decisions.md` for physics system scheduling rules (force systems in `PhysicsSystems::First`, constraints after `StepSimulation`, visuals after `Writeback`).
 
-**Rocket entity tree:** Rocket is a parent entity with child entities for body cylinder, cone, and fins. Fins are rebuilt dynamically when dimensions change.
+**Rocket entity tree:** Rocket is a parent entity with child entities for body cylinder, cone, and fins. Fins are rebuilt dynamically when dimensions change. Dynamic bodies tracked by visuals need `TransformInterpolation`.
 
 ## Clippy
 

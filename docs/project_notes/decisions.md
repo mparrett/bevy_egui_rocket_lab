@@ -27,7 +27,20 @@
 **Decision**: bevy_xpbd_3d 0.4.2.
 **Superseded**: Migrated to avian3d 0.5 (bevy_xpbd_3d's successor) with Bevy 0.18 migration (2026-02).
 
-## ADR-005: WebGPU-only for WASM (2026-03)
+## ADR-005: avian3d physics integration patterns (2026-03)
+
+**Context**: Repeated stutter/jitter issues when integrating custom physics logic (forces, constraints, visual tracking) with avian3d's fixed-timestep simulation.
+**Decision**: Follow these rules for all physics-related systems:
+
+1. **Forces/impulses** go in `FixedPostUpdate` / `PhysicsSystems::First` — applied before the sim step.
+2. **Post-sim constraints** (tethers, clamps, position corrections) go in `FixedPostUpdate` after `PhysicsSystems::StepSimulation` and before `PhysicsSystems::Writeback`. Modify `Position`/`Rotation` directly (not `Transform`) so the corrected state feeds into Writeback and interpolation.
+3. **Any dynamic rigid body that the camera or visual systems track** must have `TransformInterpolation` for smooth rendering between fixed steps.
+4. **Systems reading physics state for visuals** (camera follow, cord/line positioning) run in `PostUpdate` after `PhysicsSystems::Writeback`. If one system writes a value another reads (e.g. rocket position → camera target), chain them explicitly.
+5. **Collision layers** separate entity groups that should never interact (e.g. Rocket vs Debris) to prevent compound-body overlap impulses.
+
+**Rationale**: avian3d's pipeline is First → Prepare → StepSimulation → Writeback. Modifying `Transform` in First gets synced to `Position` in Prepare but then overwritten by StepSimulation. Constraints must run post-sim. Without `TransformInterpolation`, Transforms update discretely at the fixed rate causing visible stutter. Without explicit system ordering in PostUpdate, Bevy runs systems in arbitrary order causing frame-to-frame jitter.
+
+## ADR-006: WebGPU-only for WASM (2026-03)
 
 **Context**: Bevy 0.18 / wgpu 27 defaults to WebGPU for WASM builds. Dual-backend (WebGPU + WebGL2 fallback) in a single binary is not yet supported (bevyengine/bevy#13168).
 **Decision**: Stay WebGPU-only. All current desktop browsers support it (Chrome 113+, Firefox 141+, Safari 26).
