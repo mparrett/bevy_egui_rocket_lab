@@ -12,6 +12,9 @@ pub enum GameMode {
     Gameplay,
 }
 
+#[derive(Resource, Default)]
+pub struct RocketCamOwned(pub bool);
+
 #[derive(Resource)]
 pub struct OwnedMaterials(pub Vec<RocketMaterial>);
 
@@ -34,6 +37,8 @@ pub struct PlayerMeta {
     #[serde(default = "default_balance")]
     pub balance: f64,
     pub owned_materials: Vec<RocketMaterial>,
+    #[serde(default)]
+    pub rocket_cam_owned: bool,
 }
 
 fn default_balance() -> f64 {
@@ -159,6 +164,7 @@ mod io {
                 name: player.to_string(),
                 balance: STARTING_BALANCE,
                 owned_materials: vec![RocketMaterial::Light],
+                rocket_cam_owned: false,
             };
             let json = serde_json::to_string_pretty(&meta)
                 .map_err(|e| format!("Failed to serialize player meta: {e}"))?;

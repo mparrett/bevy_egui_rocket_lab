@@ -1,5 +1,5 @@
 use bevy::{
-    camera::Exposure,
+    camera::{Exposure, Viewport},
     window::{CursorIcon, SystemCursorIcon},
     core_pipeline::{Skybox, tonemapping::Tonemapping},
     diagnostic::FrameTimeDiagnosticsPlugin,
@@ -25,8 +25,9 @@ use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 
 use crate::{
     camera::{
-        CAMERA_MODES, CameraProperties, FollowMode, INITIAL_CAMERA_POS, ZOOM_LEVELS,
-        mouse_orbit_system, update_camera_transform_system, update_camera_zoom_perspective_system,
+        CAMERA_MODES, CameraProperties, FollowMode, INITIAL_CAMERA_POS, RocketCamMarker,
+        ZOOM_LEVELS, mouse_orbit_system, update_camera_transform_system,
+        update_camera_zoom_perspective_system,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
@@ -204,6 +205,7 @@ fn main() {
         .init_resource::<save::PlayerBalance>()
         .init_resource::<save::GameMode>()
         .init_resource::<save::OwnedMaterials>()
+        .init_resource::<save::RocketCamOwned>()
         .init_resource::<wind::WindProperties>()
         .init_resource::<parachute::ParachuteConfig>()
         .add_systems(
@@ -220,6 +222,7 @@ fn main() {
                 disable_physics_debug,
             ),
         )
+        .add_systems(Startup, spawn_rocket_cam_system.after(spawn_rocket_system))
         .add_systems(OnEnter(AppState::Launch), setup_launch_hud)
         .add_systems(OnEnter(AppState::Lab), setup_lab_hud)
         .add_systems(OnEnter(AppState::Store), setup_store_hud)
@@ -237,7 +240,11 @@ fn main() {
         )
         .add_systems(
             EguiPrimaryContextPass,
-            do_launch_system.run_if(in_state(AppState::Launch)),
+            (
+                do_launch_system,
+                toggle_rocket_cam_system,
+            )
+                .run_if(in_state(AppState::Launch)),
         )
         .add_systems(
             Update,
@@ -267,6 +274,7 @@ fn main() {
                 fps_counter_showhide,
                 music_crossfade_system,
                 toggle_physics_debug,
+                rocket_cam_viewport_resize_system,
             ),
         )
         .add_systems(
@@ -661,12 +669,25 @@ fn on_reset_event(
         (With<RocketMarker>, Without<Camera>),
     >,
     app_state: Res<State<AppState>>,
+    mut rocket_cam_query: Query<(Entity, &mut Camera), With<RocketCamMarker>>,
+    cone_query: Query<Entity, With<RocketCone>>,
 ) {
     if reset_events.read().next().is_none() {
         return;
     }
 
     *camera_properties = CameraProperties::default();
+
+    if let Ok((cam_entity, mut cam)) = rocket_cam_query.single_mut() {
+        cam.is_active = false;
+        if let Ok(cone_entity) = cone_query.single() {
+            commands.entity(cone_entity).add_child(cam_entity);
+            commands.entity(cam_entity).insert(
+                Transform::from_xyz(0.0, -0.02, 0.0)
+                    .looking_to(Vec3::new(0.0, -0.5, 1.0).normalize(), Vec3::Y),
+            );
+        }
+    }
     if let Some(mut time) = virtual_time {
         time.set_relative_speed(1.0);
     }
@@ -798,6 +819,7 @@ struct SaveUiParams<'w> {
     balance: ResMut<'w, save::PlayerBalance>,
     game_mode: ResMut<'w, save::GameMode>,
     owned_materials: ResMut<'w, save::OwnedMaterials>,
+    rocket_cam_owned: ResMut<'w, save::RocketCamOwned>,
     parachute_config: ResMut<'w, parachute::ParachuteConfig>,
 }
 
@@ -818,13 +840,14 @@ fn ui_system(
         (With<RocketMarker>, Without<Camera>),
     >,
     mut fog_query: Query<&mut DistanceFog>,
-    mut bloom_query: Query<&mut Bloom, With<Camera3d>>,
+    mut bloom_query: Query<&mut Bloom, (With<Camera3d>, Without<RocketCamMarker>)>,
     app_state: Res<State<AppState>>,
 ) -> Result {
     let save_state = &mut save_params.save_state;
     let balance = &mut save_params.balance;
     let game_mode = &mut save_params.game_mode;
     let owned_materials = &mut save_params.owned_materials;
+    let rocket_cam_owned = &mut save_params.rocket_cam_owned;
     let parachute_config = &mut save_params.parachute_config;
     let is_lab = *app_state.get() == AppState::Lab;
     let is_launch = *app_state.get() == AppState::Launch;
@@ -1355,6 +1378,7 @@ fn ui_system(
                                         name: player.clone(),
                                         balance: balance.0,
                                         owned_materials: owned_materials.0.clone(),
+                                        rocket_cam_owned: rocket_cam_owned.0,
                                     };
                                     let _ = save::save_player_meta(&meta);
                                     save_state.rocket_saves = save::list_rockets(&player);
@@ -1385,6 +1409,7 @@ fn ui_system(
                                         name: player.clone(),
                                         balance: balance.0,
                                         owned_materials: owned_materials.0.clone(),
+                                        rocket_cam_owned: rocket_cam_owned.0,
                                     };
                                     let _ = save::save_player_meta(&meta);
                                     save_state.status_message = Some(format!("Purchased {}!", mat.label()));
@@ -1392,6 +1417,31 @@ fn ui_system(
                                 if !can_afford {
                                     ui.label("Not enough funds.");
                                 }
+                            }
+                        }
+
+                        ui.separator();
+                        ui.label("Upgrades");
+                        if rocket_cam_owned.0 {
+                            ui.label("Rocket Cam — Owned");
+                        } else {
+                            let price = 15.0;
+                            let can_afford = balance.0 >= price;
+                            let btn = egui::Button::new(format!("Buy Rocket Cam — ${price}"));
+                            if ui.add_enabled(can_afford, btn).clicked() {
+                                balance.0 -= price;
+                                rocket_cam_owned.0 = true;
+                                let meta = save::PlayerMeta {
+                                    name: player.clone(),
+                                    balance: balance.0,
+                                    owned_materials: owned_materials.0.clone(),
+                                    rocket_cam_owned: true,
+                                };
+                                let _ = save::save_player_meta(&meta);
+                                save_state.status_message = Some("Purchased Rocket Cam!".to_string());
+                            }
+                            if !can_afford {
+                                ui.label("Not enough funds.");
                             }
                         }
                     });
@@ -1411,6 +1461,7 @@ fn ui_system(
                         "Esc: world inspector",
                         "F10: collider gizmos",
                         "F11: profiling HUD",
+                        "V: toggle rocket-cam PiP",
                         "F12: toggle FPS",
                     ] {
                         ui.label(line);
@@ -1623,6 +1674,7 @@ fn setup_camera_system(
         Camera3d::default(),
         camera_transform,
         Camera::default(),
+        IsDefaultUiCamera,
         Hdr,
         Tonemapping::TonyMcMapface,
         Projection::Perspective(PerspectiveProjection {
@@ -1644,6 +1696,100 @@ fn setup_camera_system(
             ..default()
         },
     ));
+}
+
+fn spawn_rocket_cam_system(
+    mut commands: Commands,
+    cone_query: Query<Entity, With<RocketCone>>,
+    main_cam_query: Query<&Skybox, (With<Camera3d>, Without<RocketCone>)>,
+) {
+    let Ok(cone_entity) = cone_query.single() else {
+        return;
+    };
+    let Ok(skybox) = main_cam_query.single() else {
+        return;
+    };
+    let skybox = skybox.clone();
+
+    let rocket_cam = commands
+        .spawn((
+            Camera3d::default(),
+            Camera {
+                order: 1,
+                is_active: false,
+                clear_color: ClearColorConfig::Custom(Color::BLACK),
+                ..default()
+            },
+            Hdr,
+            Tonemapping::TonyMcMapface,
+            Projection::Perspective(PerspectiveProjection {
+                fov: 100f32.to_radians(),
+                ..default()
+            }),
+            Transform::from_xyz(0.0, -0.02, 0.0)
+                .looking_to(Vec3::new(0.0, -0.5, 1.0).normalize(), Vec3::Y),
+            RocketCamMarker,
+            skybox,
+            Bloom {
+                intensity: 0.15,
+                ..Bloom::NATURAL
+            },
+            Name::new("RocketCam"),
+        ))
+        .id();
+
+    commands.entity(cone_entity).add_child(rocket_cam);
+}
+
+fn rocket_cam_viewport_resize_system(
+    windows: Query<&Window>,
+    mut cam_query: Query<&mut Camera, With<RocketCamMarker>>,
+) {
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let Ok(mut camera) = cam_query.single_mut() else {
+        return;
+    };
+
+    let w = window.physical_width();
+    let h = window.physical_height();
+    if w == 0 || h == 0 {
+        return;
+    }
+
+    let pip_w = w / 4;
+    let pip_h = h / 4;
+    let margin = 16;
+
+    camera.viewport = Some(Viewport {
+        physical_position: UVec2::new(w - pip_w - margin, h - pip_h - margin),
+        physical_size: UVec2::new(pip_w, pip_h),
+        ..default()
+    });
+}
+
+fn toggle_rocket_cam_system(
+    mut contexts: EguiContexts,
+    mut camera_properties: ResMut<CameraProperties>,
+    mut cam_query: Query<&mut Camera, With<RocketCamMarker>>,
+    rocket_cam_owned: Res<save::RocketCamOwned>,
+    game_mode: Res<save::GameMode>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
+    if ctx.wants_keyboard_input() {
+        return Ok(());
+    }
+    if ctx.input(|i| i.key_pressed(Key::V)) {
+        if !rocket_cam_owned.0 && *game_mode != save::GameMode::Sandbox {
+            return Ok(());
+        }
+        camera_properties.rocket_cam_enabled = !camera_properties.rocket_cam_enabled;
+        if let Ok(mut camera) = cam_query.single_mut() {
+            camera.is_active = camera_properties.rocket_cam_enabled;
+        }
+    }
+    Ok(())
 }
 
 fn spawn_nav_button(parent: &mut ChildSpawnerCommands, label: &str, target: AppState) {

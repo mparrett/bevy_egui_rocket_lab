@@ -3,6 +3,7 @@ use bevy::{math::primitives::Cylinder, mesh::VertexAttributeValues, prelude::*};
 
 use crate::canopy::SphericalCap;
 use crate::physics::GameLayer;
+use crate::camera::RocketCamMarker;
 use crate::rocket::{
     RocketCone, RocketDimensions, RocketMarker, RocketMassModel, RocketState, RocketStateEnum,
 };
@@ -128,6 +129,7 @@ pub fn deploy_parachute_system(
     >,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    rocket_cam_query: Query<Entity, With<RocketCamMarker>>,
 ) {
     if deploy_events.read().next().is_none() {
         return;
@@ -187,6 +189,10 @@ pub fn deploy_parachute_system(
             Name::new("DetachedCone"),
         ))
         .id();
+
+    if let Ok(cam_entity) = rocket_cam_query.single() {
+        commands.entity(cam_entity).set_parent_in_place(cone_entity);
+    }
 
     // Shock cord
     let cord_mesh = meshes.add(

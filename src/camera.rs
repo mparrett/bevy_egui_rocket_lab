@@ -5,6 +5,9 @@ use std::f32::consts::PI;
 
 use crate::rocket::RocketMarker;
 
+#[derive(Component)]
+pub struct RocketCamMarker;
+
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 
@@ -47,6 +50,7 @@ pub struct CameraProperties {
     pub follow_mode: FollowMode,
     pub fixed_distance: f32,
     pub egui_has_pointer: bool,
+    pub rocket_cam_enabled: bool,
 }
 impl Default for CameraProperties {
     fn default() -> Self {
@@ -65,12 +69,13 @@ impl Default for CameraProperties {
             follow_mode: FollowMode::FreeLook,
             fixed_distance: 6.0,
             egui_has_pointer: false,
+            rocket_cam_enabled: false,
         }
     }
 }
 
 pub fn update_camera_zoom_perspective_system(
-    mut query_camera: Query<&mut Projection>,
+    mut query_camera: Query<&mut Projection, Without<RocketCamMarker>>,
     camera_properties: Res<CameraProperties>,
 ) {
     let Ok(projection) = query_camera.single_mut() else {
@@ -89,7 +94,7 @@ pub fn update_camera_zoom_perspective_system(
 pub fn update_camera_transform_system(
     time: Res<Time>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<(&Projection, &mut Transform)>,
+    mut camera_query: Query<(&Projection, &mut Transform), Without<RocketCamMarker>>,
     mut last_follow_mode: Local<Option<FollowMode>>,
     rocket_velocity_query: Query<&LinearVelocity, With<RocketMarker>>,
 ) {

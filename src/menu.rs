@@ -303,6 +303,7 @@ fn menu_action(
     mut save_state: ResMut<SaveState>,
     mut player_balance: ResMut<crate::save::PlayerBalance>,
     mut owned_materials: ResMut<crate::save::OwnedMaterials>,
+    mut rocket_cam_owned: ResMut<crate::save::RocketCamOwned>,
     mut rocket_dims: ResMut<crate::rocket::RocketDimensions>,
     mut flight_params: ResMut<crate::rocket::RocketFlightParameters>,
     mut app_exit: MessageWriter<AppExit>,
@@ -329,6 +330,7 @@ fn menu_action(
                 if let Ok(meta) = crate::save::load_player_meta(name) {
                     player_balance.0 = meta.balance;
                     owned_materials.0 = meta.owned_materials;
+                    rocket_cam_owned.0 = meta.rocket_cam_owned;
                 }
                 if let Some(first) = save_state.rocket_saves.first()
                     && let Ok(data) = crate::save::load_rocket(name, first)

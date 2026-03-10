@@ -483,6 +483,24 @@ fn spawn_store_room(
         Transform::from_xyz(0.5, shelf_surface + rocket_body_h + rocket_cone_h / 2.0, shelf_z),
     ));
 
+    // Camera-box prop on bottom shelf
+    let cam_box_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.15, 0.15, 0.18),
+        perceptual_roughness: 0.5,
+        metallic: 0.2,
+        ..default()
+    });
+    let cam_box_w = 0.06;
+    let cam_box_h = 0.04;
+    let cam_box_d = 0.03;
+    commands.spawn((
+        IndoorRoom,
+        despawn.clone(),
+        Mesh3d(meshes.add(Cuboid::new(cam_box_w, cam_box_h, cam_box_d))),
+        MeshMaterial3d(cam_box_mat),
+        Transform::from_xyz(0.2, shelf_surface + cam_box_h / 2.0, shelf_z),
+    ));
+
     // Overhead light fixtures (4 in a grid)
     let fixture_mat = materials.add(StandardMaterial {
         base_color: Color::srgb(0.9, 0.9, 0.9),
