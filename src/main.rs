@@ -1634,7 +1634,11 @@ fn setup_camera_system(
             brightness: 1000.0,
             ..default()
         },
-        Bloom::NATURAL,
+        Bloom {
+            intensity: 0.1,
+            high_pass_frequency: 0.35,
+            ..Bloom::NATURAL
+        },
         DistanceFog {
             color: Color::srgba(0.0, 0.0, 0.0, 0.0),
             ..default()
