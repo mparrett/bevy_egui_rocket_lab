@@ -400,12 +400,32 @@ pub fn rocket_mass_properties(
     }
 }
 
+pub fn fin_collider(height: f32, length: f32, width: f32) -> Option<Collider> {
+    let hw = width * 0.5;
+    Collider::convex_hull(vec![
+        Vec3::new(0.0, 0.0, -hw),
+        Vec3::new(0.0, height, -hw),
+        Vec3::new(length, 0.0, -hw),
+        Vec3::new(0.0, 0.0, hw),
+        Vec3::new(0.0, height, hw),
+        Vec3::new(length, 0.0, hw),
+    ])
+}
+
 pub fn create_rocket_fin_pbr_bundles(
     materials: &mut Assets<StandardMaterial>,
     rocket_dims: &RocketDimensions,
     meshes: &mut Assets<Mesh>,
     fin_color: Color,
-) -> Vec<(Mesh3d, MeshMaterial3d<StandardMaterial>, Transform)> {
+) -> Vec<(
+    Mesh3d,
+    MeshMaterial3d<StandardMaterial>,
+    Transform,
+    Collider,
+    CollisionLayers,
+    Friction,
+    Restitution,
+)> {
     let n_fins = rocket_dims.num_fins as usize;
     let degs_per_fin = 360.0 / n_fins as f32;
     // Anchor fins to the base of the cylindrical body so nose/cone changes do
@@ -430,6 +450,12 @@ pub fn create_rocket_fin_pbr_bundles(
     let fin_mesh_handle = meshes.add(fin_mesh);
     let fin_mat_handle = materials.add(fin_material);
 
+    let collider = fin_collider(rocket_dims.fin_height, rocket_dims.fin_length, FIN_THICKNESS_M)
+        .unwrap_or_else(|| Collider::cuboid(rocket_dims.fin_length, rocket_dims.fin_height, FIN_THICKNESS_M));
+    let collision_layers = CollisionLayers::new([GameLayer::Rocket], [GameLayer::Ground]);
+    let friction = Friction::new(0.7);
+    let restitution = Restitution::new(0.4);
+
     let mut bundles = Vec::new();
     for i in 0..n_fins {
         let angle = i as f32 * degs_per_fin.to_radians();
@@ -448,6 +474,10 @@ pub fn create_rocket_fin_pbr_bundles(
                 rotation: fin_rotation,
                 ..Default::default()
             },
+            collider.clone(),
+            collision_layers,
+            friction,
+            restitution,
         ));
     }
     bundles
@@ -566,9 +596,9 @@ mod tests {
 
         let first_mesh = &bundles[0].0 .0;
         let first_material = &bundles[0].1 .0;
-        for (mesh, material, _) in &bundles {
-            assert_eq!(&mesh.0, first_mesh);
-            assert_eq!(&material.0, first_material);
+        for bundle in &bundles {
+            assert_eq!(&bundle.0 .0, first_mesh);
+            assert_eq!(&bundle.1 .0, first_material);
         }
     }
 
@@ -603,9 +633,9 @@ mod tests {
         );
 
         assert_eq!(short.len(), long.len());
-        for (short_bundle, long_bundle) in short.iter().zip(long.iter()) {
-            assert_eq!(short_bundle.2.translation.y, long_bundle.2.translation.y);
-            assert_eq!(short_bundle.2.translation.y, -dims_short_cone.length * 0.5);
+        for (s, l) in short.iter().zip(long.iter()) {
+            assert_eq!(s.2.translation.y, l.2.translation.y);
+            assert_eq!(s.2.translation.y, -dims_short_cone.length * 0.5);
         }
     }
 
