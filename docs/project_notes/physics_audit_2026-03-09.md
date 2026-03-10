@@ -69,14 +69,7 @@ The only landing trigger requires `velocity.y <= 0.25 m/s`. A rocket hitting the
 
 ### P2: Linear damping used as air drag proxy
 
-**Location:** `rocket.rs` — `LinearDamping(0.4)` on rocket entity
-
-Real aerodynamic drag is F = 0.5 * Cd * A * rho * v² (v-squared). `LinearDamping` applies F = -c * v (linear). Effects:
-- Too much drag at low speed (near apogee, coast feels sluggish)
-- Too little drag at high speed (ascent barely resists)
-- Orientation-independent (tumbling rocket decelerates same as streamlined)
-
-The parachute correctly uses v² drag, but the rocket body has no explicit drag model during powered flight or coast.
+**Status:** Resolved — `LinearDamping(0.0)` now set on rocket entity. Proper v² drag via `apply_aerodynamic_drag_system` in `drag.rs` with axial/lateral decomposition and geometry-derived Cd.
 
 ### P3: No aerodynamic stability model
 
