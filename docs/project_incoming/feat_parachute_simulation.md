@@ -12,40 +12,35 @@ Add a deployable parachute system that slows the rocket's descent after apogee, 
 
 Parachute deployment is a core part of model rocketry — most real launches use single or dual-deploy recovery systems. This adds a meaningful player decision (when to deploy) and a success condition beyond just going high.
 
-## v1 — Deployment mechanics (current focus)
+## v1 — Deployment mechanics ✅ COMPLETE
 
-Focus on the deployment flow and drag physics. Visual is a placeholder (ball gizmo on a cord, or simple streamer). The deployment sequence mirrors real model rockets:
+Shipped across multiple commits (Feb–Mar 2026). What landed:
 
-1. Player presses deploy key (e.g. `P`) while rocket is descending
-2. Nose cone pops off — becomes a separate rigid body with small upward impulse
-3. Shock cord visual (thin cylinder) connects cone to tube
-4. Placeholder chute visual spawns above tube (ball gizmo or streamer)
-5. Drag force applies to rocket: `F = 0.5 * Cd * A * rho * v²` opposing velocity
-6. Rocket descends at terminal velocity, lands softly
+1. Deploy key (`P`) triggers chute while descending
+2. Nose cone detaches as a separate avian3d physics body with upward impulse and collision layers
+3. Procedural spherical cap canopy mesh (not placeholder) with inflation animation
+4. Shroud lines with analytic Bezier sag from canopy rim to rocket body
+5. Recovery tethers using avian3d `DistanceJoint` (cone↔rocket, canopy↔rocket)
+6. Orientation-dependent v² aerodynamic drag (axial Cd derived from cone geometry)
+7. Canopy collapses on landing
+8. `RocketStateEnum::Descending` state, auto-deploy at apogee
+9. Chute diameter slider in Lab panel
+10. Full test coverage for joint spawning, cleanup, and lifecycle
 
-### Rocket lifecycle
+### What v1 exceeded original scope on
 
-- New state: `RocketStateEnum::Descending` (chute deployed) between `Launched` and `Grounded`
-- Deploy only valid when rocket is above a minimum altitude and has been launched
-- Landing with chute deployed = soft landing; without = crash
+- Spherical cap canopy mesh (was planned for v2)
+- Shroud lines with sag (was planned for v2)
+- Deployment animation (was planned for v2)
+- Orientation-dependent drag (not originally scoped)
 
-### UI
+## v2 — Canopy secondary motion (next)
 
-- Deploy keybind (`P`)
-- Chute diameter slider in Lab panel (affects drag area `A`)
-- Status indicator: "Chute: stowed / deployed / landed"
+Canopy mesh and shroud lines already exist from v1. Remaining v2 work:
 
-### What v1 does NOT include
-
-- Proper canopy mesh (ball/streamer placeholder only)
-- Cloth simulation
-- Wind interaction with chute
-- Tangling / failure modes
-- Dual deploy
-
-## v2 — Spherical cap canopy
-
-Replace placeholder with a procedural spherical cap mesh. Add secondary motion via shape relaxation (inflation parameter, sinusoidal flutter, velocity lag). Shroud lines as thin cylinders from rim to tube. State-driven deployment animation (packed → deploying → inflating → open).
+- Sinusoidal flutter / breathing animation on the canopy during descent
+- Velocity-dependent canopy lag (tilts away from direction of travel)
+- Wind interaction with canopy shape
 
 ## v3 — Cloth-like canopy
 
