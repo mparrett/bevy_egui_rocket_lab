@@ -676,4 +676,88 @@ mod tests {
             expected_y
         );
     }
+
+    fn deploy_test_app() -> App {
+        let mut app = App::new();
+        app.add_message::<DeployParachuteEvent>();
+        app.insert_resource(RocketState {
+            state: RocketStateEnum::Launched,
+            ..Default::default()
+        });
+        app.insert_resource(ParachuteConfig::default());
+        app.insert_resource(RocketDimensions::default());
+        app.insert_resource(RocketMassModel::default());
+        app.insert_resource(Assets::<Mesh>::default());
+        app.insert_resource(Assets::<StandardMaterial>::default());
+        app.add_systems(Update, deploy_parachute_system);
+
+        let mesh_handle = {
+            let mut meshes = app.world_mut().resource_mut::<Assets<Mesh>>();
+            meshes.add(Mesh::from(Cylinder::new(0.01, 0.05)))
+        };
+        let material_handle = {
+            let mut materials = app.world_mut().resource_mut::<Assets<StandardMaterial>>();
+            materials.add(StandardMaterial::default())
+        };
+
+        app.world_mut().spawn((
+            RocketMarker,
+            Transform::default(),
+            LinearVelocity(Vec3::new(0.0, -2.0, 0.0)),
+        ));
+        app.world_mut().spawn((
+            RocketCone,
+            Mesh3d(mesh_handle),
+            MeshMaterial3d(material_handle),
+            Transform::from_translation(Vec3::Y * 0.3),
+            GlobalTransform::from_translation(Vec3::Y * 0.3),
+        ));
+
+        app.world_mut().write_message(DeployParachuteEvent);
+        app.update();
+        app
+    }
+
+    #[test]
+    fn deploy_spawns_recovery_joints_and_inherits_velocity() {
+        let mut app = deploy_test_app();
+
+        let joint_count = {
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<&DistanceJoint, With<RecoveryJoint>>();
+            q.iter(world).count()
+        };
+        assert_eq!(joint_count, 2, "should spawn shock cord + shroud joints");
+
+        let cone_vel_y = {
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<&LinearVelocity, With<DetachedCone>>();
+            q.single(world).expect("detached cone").y
+        };
+        assert!(
+            cone_vel_y < 0.0,
+            "cone should inherit rocket's downward velocity, got y={}",
+            cone_vel_y,
+        );
+    }
+
+    #[test]
+    fn cleanup_despawns_joints() {
+        let mut app = deploy_test_app();
+        app.add_message::<ResetEvent>();
+        app.add_systems(Update, cleanup_parachute_system);
+
+        app.world_mut().write_message(ResetEvent);
+        app.update();
+
+        let joint_count = {
+            let world = app.world_mut();
+            let mut q = world.query_filtered::<Entity, With<RecoveryJoint>>();
+            q.iter(world).count()
+        };
+        assert_eq!(
+            joint_count, 0,
+            "all recovery joints should be despawned after reset"
+        );
+    }
 }
