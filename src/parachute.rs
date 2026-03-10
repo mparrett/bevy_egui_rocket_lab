@@ -18,6 +18,8 @@ const CAP_DEPTH_RATIO: f32 = 0.4;
 const INFLATION_SECS: f32 = 0.8;
 const FLUTTER_AMPLITUDE: f32 = 0.08;
 const FLUTTER_FREQ: f32 = 4.0;
+const COLLAPSE_SPEED: f32 = 2.0;
+const COLLAPSED_DRAG_FRACTION: f32 = 0.05;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
 const SEGMENTS_PER_LINE: u32 = 3;
 const CHUTE_BODY_HEIGHT: f32 = 0.06;
@@ -52,6 +54,7 @@ pub struct ShroudLine {
 pub enum CanopyPhase {
     Inflating,
     Open,
+    Collapsed,
 }
 
 #[derive(Component)]
@@ -321,6 +324,7 @@ pub fn deploy_parachute_system(
 
 pub fn parachute_drag_system(
     parachute_config: Res<ParachuteConfig>,
+    rocket_state: Res<RocketState>,
     wind: Res<wind::WindProperties>,
     mut chute_query: Query<Forces, With<ParachuteBody>>,
 ) {
@@ -340,7 +344,10 @@ pub fn parachute_drag_system(
     let cd = 0.8;
     let rho = 1.225;
     let r = parachute_config.diameter * 0.5;
-    let area = std::f32::consts::PI * r * r;
+    let mut area = std::f32::consts::PI * r * r;
+    if rocket_state.state == RocketStateEnum::Grounded {
+        area *= COLLAPSED_DRAG_FRACTION;
+    }
 
     let speed = speed_sq.sqrt();
     let drag_magnitude = (0.5 * cd * area * rho * speed_sq).min(50.0);
@@ -351,9 +358,11 @@ pub fn parachute_drag_system(
 pub fn animate_canopy_system(
     time: Res<Time>,
     parachute_config: Res<ParachuteConfig>,
+    rocket_state: Res<RocketState>,
     mut canopy_query: Query<(&mut CanopyAnimation, &mut Transform, &Mesh3d), With<ParachuteVisual>>,
     mut meshes: ResMut<Assets<Mesh>>,
     chute_body_query: Query<&Transform, (With<ParachuteBody>, Without<ParachuteVisual>)>,
+    mut chute_damping_query: Query<(&mut LinearDamping, &mut AngularDamping), With<ParachuteBody>>,
 ) {
     if !parachute_config.deployed {
         return;
@@ -367,6 +376,16 @@ pub fn animate_canopy_system(
 
     let dt = time.delta_secs();
     anim.flutter_time += dt;
+
+    if rocket_state.state == RocketStateEnum::Grounded
+        && !matches!(anim.phase, CanopyPhase::Collapsed)
+    {
+        anim.phase = CanopyPhase::Collapsed;
+        if let Ok((mut lin_damp, mut ang_damp)) = chute_damping_query.single_mut() {
+            lin_damp.0 = 4.0;
+            ang_damp.0 = 4.0;
+        }
+    }
 
     match anim.phase {
         CanopyPhase::Inflating => {
@@ -382,6 +401,10 @@ pub fn animate_canopy_system(
         CanopyPhase::Open => {
             let flutter = (anim.flutter_time * FLUTTER_FREQ).sin() * FLUTTER_AMPLITUDE * anim.target_depth;
             anim.current_depth = anim.target_depth + flutter;
+        }
+        CanopyPhase::Collapsed => {
+            anim.current_depth = (anim.current_depth - dt * COLLAPSE_SPEED * anim.target_depth)
+                .max(0.001);
         }
     }
 
