@@ -6,6 +6,7 @@ use crate::physics::GameLayer;
 use crate::rocket::{
     RocketCone, RocketDimensions, RocketMarker, RocketMassModel, RocketState, RocketStateEnum,
 };
+use crate::wind;
 use crate::ResetEvent;
 
 pub const EJECTION_DELAY_SECS: f32 = 3.0;
@@ -19,6 +20,7 @@ const FLUTTER_AMPLITUDE: f32 = 0.08;
 const FLUTTER_FREQ: f32 = 4.0;
 const SHROUD_CORD_RADIUS: f32 = 0.001;
 const SEGMENTS_PER_LINE: u32 = 3;
+const CHUTE_BODY_HEIGHT: f32 = 0.06;
 const TETHER_LENGTH: f32 = 1.0;
 
 #[derive(Component)]
@@ -37,6 +39,9 @@ pub struct ShockCord;
 
 #[derive(Component)]
 pub struct ParachuteVisual;
+
+#[derive(Component)]
+pub struct RecoveryJoint;
 
 #[derive(Component)]
 pub struct ShroudLine {
@@ -111,7 +116,7 @@ pub fn deploy_parachute_system(
     mut deploy_events: MessageReader<DeployParachuteEvent>,
     mut rocket_state: ResMut<RocketState>,
     mut parachute_config: ResMut<ParachuteConfig>,
-    rocket_query: Query<&Transform, With<RocketMarker>>,
+    rocket_query: Query<(Entity, &Transform, &LinearVelocity), With<RocketMarker>>,
     rocket_dims: Res<RocketDimensions>,
     mass_model: Res<RocketMassModel>,
     cone_query: Query<
@@ -131,7 +136,7 @@ pub fn deploy_parachute_system(
         return;
     }
 
-    let Ok(rocket_transform) = rocket_query.single() else {
+    let Ok((rocket_entity, rocket_transform, rocket_velocity)) = rocket_query.single() else {
         return;
     };
     let Ok((cone_ent, cone_global, cone_mesh, cone_mat)) = cone_query.single() else {
@@ -155,14 +160,15 @@ pub fn deploy_parachute_system(
     let cone_mass =
         std::f32::consts::PI * r * slant * mass_model.nose_wall_thickness_m * mass_model.nose_density_kg_m3;
 
-    commands
+    let cone_ejection_vel = rocket_velocity.0 + Vec3::new(0.2, 1.5, 0.1);
+    let cone_entity = commands
         .spawn((
             DetachedCone,
             RigidBody::Dynamic,
             TransformInterpolation,
             Collider::cone(r, cl),
             Mass(cone_mass.max(1e-4)),
-            LinearVelocity(Vec3::new(0.2, 1.5, 0.1)),
+            LinearVelocity(cone_ejection_vel),
             AngularVelocity(Vec3::new(2.0, 1.0, 3.0)),
             LinearDamping(0.0),
             AngularDamping(0.3),
@@ -176,7 +182,8 @@ pub fn deploy_parachute_system(
             Transform::from_translation(cone_world_pos).with_rotation(cone_world_rot),
             Visibility::default(),
             Name::new("DetachedCone"),
-        ));
+        ))
+        .id();
 
     // Shock cord
     let cord_mesh = meshes.add(
@@ -238,14 +245,16 @@ pub fn deploy_parachute_system(
     // Parachute physics body — invisible cone for ground interaction
     let cone_base = cone_world_pos + cone_world_rot * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
     let chute_body_rot = Quat::from_rotation_z(std::f32::consts::PI);
-    let chute_body_center = cone_base + Vec3::Y * shroud_line_length * 0.5;
-    commands.spawn((
+    let chute_body_center = cone_base + Vec3::Y * (shroud_line_length - CHUTE_BODY_HEIGHT * 0.5);
+    let chute_entity = commands.spawn((
         ParachuteBody,
         RigidBody::Dynamic,
         TransformInterpolation,
-        Collider::cone(rim_radius, shroud_line_length),
+        Collider::cone(rim_radius, CHUTE_BODY_HEIGHT),
         Mass(0.005),
-        LinearVelocity(Vec3::new(0.2, 1.5, 0.1)),
+        NoAutoCenterOfMass,
+        CenterOfMass(Vec3::NEG_Y * CHUTE_BODY_HEIGHT * 0.3),
+        LinearVelocity(cone_ejection_vel),
         AngularDamping(0.5),
         LinearDamping(0.0),
         CollisionLayers::new([GameLayer::Debris], [GameLayer::Ground]),
@@ -253,7 +262,7 @@ pub fn deploy_parachute_system(
         Friction::new(0.8),
         Transform::from_translation(chute_body_center).with_rotation(chute_body_rot),
         Name::new("ParachuteBody"),
-    ));
+    )).id();
 
     // Shroud lines (every other radial segment → 6 lines from 12 segments)
     let line_mesh = meshes.add(
@@ -282,6 +291,28 @@ pub fn deploy_parachute_system(
         }
     }
 
+    // Shock cord joint: rocket tube top ↔ detached cone base
+    commands.spawn((
+        DistanceJoint::new(rocket_entity, cone_entity)
+            .with_local_anchor1(Vec3::Y * rocket_dims.length * 0.5)
+            .with_local_anchor2(Vec3::NEG_Y * cl * 0.5)
+            .with_limits(0.0, TETHER_LENGTH),
+        JointDamping { linear: 1.0, angular: 0.0 },
+        RecoveryJoint,
+        Name::new("ShockCordJoint"),
+    ));
+
+    // Shroud line joint: cone base ↔ parachute body top
+    commands.spawn((
+        DistanceJoint::new(cone_entity, chute_entity)
+            .with_local_anchor1(Vec3::NEG_Y * cl * 0.5)
+            .with_local_anchor2(Vec3::NEG_Y * CHUTE_BODY_HEIGHT * 0.5)
+            .with_limits(0.0, shroud_line_length),
+        JointDamping { linear: 1.0, angular: 0.0 },
+        RecoveryJoint,
+        Name::new("ShroudLineJoint"),
+    ));
+
     info!(
         "Parachute deployed at altitude {:.1}m",
         rocket_transform.translation.y
@@ -290,17 +321,18 @@ pub fn deploy_parachute_system(
 
 pub fn parachute_drag_system(
     parachute_config: Res<ParachuteConfig>,
-    mut query: Query<Forces, With<ParachuteBody>>,
+    wind: Res<wind::WindProperties>,
+    mut chute_query: Query<Forces, With<ParachuteBody>>,
 ) {
     if !parachute_config.deployed {
         return;
     }
-    let Ok(mut forces) = query.single_mut() else {
+    let Ok(mut chute_forces) = chute_query.single_mut() else {
         return;
     };
 
-    let velocity = forces.linear_velocity();
-    let speed_sq = velocity.length_squared();
+    let relative_velocity = chute_forces.linear_velocity() - wind.wind_velocity_world;
+    let speed_sq = relative_velocity.length_squared();
     if speed_sq < 1e-6 {
         return;
     }
@@ -312,8 +344,8 @@ pub fn parachute_drag_system(
 
     let speed = speed_sq.sqrt();
     let drag_magnitude = (0.5 * cd * area * rho * speed_sq).min(50.0);
-    let drag_force = -velocity / speed * drag_magnitude;
-    forces.apply_force(drag_force);
+    let drag_force = -relative_velocity / speed * drag_magnitude;
+    chute_forces.apply_force(drag_force);
 }
 
 pub fn animate_canopy_system(
@@ -353,12 +385,10 @@ pub fn animate_canopy_system(
         }
     }
 
-    let shroud_line_length = parachute_config.diameter;
     let base_pos = chute_body_tf.translation
-        + chute_body_tf.rotation * (Vec3::NEG_Y * shroud_line_length * 0.5);
+        + chute_body_tf.rotation * (Vec3::NEG_Y * CHUTE_BODY_HEIGHT * 0.5);
     canopy_tf.translation = base_pos;
-    let base_up = chute_body_tf.rotation * Vec3::NEG_Y;
-    canopy_tf.rotation = Quat::from_rotation_arc(Vec3::Y, base_up);
+    canopy_tf.rotation = Quat::IDENTITY;
 
     if let Some(mesh) = meshes.get_mut(&mesh3d.0) {
         let new_mesh = Mesh::from(SphericalCap {
@@ -389,7 +419,7 @@ pub fn update_shroud_lines_system(
     parachute_config: Res<ParachuteConfig>,
     rocket_dims: Res<RocketDimensions>,
     cone_query: Query<&Transform, With<DetachedCone>>,
-    chute_body_query: Query<&Transform, (With<ParachuteBody>, Without<DetachedCone>, Without<ShroudLine>)>,
+    canopy_query: Query<&Transform, (With<ParachuteVisual>, Without<DetachedCone>, Without<ShroudLine>)>,
     mut line_query: Query<
         (&ShroudLine, &mut Transform),
         (Without<DetachedCone>, Without<ParachuteBody>),
@@ -401,7 +431,7 @@ pub fn update_shroud_lines_system(
     let Ok(cone_tf) = cone_query.single() else {
         return;
     };
-    let Ok(chute_body_tf) = chute_body_query.single() else {
+    let Ok(canopy_tf) = canopy_query.single() else {
         return;
     };
 
@@ -410,17 +440,17 @@ pub fn update_shroud_lines_system(
         + cone_tf.rotation * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
     let rim_radius = parachute_config.diameter * 0.5;
     let shroud_line_length = parachute_config.diameter;
-    let rest_len = parachute_config.diameter * 1.15;
+    let rest_len = (shroud_line_length * shroud_line_length + rim_radius * rim_radius).sqrt() * 1.15;
     let segs = SEGMENTS_PER_LINE as f32;
 
     for (shroud, mut line_tf) in &mut line_query {
         let phi = shroud.rim_index as f32 / RADIAL_SEGMENTS as f32 * tau;
         let local_rim = Vec3::new(
             rim_radius * phi.cos(),
-            -shroud_line_length * 0.5,
+            0.0,
             rim_radius * phi.sin(),
         );
-        let rim_world = chute_body_tf.translation + chute_body_tf.rotation * local_rim;
+        let rim_world = canopy_tf.translation + canopy_tf.rotation * local_rim;
 
         let d = (rim_world - bottom).length();
         let sag = 0.5 * (rest_len * rest_len - d * d).max(0.0).sqrt();
@@ -480,77 +510,6 @@ pub fn update_shock_cord_system(
     }
 }
 
-pub fn update_detached_cone_system(
-    parachute_config: Res<ParachuteConfig>,
-    rocket_query: Query<(&Position, &Rotation), (With<RocketMarker>, Without<DetachedCone>)>,
-    rocket_dims: Res<RocketDimensions>,
-    mut cone_query: Query<(&mut Position, &Rotation, &mut LinearVelocity), With<DetachedCone>>,
-) {
-    if !parachute_config.deployed {
-        return;
-    }
-    let Ok((rocket_pos, rocket_rot)) = rocket_query.single() else {
-        return;
-    };
-    let Ok((mut cone_pos, cone_rot, mut cone_vel)) = cone_query.single_mut() else {
-        return;
-    };
-
-    let tube_top = rocket_pos.0
-        + rocket_rot.0 * (Vec3::Y * rocket_dims.length * 0.5);
-    let base_offset = cone_rot.0 * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
-    let cone_base = cone_pos.0 + base_offset;
-    let diff = cone_base - tube_top;
-    let distance = diff.length();
-    if distance > TETHER_LENGTH {
-        let dir = diff / distance;
-        let correction = dir * (distance - TETHER_LENGTH);
-        cone_pos.0 -= correction;
-
-        let outward_speed = cone_vel.0.dot(dir);
-        if outward_speed > 0.0 {
-            cone_vel.0 -= dir * outward_speed;
-        }
-    }
-}
-
-
-pub fn update_parachute_tether_system(
-    parachute_config: Res<ParachuteConfig>,
-    rocket_dims: Res<RocketDimensions>,
-    cone_query: Query<(&Position, &Rotation), (With<DetachedCone>, Without<ParachuteBody>)>,
-    mut chute_query: Query<(&mut Position, &Rotation, &mut LinearVelocity), With<ParachuteBody>>,
-) {
-    if !parachute_config.deployed {
-        return;
-    }
-    let Ok((cone_pos, cone_rot)) = cone_query.single() else {
-        return;
-    };
-    let Ok((mut chute_pos, chute_rot, mut chute_vel)) = chute_query.single_mut() else {
-        return;
-    };
-
-    let cone_base = cone_pos.0
-        + cone_rot.0 * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
-    let shroud_line_length = parachute_config.diameter;
-    let tip_offset = chute_rot.0 * (Vec3::Y * shroud_line_length * 0.5);
-    let tip_world = chute_pos.0 + tip_offset;
-
-    let diff = tip_world - cone_base;
-    let distance = diff.length();
-    let max_dist = 0.05;
-    if distance > max_dist {
-        let dir = diff / distance;
-        let correction = dir * (distance - max_dist);
-        chute_pos.0 -= correction;
-
-        let outward_speed = chute_vel.0.dot(dir);
-        if outward_speed > 0.0 {
-            chute_vel.0 -= dir * outward_speed;
-        }
-    }
-}
 
 pub fn cleanup_parachute_system(
     mut commands: Commands,
@@ -563,6 +522,7 @@ pub fn cleanup_parachute_system(
     chute_query: Query<Entity, With<ParachuteVisual>>,
     shroud_query: Query<Entity, With<ShroudLine>>,
     chute_body_query: Query<Entity, With<ParachuteBody>>,
+    joint_query: Query<Entity, With<RecoveryJoint>>,
     ejection_query: Query<Entity, (With<RocketMarker>, With<EjectionTimer>)>,
 ) {
     if reset_events.read().next().is_none() {
@@ -596,6 +556,9 @@ pub fn cleanup_parachute_system(
         commands.entity(entity).despawn();
     }
     for entity in &chute_body_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in &joint_query {
         commands.entity(entity).despawn();
     }
 
@@ -677,7 +640,7 @@ mod tests {
             materials.add(StandardMaterial::default())
         };
 
-        app.world_mut().spawn((RocketMarker, Transform::default()));
+        app.world_mut().spawn((RocketMarker, Transform::default(), LinearVelocity::default()));
         app.world_mut().spawn((
             RocketCone,
             Mesh3d(mesh_handle),
@@ -697,5 +660,20 @@ mod tests {
         };
         assert!(app.world().entity(detached).contains::<Collider>());
         assert!(app.world().entity(detached).contains::<RigidBody>());
+
+        let chute_body = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<&Transform, With<ParachuteBody>>();
+            *query.single(world).expect("parachute body should spawn")
+        };
+        let cone_base_y = 0.3 - RocketDimensions::default().cone_length * 0.5;
+        let expected_y =
+            cone_base_y + ParachuteConfig::default().diameter - CHUTE_BODY_HEIGHT * 0.5;
+        assert!(
+            (chute_body.translation.y - expected_y).abs() < 1e-5,
+            "parachute body should spawn under the canopy, got {}, expected {}",
+            chute_body.translation.y,
+            expected_y
+        );
     }
 }

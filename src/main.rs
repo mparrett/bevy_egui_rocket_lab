@@ -293,17 +293,6 @@ fn main() {
             .in_set(PhysicsSystems::First)
             .run_if(in_state(AppState::Launch)),
     );
-    app.add_systems(
-        FixedPostUpdate,
-        (
-            parachute::update_detached_cone_system,
-            parachute::update_parachute_tether_system,
-        )
-            .chain()
-            .after(PhysicsSystems::StepSimulation)
-            .before(PhysicsSystems::Writeback)
-            .run_if(in_state(AppState::Launch)),
-    );
 
     app.add_systems(Startup, spawn_regular_sky_map);
     app.add_systems(Update, (cubemap_asset_loaded, check_loading_complete));
