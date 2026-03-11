@@ -176,7 +176,7 @@ pub fn deploy_parachute_system(
             LinearVelocity(cone_ejection_vel),
             AngularVelocity(Vec3::new(2.0, 1.0, 3.0)),
             LinearDamping(0.0),
-            AngularDamping(0.3),
+            AngularDamping(1.0),
             CollisionLayers::new([GameLayer::Debris], [GameLayer::Ground]),
             Restitution::new(0.3),
             Friction::new(0.5),
@@ -369,6 +369,7 @@ pub fn animate_canopy_system(
     mut meshes: ResMut<Assets<Mesh>>,
     chute_body_query: Query<&Transform, (With<ParachuteBody>, Without<ParachuteVisual>)>,
     mut chute_damping_query: Query<(&mut LinearDamping, &mut AngularDamping), With<ParachuteBody>>,
+    mut cone_damping_query: Query<(&mut LinearDamping, &mut AngularDamping), (With<DetachedCone>, Without<ParachuteBody>)>,
 ) {
     if !parachute_config.deployed {
         return;
@@ -390,6 +391,10 @@ pub fn animate_canopy_system(
         if let Ok((mut lin_damp, mut ang_damp)) = chute_damping_query.single_mut() {
             lin_damp.0 = 4.0;
             ang_damp.0 = 4.0;
+        }
+        if let Ok((mut lin_damp, mut ang_damp)) = cone_damping_query.single_mut() {
+            lin_damp.0 = 4.0;
+            ang_damp.0 = 5.0;
         }
     }
 
@@ -553,6 +558,7 @@ pub fn cleanup_parachute_system(
     chute_body_query: Query<Entity, With<ParachuteBody>>,
     joint_query: Query<Entity, With<RecoveryJoint>>,
     ejection_query: Query<Entity, (With<RocketMarker>, With<EjectionTimer>)>,
+    rocket_cam_query: Query<Entity, With<RocketCamMarker>>,
 ) {
     if reset_events.read().next().is_none() {
         return;
@@ -566,7 +572,13 @@ pub fn cleanup_parachute_system(
         return;
     }
 
-    // Despawn the visual-only detached cone
+    // Unparent the rocket cam before despawning the detached cone (which is
+    // its current parent after parachute deploy). Bevy's despawn is recursive,
+    // so without this the camera entity would be destroyed.
+    if let Ok(cam_entity) = rocket_cam_query.single() {
+        commands.entity(cam_entity).remove_parent_in_place();
+    }
+
     for entity in &detached_cone_query {
         commands.entity(entity).despawn();
     }
