@@ -3,16 +3,40 @@ use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
 use bevy::prelude::*;
 use std::f32::consts::PI;
 
+use crate::AppState;
 use crate::rocket::RocketMarker;
 
 #[derive(Component)]
 pub struct RocketCamMarker;
 
 #[derive(Component)]
+pub struct DroneCamMarker;
+
+#[derive(Component)]
 pub struct EguiOverlayCam;
+
+#[derive(PartialEq, Copy, Clone, Default)]
+pub enum AuxCamKind {
+    #[default]
+    RocketCam,
+    DroneCam,
+}
 
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
+
+pub const DRONE_CAM_POSITION: Vec3 = Vec3::new(0.0, 50.0, 8.0);
+pub const DRONE_CAM_FOV_DEGREES: f32 = 65.0;
+
+pub const LAUNCH_CAMERA_POS: Vec3 = INITIAL_CAMERA_POS;
+pub const LAUNCH_CAMERA_DISTANCE: f32 = 6.0;
+
+pub const LAB_CAMERA_POS: Vec3 = Vec3::new(-0.6, 1.5, 1.5);
+pub const LAB_CAMERA_DISTANCE: f32 = 2.5;
+
+pub const STORE_CAMERA_POS: Vec3 = Vec3::new(-0.3, 1.3, -0.5);
+pub const STORE_CAMERA_TARGET: Vec3 = Vec3::new(0.3, 1.15, -2.2);
+pub const STORE_CAMERA_DISTANCE: f32 = 1.5;
 
 pub const CAMERA_DAMPING_RATIO: f32 = 1.0; // Critically damped by default.
 pub const CAMERA_FAST_FOLLOW_FREQ_HZ: f32 = 6.5;
@@ -53,8 +77,9 @@ pub struct CameraProperties {
     pub follow_mode: FollowMode,
     pub fixed_distance: f32,
     pub egui_has_pointer: bool,
-    pub rocket_cam_enabled: bool,
+    pub aux_cam_enabled: bool,
     pub camera_swapped: bool,
+    pub aux_cam_kind: AuxCamKind,
 }
 impl Default for CameraProperties {
     fn default() -> Self {
@@ -73,14 +98,121 @@ impl Default for CameraProperties {
             follow_mode: FollowMode::FreeLook,
             fixed_distance: 6.0,
             egui_has_pointer: false,
-            rocket_cam_enabled: false,
+            aux_cam_enabled: false,
             camera_swapped: false,
+            aux_cam_kind: AuxCamKind::default(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct CameraSnapshot {
+    pub desired_translation: Vec3,
+    pub target: Vec3,
+    pub target_y_offset: f32,
+    pub orbit_angle_degrees: f32,
+    pub fixed_distance: f32,
+    pub follow_mode: FollowMode,
+    pub zoom: f32,
+    pub zoom_index: usize,
+}
+
+impl CameraProperties {
+    pub fn save_snapshot(&self) -> CameraSnapshot {
+        CameraSnapshot {
+            desired_translation: self.desired_translation,
+            target: self.target,
+            target_y_offset: self.target_y_offset,
+            orbit_angle_degrees: self.orbit_angle_degrees,
+            fixed_distance: self.fixed_distance,
+            follow_mode: self.follow_mode,
+            zoom: self.zoom,
+            zoom_index: self.zoom_index,
+        }
+    }
+
+    pub fn restore_snapshot(&mut self, snap: &CameraSnapshot) {
+        self.desired_translation = snap.desired_translation;
+        self.target = snap.target;
+        self.target_y_offset = snap.target_y_offset;
+        self.orbit_angle_degrees = snap.orbit_angle_degrees;
+        self.fixed_distance = snap.fixed_distance;
+        self.follow_mode = snap.follow_mode;
+        self.zoom = snap.zoom;
+        self.zoom_index = snap.zoom_index;
+        self.lagged_translation = snap.desired_translation;
+        self.lagged_translation_velocity = Vec3::ZERO;
+        self.lagged_target = snap.target;
+        self.lagged_target_velocity = Vec3::ZERO;
+    }
+
+    pub fn apply_scene_defaults(&mut self, state: &AppState, rocket_target: Vec3) {
+        match state {
+            AppState::Lab => {
+                self.follow_mode = FollowMode::FreeLook;
+                self.fixed_distance = LAB_CAMERA_DISTANCE;
+                self.desired_translation = LAB_CAMERA_POS;
+                self.target = rocket_target;
+            }
+            AppState::Store => {
+                self.follow_mode = FollowMode::FreeLook;
+                self.fixed_distance = STORE_CAMERA_DISTANCE;
+                self.desired_translation = STORE_CAMERA_POS;
+                self.target = STORE_CAMERA_TARGET;
+            }
+            AppState::Launch | AppState::Menu => {
+                self.follow_mode = FollowMode::FreeLook;
+                self.fixed_distance = LAUNCH_CAMERA_DISTANCE;
+                self.desired_translation = LAUNCH_CAMERA_POS;
+                self.target = rocket_target;
+                self.orbit_angle_degrees = 20.0;
+            }
+        }
+        self.lagged_translation = self.desired_translation;
+        self.lagged_translation_velocity = Vec3::ZERO;
+        self.lagged_target = self.target;
+        self.lagged_target_velocity = Vec3::ZERO;
+    }
+}
+
+#[derive(Resource, Default)]
+pub struct SceneCameraState {
+    pub lab: Option<CameraSnapshot>,
+    pub store: Option<CameraSnapshot>,
+    pub launch: Option<CameraSnapshot>,
+}
+
+impl SceneCameraState {
+    pub fn get(&self, state: &AppState) -> Option<&CameraSnapshot> {
+        match state {
+            AppState::Lab => self.lab.as_ref(),
+            AppState::Store => self.store.as_ref(),
+            AppState::Launch => self.launch.as_ref(),
+            AppState::Menu => None,
+        }
+    }
+
+    pub fn set(&mut self, state: &AppState, snap: CameraSnapshot) {
+        match state {
+            AppState::Lab => self.lab = Some(snap),
+            AppState::Store => self.store = Some(snap),
+            AppState::Launch => self.launch = Some(snap),
+            AppState::Menu => {}
+        }
+    }
+
+    pub fn clear(&mut self, state: &AppState) {
+        match state {
+            AppState::Lab => self.lab = None,
+            AppState::Store => self.store = None,
+            AppState::Launch => self.launch = None,
+            AppState::Menu => {}
         }
     }
 }
 
 pub fn update_camera_zoom_perspective_system(
-    mut query_camera: Query<&mut Projection, (With<Camera3d>, Without<RocketCamMarker>, Without<EguiOverlayCam>)>,
+    mut query_camera: Query<&mut Projection, (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>)>,
     camera_properties: Res<CameraProperties>,
 ) {
     let Ok(projection) = query_camera.single_mut() else {
@@ -99,7 +231,7 @@ pub fn update_camera_zoom_perspective_system(
 pub fn update_camera_transform_system(
     time: Res<Time>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<(&Projection, &mut Transform), (With<Camera3d>, Without<RocketCamMarker>, Without<EguiOverlayCam>)>,
+    mut camera_query: Query<(&Projection, &mut Transform), (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>)>,
     mut last_follow_mode: Local<Option<FollowMode>>,
     rocket_velocity_query: Query<&LinearVelocity, With<RocketMarker>>,
 ) {
@@ -343,6 +475,11 @@ mod tests {
         app.world_mut().spawn((
             Camera3d::default(),
             Projection::Perspective(PerspectiveProjection::default()),
+            DroneCamMarker,
+        ));
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
             EguiOverlayCam,
         ));
         app.add_systems(Update, update_camera_zoom_perspective_system);
@@ -352,6 +489,7 @@ mod tests {
         let mut projections = app.world_mut().query_filtered::<&Projection, (
             With<Camera3d>,
             Without<RocketCamMarker>,
+            Without<DroneCamMarker>,
             Without<EguiOverlayCam>,
         )>();
         let projection = projections
@@ -383,6 +521,12 @@ mod tests {
             Camera3d::default(),
             Projection::Perspective(PerspectiveProjection::default()),
             Transform::IDENTITY,
+            DroneCamMarker,
+        ));
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
+            Transform::IDENTITY,
             EguiOverlayCam,
         ));
         app.add_systems(Update, update_camera_transform_system);
@@ -392,6 +536,7 @@ mod tests {
         let mut query = app.world_mut().query_filtered::<&Transform, (
             With<Camera3d>,
             Without<RocketCamMarker>,
+            Without<DroneCamMarker>,
             Without<EguiOverlayCam>,
         )>();
         let transform = query

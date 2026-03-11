@@ -27,7 +27,8 @@ use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 
 use crate::{
     camera::{
-        CAMERA_MODES, CameraProperties, FollowMode, INITIAL_CAMERA_POS, RocketCamMarker,
+        AuxCamKind, CAMERA_MODES, CameraProperties, DroneCamMarker, DRONE_CAM_FOV_DEGREES,
+        DRONE_CAM_POSITION, FollowMode, INITIAL_CAMERA_POS, RocketCamMarker, SceneCameraState,
         ZOOM_LEVELS, mouse_orbit_system, update_camera_transform_system,
         update_camera_zoom_perspective_system,
     },
@@ -221,6 +222,7 @@ fn main() {
         .init_resource::<inventory::PlayerExperience>()
         .init_resource::<wind::WindProperties>()
         .init_resource::<parachute::ParachuteConfig>()
+        .init_resource::<SceneCameraState>()
         .add_systems(
             Startup,
             (
@@ -235,8 +237,12 @@ fn main() {
                 disable_physics_debug,
             ),
         )
-        .add_systems(Startup, spawn_rocket_cam_system.after(spawn_rocket_system))
+        .add_systems(
+            Startup,
+            (spawn_rocket_cam_system, spawn_drone_cam_system).after(spawn_rocket_system),
+        )
         .add_systems(OnEnter(AppState::Launch), setup_launch_hud)
+        .add_systems(OnExit(AppState::Launch), disable_aux_cams_on_exit)
         .add_systems(OnEnter(AppState::Lab), setup_lab_hud)
         .add_systems(OnEnter(AppState::Store), setup_store_hud)
         .add_systems(
@@ -255,7 +261,7 @@ fn main() {
             EguiPrimaryContextPass,
             (
                 do_launch_system,
-                toggle_rocket_cam_system,
+                toggle_aux_cam_system,
             )
                 .run_if(in_state(AppState::Launch)),
         )
@@ -273,6 +279,7 @@ fn main() {
                 update_stats_system,
                 update_wind_hud_system,
                 wind::update_wind_system,
+                drone_cam_track_rocket_system,
             )
                 .run_if(in_state(AppState::Launch)),
         )
@@ -293,7 +300,8 @@ fn main() {
                 fps_counter_showhide,
                 music_crossfade_system,
                 toggle_physics_debug,
-                rocket_cam_viewport_resize_system,
+                aux_cam_viewport_resize_system,
+                sync_aux_cam_kind_system,
             ),
         )
         .add_systems(
@@ -388,7 +396,7 @@ fn sync_sky_render_mode_system(
             Option<&Atmosphere>,
             &mut Tonemapping,
         ),
-        (With<Camera3d>, Without<RocketCamMarker>, Without<camera::EguiOverlayCam>),
+        (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<camera::EguiOverlayCam>),
     >,
 ) {
     if !sky_mode.is_changed() {
@@ -737,14 +745,14 @@ fn on_reset_event(
         (With<RocketMarker>, Without<Camera>),
     >,
     app_state: Res<State<AppState>>,
-    mut rocket_cam_query: Query<(Entity, &mut Camera), With<RocketCamMarker>>,
+    mut rocket_cam_query: Query<(Entity, &mut Camera), (With<RocketCamMarker>, Without<DroneCamMarker>)>,
+    mut drone_cam_query: Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>,
     cone_query: Query<Entity, With<RocketCone>>,
+    mut scene_camera: ResMut<SceneCameraState>,
 ) {
     if reset_events.read().next().is_none() {
         return;
     }
-
-    *camera_properties = CameraProperties::default();
 
     if let Ok((cam_entity, mut cam)) = rocket_cam_query.single_mut() {
         cam.is_active = false;
@@ -755,6 +763,11 @@ fn on_reset_event(
                 .insert(rocket_cam_mount_transform(&rocket_dims));
         }
     }
+    if let Ok(mut cam) = drone_cam_query.single_mut() {
+        cam.is_active = false;
+    }
+    camera_properties.aux_cam_enabled = false;
+    camera_properties.camera_swapped = false;
     if let Some(mut time) = virtual_time {
         time.set_relative_speed(1.0);
     }
@@ -771,6 +784,7 @@ fn on_reset_event(
         _ => rocket_dims.length * 0.5,
     };
 
+    let mut rocket_pos = Vec3::new(0.0, base_y, 0.0);
     if let Ok((rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity)) =
         rocket_query.single_mut()
     {
@@ -779,11 +793,12 @@ fn on_reset_event(
         *lin_velocity = LinearVelocity::ZERO;
         *ang_velocity = AngularVelocity::ZERO;
         rocket_state.launch_origin_y = rocket_transform.translation.y;
-        camera_properties.target = rocket_transform.translation;
-        camera_properties.lagged_target = rocket_transform.translation;
-        camera_properties.lagged_translation = camera_properties.desired_translation;
+        rocket_pos = rocket_transform.translation;
         commands.entity(rocket_ent).remove::<ForceTimer>();
     }
+
+    scene_camera.clear(app_state.get());
+    camera_properties.apply_scene_defaults(app_state.get(), rocket_pos);
 }
 
 fn detect_landing_from_collision_system(
@@ -913,7 +928,7 @@ fn ui_system(
         (With<RocketMarker>, Without<Camera>),
     >,
     mut fog_query: Query<&mut DistanceFog>,
-    mut bloom_query: Query<&mut Bloom, (With<Camera3d>, Without<RocketCamMarker>, Without<camera::EguiOverlayCam>)>,
+    mut bloom_query: Query<&mut Bloom, (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<camera::EguiOverlayCam>)>,
     app_state: Res<State<AppState>>,
 ) -> Result {
     let save_state = &mut save_params.save_state;
@@ -1002,6 +1017,31 @@ fn ui_system(
                                 "Free Look",
                             );
                         });
+
+                    if is_launch {
+                        let kind_label = match camera_properties.aux_cam_kind {
+                            AuxCamKind::RocketCam => "Rocket Cam",
+                            AuxCamKind::DroneCam => "Drone Cam",
+                        };
+                        let prev_kind = camera_properties.aux_cam_kind;
+                        egui::ComboBox::from_label("aux cam")
+                            .selected_text(kind_label)
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut camera_properties.aux_cam_kind,
+                                    AuxCamKind::RocketCam,
+                                    "Rocket Cam",
+                                );
+                                ui.selectable_value(
+                                    &mut camera_properties.aux_cam_kind,
+                                    AuxCamKind::DroneCam,
+                                    "Drone Cam",
+                                );
+                            });
+                        if camera_properties.aux_cam_kind != prev_kind {
+                            camera_properties.camera_swapped = false;
+                        }
+                    }
                 });
 
             if is_lab {
@@ -1762,7 +1802,7 @@ fn ui_system(
                         "Esc: world inspector",
                         "F10: collider gizmos",
                         "F11: profiling HUD",
-                        "V: rocket-cam PiP / Shift+V: swap",
+                        "V: aux-cam PiP / Shift+V: swap",
                         "F12: toggle FPS",
                     ] {
                         ui.label(line);
@@ -1965,6 +2005,107 @@ fn move_toward(current: f32, target: f32, max_delta: f32) -> f32 {
 
 const DEFAULT_FOV_DEGREES: f32 = 45.0;
 
+fn spawn_drone_cam_system(
+    mut commands: Commands,
+    main_cam_query: Query<&Skybox, (With<Camera3d>, Without<RocketCone>, Without<camera::EguiOverlayCam>)>,
+) {
+    let Ok(skybox) = main_cam_query.single() else {
+        return;
+    };
+    let skybox = skybox.clone();
+
+    commands.spawn((
+        Camera3d::default(),
+        Camera {
+            order: 1,
+            is_active: false,
+            clear_color: ClearColorConfig::Custom(Color::BLACK),
+            ..default()
+        },
+        Hdr,
+        Tonemapping::TonyMcMapface,
+        Projection::Perspective(PerspectiveProjection {
+            fov: DRONE_CAM_FOV_DEGREES.to_radians(),
+            ..default()
+        }),
+        Transform::from_translation(DRONE_CAM_POSITION)
+            .looking_at(Vec3::ZERO, Vec3::Y),
+        DroneCamMarker,
+        skybox,
+        Bloom {
+            intensity: 0.15,
+            ..Bloom::NATURAL
+        },
+        Name::new("DroneCam"),
+    ));
+}
+
+fn drone_cam_track_rocket_system(
+    rocket_query: Query<&Transform, (With<RocketMarker>, Without<Camera>)>,
+    mut drone_query: Query<(&Camera, &mut Transform), (With<DroneCamMarker>, Without<RocketMarker>)>,
+) {
+    let Ok(rocket_transform) = rocket_query.single() else {
+        return;
+    };
+    let Ok((cam, mut drone_transform)) = drone_query.single_mut() else {
+        return;
+    };
+    if !cam.is_active {
+        return;
+    }
+    *drone_transform = Transform::from_translation(DRONE_CAM_POSITION)
+        .looking_at(rocket_transform.translation, Vec3::Y);
+}
+
+fn sync_aux_cam_kind_system(
+    camera_properties: Res<CameraProperties>,
+    mut prev_kind: Local<AuxCamKind>,
+    mut rocket_cam_query: Query<&mut Camera, (With<RocketCamMarker>, Without<DroneCamMarker>)>,
+    mut drone_cam_query: Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>,
+) {
+    if camera_properties.aux_cam_kind == *prev_kind {
+        return;
+    }
+    *prev_kind = camera_properties.aux_cam_kind;
+
+    if camera_properties.aux_cam_enabled {
+        // Deactivate old, activate new
+        let (activate_rq, activate_dq) = match camera_properties.aux_cam_kind {
+            AuxCamKind::RocketCam => (true, false),
+            AuxCamKind::DroneCam => (false, true),
+        };
+        if let Ok(mut cam) = rocket_cam_query.single_mut() {
+            cam.is_active = activate_rq;
+        }
+        if let Ok(mut cam) = drone_cam_query.single_mut() {
+            cam.is_active = activate_dq;
+        }
+    } else {
+        // Both off
+        if let Ok(mut cam) = rocket_cam_query.single_mut() {
+            cam.is_active = false;
+        }
+        if let Ok(mut cam) = drone_cam_query.single_mut() {
+            cam.is_active = false;
+        }
+    }
+}
+
+fn disable_aux_cams_on_exit(
+    mut camera_properties: ResMut<CameraProperties>,
+    mut rocket_cam_query: Query<&mut Camera, (With<RocketCamMarker>, Without<DroneCamMarker>)>,
+    mut drone_cam_query: Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>,
+) {
+    if let Ok(mut cam) = rocket_cam_query.single_mut() {
+        cam.is_active = false;
+    }
+    if let Ok(mut cam) = drone_cam_query.single_mut() {
+        cam.is_active = false;
+    }
+    camera_properties.aux_cam_enabled = false;
+    camera_properties.camera_swapped = false;
+}
+
 fn rocket_cam_mount_transform(rocket_dims: &RocketDimensions) -> Transform {
     // Keep the camera outside the cone mesh so fullscreen swap doesn't stare into geometry.
     let mount_pos = Vec3::new(0.0, rocket_dims.cone_length * 0.15, rocket_dims.radius + 0.03);
@@ -2080,11 +2221,12 @@ fn spawn_rocket_cam_system(
     commands.entity(cone_entity).add_child(rocket_cam);
 }
 
-fn rocket_cam_viewport_resize_system(
+fn aux_cam_viewport_resize_system(
     windows: Query<&Window>,
     camera_properties: Res<CameraProperties>,
-    mut rocket_cam_query: Query<&mut Camera, With<RocketCamMarker>>,
-    mut main_cam_query: Query<&mut Camera, (With<Camera3d>, Without<RocketCamMarker>, Without<camera::EguiOverlayCam>)>,
+    mut rocket_cam_query: Query<&mut Camera, (With<RocketCamMarker>, Without<DroneCamMarker>)>,
+    mut drone_cam_query: Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>,
+    mut main_cam_query: Query<&mut Camera, (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<camera::EguiOverlayCam>)>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -2105,31 +2247,38 @@ fn rocket_cam_viewport_resize_system(
         ..default()
     });
 
-    if camera_properties.camera_swapped {
-        if let Ok(mut cam) = rocket_cam_query.single_mut() {
-            cam.order = 0;
-            cam.viewport = None;
+    let active_aux_cam = match camera_properties.aux_cam_kind {
+        AuxCamKind::RocketCam => rocket_cam_query.single_mut().ok(),
+        AuxCamKind::DroneCam => drone_cam_query.single_mut().ok(),
+    };
+
+    if let Some(mut aux_cam) = active_aux_cam {
+        if camera_properties.camera_swapped {
+            aux_cam.order = 0;
+            aux_cam.viewport = None;
+            if let Ok(mut cam) = main_cam_query.single_mut() {
+                cam.order = 1;
+                cam.viewport = pip_viewport;
+            }
+        } else {
+            if let Ok(mut cam) = main_cam_query.single_mut() {
+                cam.order = 0;
+                cam.viewport = None;
+            }
+            aux_cam.order = 1;
+            aux_cam.viewport = pip_viewport;
         }
-        if let Ok(mut cam) = main_cam_query.single_mut() {
-            cam.order = 1;
-            cam.viewport = pip_viewport;
-        }
-    } else {
-        if let Ok(mut cam) = main_cam_query.single_mut() {
-            cam.order = 0;
-            cam.viewport = None;
-        }
-        if let Ok(mut cam) = rocket_cam_query.single_mut() {
-            cam.order = 1;
-            cam.viewport = pip_viewport;
-        }
+    } else if let Ok(mut cam) = main_cam_query.single_mut() {
+        cam.order = 0;
+        cam.viewport = None;
     }
 }
 
-fn toggle_rocket_cam_system(
+fn toggle_aux_cam_system(
     mut contexts: EguiContexts,
     mut camera_properties: ResMut<CameraProperties>,
-    mut rocket_cam_query: Query<&mut Camera, With<RocketCamMarker>>,
+    mut rocket_cam_query: Query<&mut Camera, (With<RocketCamMarker>, Without<DroneCamMarker>)>,
+    mut drone_cam_query: Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>,
     rocket_cam_owned: Res<save::RocketCamOwned>,
     game_mode: Res<save::GameMode>,
 ) -> Result {
@@ -2140,26 +2289,56 @@ fn toggle_rocket_cam_system(
     let v_pressed = ctx.input(|i| i.key_pressed(Key::V));
     let shift_held = ctx.input(|i| i.modifiers.shift);
 
-    if v_pressed && shift_held {
-        if !rocket_cam_owned.0 && *game_mode != save::GameMode::Sandbox {
-            return Ok(());
-        }
-        if !camera_properties.rocket_cam_enabled {
-            camera_properties.rocket_cam_enabled = true;
-            if let Ok(mut cam) = rocket_cam_query.single_mut() {
-                cam.is_active = true;
+    if !v_pressed {
+        return Ok(());
+    }
+
+    // RocketCam requires ownership (or sandbox); DroneCam is always available
+    if camera_properties.aux_cam_kind == AuxCamKind::RocketCam
+        && !rocket_cam_owned.0
+        && *game_mode != save::GameMode::Sandbox
+    {
+        return Ok(());
+    }
+
+    let set_active = |kind: AuxCamKind,
+                      active: bool,
+                      rq: &mut Query<&mut Camera, (With<RocketCamMarker>, Without<DroneCamMarker>)>,
+                      dq: &mut Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>| {
+        match kind {
+            AuxCamKind::RocketCam => {
+                if let Ok(mut cam) = rq.single_mut() {
+                    cam.is_active = active;
+                }
+            }
+            AuxCamKind::DroneCam => {
+                if let Ok(mut cam) = dq.single_mut() {
+                    cam.is_active = active;
+                }
             }
         }
+    };
+
+    if shift_held {
+        if !camera_properties.aux_cam_enabled {
+            camera_properties.aux_cam_enabled = true;
+            set_active(
+                camera_properties.aux_cam_kind,
+                true,
+                &mut rocket_cam_query,
+                &mut drone_cam_query,
+            );
+        }
         camera_properties.camera_swapped = !camera_properties.camera_swapped;
-    } else if v_pressed {
-        if !rocket_cam_owned.0 && *game_mode != save::GameMode::Sandbox {
-            return Ok(());
-        }
-        camera_properties.rocket_cam_enabled = !camera_properties.rocket_cam_enabled;
+    } else {
+        camera_properties.aux_cam_enabled = !camera_properties.aux_cam_enabled;
         camera_properties.camera_swapped = false;
-        if let Ok(mut cam) = rocket_cam_query.single_mut() {
-            cam.is_active = camera_properties.rocket_cam_enabled;
-        }
+        set_active(
+            camera_properties.aux_cam_kind,
+            camera_properties.aux_cam_enabled,
+            &mut rocket_cam_query,
+            &mut drone_cam_query,
+        );
     }
     Ok(())
 }
@@ -2444,6 +2623,7 @@ mod tests {
         app.insert_resource(inventory::OwnedTubeTypes::default());
         app.insert_resource(inventory::OwnedNoseconeTypes::default());
         app.insert_resource(inventory::PlayerExperience::default());
+        app.insert_resource(SceneCameraState::default());
         app
     }
 

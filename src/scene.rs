@@ -2,7 +2,7 @@ use avian3d::prelude::*;
 use bevy::{math::primitives::Cylinder, prelude::*};
 
 use crate::{
-    camera::{CameraProperties, EguiOverlayCam, RocketCamMarker},
+    camera::{CameraProperties, DroneCamMarker, EguiOverlayCam, RocketCamMarker, SceneCameraState},
     physics::lock_all_axes,
     rocket::{RocketDimensions, RocketMarker, RocketState, RocketStateEnum},
     sky::{SkyProperties, SkyRenderMode},
@@ -15,8 +15,19 @@ impl Plugin for ScenePlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(AppState::Lab), (spawn_lab_room, enter_lab))
             .add_systems(OnEnter(AppState::Launch), enter_launch)
-            .add_systems(OnEnter(AppState::Store), (spawn_store_room, enter_store));
+            .add_systems(OnEnter(AppState::Store), (spawn_store_room, enter_store))
+            .add_systems(OnExit(AppState::Lab), save_camera_on_exit)
+            .add_systems(OnExit(AppState::Store), save_camera_on_exit)
+            .add_systems(OnExit(AppState::Launch), save_camera_on_exit);
     }
+}
+
+fn save_camera_on_exit(
+    camera_properties: Res<CameraProperties>,
+    mut scene_camera: ResMut<SceneCameraState>,
+    state: Res<State<AppState>>,
+) {
+    scene_camera.set(state.get(), camera_properties.save_snapshot());
 }
 
 #[derive(Component)]
@@ -546,21 +557,18 @@ fn enter_indoor(
     >,
     rocket_state: &mut RocketState,
     rocket_dims: &RocketDimensions,
-    camera_properties: &mut CameraProperties,
     camera_query: &mut Query<
         (Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping),
-        (With<Camera3d>, Without<RocketCamMarker>, Without<EguiOverlayCam>),
+        (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>),
     >,
     commands: &mut Commands,
     show_rocket: bool,
-) {
+) -> Vec3 {
     for mut vis in outdoor_query.iter_mut() {
         *vis = Visibility::Hidden;
     }
 
     if let Ok((camera_entity, mut tonemapping)) = camera_query.single_mut() {
-        // Remove atmosphere components and any Exposure carried over from atmosphere mode.
-        // Reset tonemapper to the cubemap-mode default for consistent indoor rendering.
         commands.entity(camera_entity).remove::<(
             bevy::pbr::Atmosphere,
             bevy::pbr::AtmosphereSettings,
@@ -574,6 +582,7 @@ fn enter_indoor(
     rocket_state.max_height = 0.0;
     rocket_state.max_velocity = 0.0;
 
+    let mut rocket_pos = Vec3::ZERO;
     if let Ok((rocket_ent, mut transform, mut lin_vel, mut ang_vel, mut locked)) =
         rocket_query.single_mut()
     {
@@ -590,16 +599,9 @@ fn enter_indoor(
         *ang_vel = AngularVelocity::ZERO;
         *locked = lock_all_axes(LockedAxes::new());
         rocket_state.launch_origin_y = transform.translation.y;
-        camera_properties.target = transform.translation;
+        rocket_pos = transform.translation;
     }
-
-    camera_properties.follow_mode = crate::camera::FollowMode::FreeLook;
-    camera_properties.fixed_distance = 2.5;
-    camera_properties.desired_translation = Vec3::new(-0.6, 1.5, 1.5);
-    camera_properties.lagged_translation = camera_properties.desired_translation;
-    camera_properties.lagged_translation_velocity = Vec3::ZERO;
-    camera_properties.lagged_target = camera_properties.target;
-    camera_properties.lagged_target_velocity = Vec3::ZERO;
+    rocket_pos
 }
 
 fn enter_lab(
@@ -619,21 +621,26 @@ fn enter_lab(
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<
         (Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping),
-        (With<Camera3d>, Without<RocketCamMarker>, Without<EguiOverlayCam>),
+        (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>),
     >,
     mut commands: Commands,
     mut sky_props: ResMut<SkyProperties>,
+    scene_camera: Res<SceneCameraState>,
 ) {
-    enter_indoor(
+    let rocket_pos = enter_indoor(
         &mut outdoor_query,
         &mut rocket_query,
         &mut rocket_state,
         &rocket_dims,
-        &mut camera_properties,
         &mut camera_query,
         &mut commands,
         true,
     );
+    if let Some(snap) = scene_camera.get(&AppState::Lab) {
+        camera_properties.restore_snapshot(snap);
+    } else {
+        camera_properties.apply_scene_defaults(&AppState::Lab, rocket_pos);
+    }
     sky_props.skybox_index = sky_props.lab_skybox_index;
     sky_props.skybox_changed = true;
 }
@@ -655,29 +662,26 @@ fn enter_store(
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<
         (Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping),
-        (With<Camera3d>, Without<RocketCamMarker>, Without<EguiOverlayCam>),
+        (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>),
     >,
     mut commands: Commands,
     mut sky_props: ResMut<SkyProperties>,
+    scene_camera: Res<SceneCameraState>,
 ) {
-    enter_indoor(
+    let rocket_pos = enter_indoor(
         &mut outdoor_query,
         &mut rocket_query,
         &mut rocket_state,
         &rocket_dims,
-        &mut camera_properties,
         &mut camera_query,
         &mut commands,
         false,
     );
-
-    // Store camera: closer to counter/shelves on back wall
-    camera_properties.target = Vec3::new(0.3, 1.15, -2.2);
-    camera_properties.desired_translation = Vec3::new(-0.3, 1.3, -0.5);
-    camera_properties.lagged_translation = camera_properties.desired_translation;
-    camera_properties.lagged_target = camera_properties.target;
-    camera_properties.fixed_distance = 1.5;
-
+    if let Some(snap) = scene_camera.get(&AppState::Store) {
+        camera_properties.restore_snapshot(snap);
+    } else {
+        camera_properties.apply_scene_defaults(&AppState::Store, rocket_pos);
+    }
     sky_props.skybox_index = sky_props.store_skybox_index;
     sky_props.skybox_changed = true;
 }
@@ -700,6 +704,7 @@ fn enter_launch(
     mut sky_mode: ResMut<SkyRenderMode>,
     mut sky_props: ResMut<SkyProperties>,
     mut commands: Commands,
+    scene_camera: Res<SceneCameraState>,
 ) {
     for mut vis in &mut outdoor_query {
         *vis = Visibility::Visible;
@@ -714,24 +719,24 @@ fn enter_launch(
     rocket_state.max_height = 0.0;
     rocket_state.max_velocity = 0.0;
 
+    let mut rocket_pos = Vec3::new(0.0, rocket_dims.length * 0.5, 0.0);
     if let Ok((rocket_ent, mut transform, mut lin_vel, mut ang_vel, mut locked)) =
         rocket_query.single_mut()
     {
         commands.entity(rocket_ent).insert(Visibility::Inherited);
-        let rocket_half = rocket_dims.length * 0.5;
-        transform.translation = Vec3::new(0.0, rocket_half, 0.0);
+        transform.translation = rocket_pos;
         transform.rotation = Quat::IDENTITY;
         *lin_vel = LinearVelocity::ZERO;
         *ang_vel = AngularVelocity::ZERO;
         *locked = lock_all_axes(LockedAxes::new());
         rocket_state.launch_origin_y = transform.translation.y;
-        camera_properties.target = transform.translation;
+        rocket_pos = transform.translation;
     }
 
-    *camera_properties = CameraProperties::default();
-    if let Ok((_, transform, _, _, _)) = rocket_query.single() {
-        camera_properties.target = transform.translation;
-        camera_properties.lagged_target = transform.translation;
+    if let Some(snap) = scene_camera.get(&AppState::Launch) {
+        camera_properties.restore_snapshot(snap);
+    } else {
+        camera_properties.apply_scene_defaults(&AppState::Launch, rocket_pos);
     }
 
     sky_props.skybox_index = sky_props.lab_skybox_index;
