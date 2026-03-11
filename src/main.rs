@@ -28,9 +28,9 @@ use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 use crate::{
     camera::{
         AuxCamKind, CAMERA_MODES, CameraProperties, DroneCamMarker, DRONE_CAM_FOV_DEGREES,
-        DRONE_CAM_POSITION, FollowMode, INITIAL_CAMERA_POS, RocketCamMarker, SceneCameraState,
-        ZOOM_LEVELS, mouse_orbit_system, update_camera_transform_system,
-        update_camera_zoom_perspective_system,
+        DRONE_CAM_POSITION, DroneDistance, DroneWaypoint, FollowMode, INITIAL_CAMERA_POS,
+        RocketCamMarker, SceneCameraState, ZOOM_LEVELS, mouse_orbit_system, spring_to_target,
+        update_camera_transform_system, update_camera_zoom_perspective_system,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
@@ -1043,9 +1043,22 @@ fn ui_system(
                         }
                         if camera_properties.aux_cam_kind == AuxCamKind::DroneCam {
                             ui.add(
-                                egui::Slider::new(&mut camera_properties.drone_sway, 0.0..=3.0)
+                                egui::Slider::new(&mut camera_properties.drone_sway, 0.0..=0.3)
                                     .text("drone sway"),
                             );
+                            ui.horizontal(|ui| {
+                                ui.label("alt");
+                                ui.selectable_value(&mut camera_properties.drone_waypoint, DroneWaypoint::Ground, "5m");
+                                ui.selectable_value(&mut camera_properties.drone_waypoint, DroneWaypoint::Low, "10m");
+                                ui.selectable_value(&mut camera_properties.drone_waypoint, DroneWaypoint::High, "50m");
+                                ui.selectable_value(&mut camera_properties.drone_waypoint, DroneWaypoint::Sky, "100m");
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("dist");
+                                ui.selectable_value(&mut camera_properties.drone_distance, DroneDistance::Near, "10m");
+                                ui.selectable_value(&mut camera_properties.drone_distance, DroneDistance::Mid, "50m");
+                                ui.selectable_value(&mut camera_properties.drone_distance, DroneDistance::Far, "100m");
+                            });
                         }
                     }
                 });
@@ -2049,11 +2062,21 @@ fn spawn_drone_cam_system(
 const DRONE_SPRING_STIFFNESS: f32 = 2.0;
 const DRONE_SPRING_DAMPING: f32 = 3.0;
 
+const DRONE_ALT_GROUND: f32 = 5.0;
+const DRONE_ALT_LOW: f32 = 10.0;
+const DRONE_ALT_HIGH: f32 = 50.0;
+const DRONE_ALT_SKY: f32 = 100.0;
+
+const DRONE_DIST_NEAR: f32 = 10.0;
+const DRONE_DIST_MID: f32 = 50.0;
+const DRONE_DIST_FAR: f32 = 100.0;
+
 #[derive(Default)]
 struct DroneMotionState {
     angular_velocity: Vec3,
     gust_timer: f32,
     target_rotation: Option<Quat>,
+    position_velocity: Vec3,
 }
 
 fn drone_cam_track_rocket_system(
@@ -2095,9 +2118,39 @@ fn drone_cam_track_rocket_system(
         state.gust_timer = 2.0 + ((t * 3.73).sin() + 1.0) * 1.5;
     }
 
-    // Vertical bob
+    // Spring position toward selected waypoint
+    let alt = match camera_properties.drone_waypoint {
+        DroneWaypoint::Ground => DRONE_ALT_GROUND,
+        DroneWaypoint::Low => DRONE_ALT_LOW,
+        DroneWaypoint::High => DRONE_ALT_HIGH,
+        DroneWaypoint::Sky => DRONE_ALT_SKY,
+    };
+    let dist = match camera_properties.drone_distance {
+        DroneDistance::Near => DRONE_DIST_NEAR,
+        DroneDistance::Mid => DRONE_DIST_MID,
+        DroneDistance::Far => DRONE_DIST_FAR,
+    };
+    let waypoint_target = Vec3::new(0.0, alt, dist);
+    spring_to_target(
+        &mut tf.translation,
+        &mut state.position_velocity,
+        waypoint_target,
+        1.5,
+        1.0,
+        30.0,
+        dt,
+    );
+
+    // Recompute target rotation from current position so it faces the horizon
+    let horizon_target = tf.translation + Vec3::NEG_Z;
+    let desired_rot = Transform::from_translation(tf.translation)
+        .looking_at(horizon_target, Vec3::Y)
+        .rotation;
+    state.target_rotation = Some(desired_rot);
+
+    // Vertical bob on top of spring-interpolated position
     let bob = 0.15 * camera_properties.drone_sway * (time.elapsed_secs() * 0.7 * std::f32::consts::TAU).sin();
-    tf.translation.y = DRONE_CAM_POSITION.y + bob;
+    tf.translation.y += bob;
 }
 
 fn sync_aux_cam_kind_system(

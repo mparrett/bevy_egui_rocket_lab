@@ -16,6 +16,23 @@ pub struct DroneCamMarker;
 pub struct EguiOverlayCam;
 
 #[derive(PartialEq, Copy, Clone, Default)]
+pub enum DroneWaypoint {
+    Ground,
+    Low,
+    #[default]
+    High,
+    Sky,
+}
+
+#[derive(PartialEq, Copy, Clone, Default)]
+pub enum DroneDistance {
+    Near,
+    #[default]
+    Mid,
+    Far,
+}
+
+#[derive(PartialEq, Copy, Clone, Default)]
 pub enum AuxCamKind {
     #[default]
     RocketCam,
@@ -80,6 +97,8 @@ pub struct CameraProperties {
     pub camera_swapped: bool,
     pub aux_cam_kind: AuxCamKind,
     pub drone_sway: f32,
+    pub drone_waypoint: DroneWaypoint,
+    pub drone_distance: DroneDistance,
 }
 impl Default for CameraProperties {
     fn default() -> Self {
@@ -101,7 +120,9 @@ impl Default for CameraProperties {
             aux_cam_enabled: false,
             camera_swapped: false,
             aux_cam_kind: AuxCamKind::default(),
-            drone_sway: 1.0,
+            drone_sway: 0.05,
+            drone_waypoint: DroneWaypoint::default(),
+            drone_distance: DroneDistance::default(),
         }
     }
 }
@@ -547,7 +568,7 @@ mod tests {
     }
 }
 
-fn spring_to_target(
+pub fn spring_to_target(
     position: &mut Vec3,
     velocity: &mut Vec3,
     target: Vec3,
