@@ -307,6 +307,11 @@ fn menu_action(
     mut rocket_dims: ResMut<crate::rocket::RocketDimensions>,
     mut flight_params: ResMut<crate::rocket::RocketFlightParameters>,
     mut app_exit: MessageWriter<AppExit>,
+    mut inventory: ResMut<crate::inventory::Inventory>,
+    mut owned_motor_sizes: ResMut<crate::inventory::OwnedMotorSizes>,
+    mut owned_tube_types: ResMut<crate::inventory::OwnedTubeTypes>,
+    mut owned_nosecone_types: ResMut<crate::inventory::OwnedNoseconeTypes>,
+    mut experience: ResMut<crate::inventory::PlayerExperience>,
 ) {
     for (interaction, action) in &interaction_query {
         if *interaction != Interaction::Pressed {
@@ -331,6 +336,11 @@ fn menu_action(
                     player_balance.0 = meta.balance;
                     owned_materials.0 = meta.owned_materials;
                     rocket_cam_owned.0 = meta.rocket_cam_owned;
+                    *inventory = meta.inventory;
+                    owned_motor_sizes.0 = meta.owned_motor_sizes;
+                    owned_tube_types.0 = meta.owned_tube_types;
+                    owned_nosecone_types.0 = meta.owned_nosecone_types;
+                    experience.0 = meta.experience;
                 }
                 if let Some(first) = save_state.rocket_saves.first()
                     && let Ok(data) = crate::save::load_rocket(name, first)

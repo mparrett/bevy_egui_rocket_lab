@@ -1,6 +1,10 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::inventory::{
+    Inventory, MotorSize, NoseconeType, OwnedMotorSizes, OwnedNoseconeTypes, OwnedTubeTypes,
+    TubeType,
+};
 use crate::rocket::{RocketDimensions, RocketFlightParameters, RocketMaterial};
 
 pub const STARTING_BALANCE: f64 = 50.0;
@@ -39,10 +43,56 @@ pub struct PlayerMeta {
     pub owned_materials: Vec<RocketMaterial>,
     #[serde(default)]
     pub rocket_cam_owned: bool,
+    #[serde(default)]
+    pub inventory: Inventory,
+    #[serde(default = "default_owned_motor_sizes")]
+    pub owned_motor_sizes: Vec<MotorSize>,
+    #[serde(default = "default_owned_tube_types")]
+    pub owned_tube_types: Vec<TubeType>,
+    #[serde(default = "default_owned_nosecone_types")]
+    pub owned_nosecone_types: Vec<NoseconeType>,
+    #[serde(default)]
+    pub experience: u64,
 }
 
 fn default_balance() -> f64 {
     STARTING_BALANCE
+}
+
+fn default_owned_motor_sizes() -> Vec<MotorSize> {
+    OwnedMotorSizes::default().0
+}
+
+fn default_owned_tube_types() -> Vec<TubeType> {
+    OwnedTubeTypes::default().0
+}
+
+fn default_owned_nosecone_types() -> Vec<NoseconeType> {
+    OwnedNoseconeTypes::default().0
+}
+
+pub fn build_player_meta(
+    name: &str,
+    balance: f64,
+    owned_materials: &[RocketMaterial],
+    rocket_cam_owned: bool,
+    inventory: &Inventory,
+    owned_motor_sizes: &[MotorSize],
+    owned_tube_types: &[TubeType],
+    owned_nosecone_types: &[NoseconeType],
+    experience: u64,
+) -> PlayerMeta {
+    PlayerMeta {
+        name: name.to_string(),
+        balance,
+        owned_materials: owned_materials.to_vec(),
+        rocket_cam_owned,
+        inventory: inventory.clone(),
+        owned_motor_sizes: owned_motor_sizes.to_vec(),
+        owned_tube_types: owned_tube_types.to_vec(),
+        owned_nosecone_types: owned_nosecone_types.to_vec(),
+        experience,
+    }
 }
 
 #[derive(Resource)]
@@ -160,12 +210,17 @@ mod io {
         }
         fs::create_dir_all(&dir).map_err(|e| format!("Failed to create player dir: {e}"))?;
         if !meta_path.exists() {
-            let meta = PlayerMeta {
-                name: player.to_string(),
-                balance: STARTING_BALANCE,
-                owned_materials: vec![RocketMaterial::Light],
-                rocket_cam_owned: false,
-            };
+            let meta = build_player_meta(
+                player,
+                STARTING_BALANCE,
+                &[RocketMaterial::Light],
+                false,
+                &Inventory::default(),
+                &default_owned_motor_sizes(),
+                &default_owned_tube_types(),
+                &default_owned_nosecone_types(),
+                0,
+            );
             let json = serde_json::to_string_pretty(&meta)
                 .map_err(|e| format!("Failed to serialize player meta: {e}"))?;
             fs::write(&meta_path, json).map_err(|e| format!("Failed to write player.json: {e}"))?;

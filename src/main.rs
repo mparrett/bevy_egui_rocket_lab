@@ -55,6 +55,7 @@ mod drag;
 mod fin;
 mod fps;
 mod ground;
+mod inventory;
 mod menu;
 mod parachute;
 mod particles;
@@ -212,6 +213,12 @@ fn main() {
         .init_resource::<save::GameMode>()
         .init_resource::<save::OwnedMaterials>()
         .init_resource::<save::RocketCamOwned>()
+        .init_resource::<inventory::Inventory>()
+        .init_resource::<inventory::OwnedMotorSizes>()
+        .init_resource::<inventory::OwnedTubeTypes>()
+        .init_resource::<inventory::OwnedNoseconeTypes>()
+        .init_resource::<inventory::EquippedLoadout>()
+        .init_resource::<inventory::PlayerExperience>()
         .init_resource::<wind::WindProperties>()
         .init_resource::<parachute::ParachuteConfig>()
         .add_systems(
@@ -254,7 +261,7 @@ fn main() {
         )
         .add_systems(
             Update,
-            (update_rocket_dimensions_system, on_reset_event).run_if(in_gameplay),
+            (update_rocket_dimensions_system, on_reset_event, sync_equipped_loadout).run_if(in_gameplay),
         )
         .add_systems(
             Update,
@@ -266,6 +273,12 @@ fn main() {
                 update_stats_system,
                 update_wind_hud_system,
                 wind::update_wind_system,
+            )
+                .run_if(in_state(AppState::Launch)),
+        )
+        .add_systems(
+            Update,
+            (
                 parachute::auto_deploy_parachute_system,
                 parachute::deploy_parachute_system,
                 parachute::animate_canopy_system,
@@ -591,20 +604,69 @@ fn on_crash_event(
     }
 }
 
+#[derive(SystemParam)]
+struct LaunchSaveParams<'w> {
+    save_state: Res<'w, save::SaveState>,
+    balance: Res<'w, save::PlayerBalance>,
+    owned_materials: Res<'w, save::OwnedMaterials>,
+    rocket_cam_owned: Res<'w, save::RocketCamOwned>,
+    owned_motor_sizes: Res<'w, inventory::OwnedMotorSizes>,
+    owned_tube_types: Res<'w, inventory::OwnedTubeTypes>,
+    owned_nosecone_types: Res<'w, inventory::OwnedNoseconeTypes>,
+    experience: Res<'w, inventory::PlayerExperience>,
+}
+
+#[allow(unused_variables)]
 fn on_launch_event(
     mut launch_events: MessageReader<LaunchEvent>,
     mut locked_axes: Query<&mut LockedAxes, With<RocketMarker>>,
     mut rocket_state: ResMut<RocketState>,
     mut commands: Commands,
-    rocket_flight_parameters: Res<RocketFlightParameters>,
+    mut rocket_flight_parameters: ResMut<RocketFlightParameters>,
     parachute_config: Res<parachute::ParachuteConfig>,
     mut rocket_query: Query<(Entity, &Transform), (With<RocketMarker>, Without<Camera>)>,
+    mut inv: ResMut<inventory::Inventory>,
+    equipped: Res<inventory::EquippedLoadout>,
+    game_mode: Res<save::GameMode>,
+    mut mass_model: ResMut<RocketMassModel>,
+    lsp: LaunchSaveParams,
 ) {
     for _ in launch_events.read() {
         info!("Launch event");
         if rocket_state.state == RocketStateEnum::Launched {
             info!("Rocket already launched");
             return;
+        }
+
+        if *game_mode == save::GameMode::Gameplay {
+            if !inv.consume_motor(equipped.motor) {
+                warn!(
+                    "No {} motors remaining — launch rejected",
+                    equipped.motor.label()
+                );
+                return;
+            }
+
+            let params = equipped.motor.flight_parameters();
+            rocket_flight_parameters.force = params.force;
+            rocket_flight_parameters.duration = params.duration;
+            equipped.motor.apply_to_mass_model(&mut mass_model);
+
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let meta = save::build_player_meta(
+                    &lsp.save_state.player_name,
+                    lsp.balance.0,
+                    &lsp.owned_materials.0,
+                    lsp.rocket_cam_owned.0,
+                    &inv,
+                    &lsp.owned_motor_sizes.0,
+                    &lsp.owned_tube_types.0,
+                    &lsp.owned_nosecone_types.0,
+                    lsp.experience.0,
+                );
+                let _ = save::save_player_meta(&meta);
+            }
         }
 
         for mut locked_axes in locked_axes.iter_mut() {
@@ -826,6 +888,12 @@ struct SaveUiParams<'w> {
     owned_materials: ResMut<'w, save::OwnedMaterials>,
     rocket_cam_owned: ResMut<'w, save::RocketCamOwned>,
     parachute_config: ResMut<'w, parachute::ParachuteConfig>,
+    inventory: ResMut<'w, inventory::Inventory>,
+    owned_motor_sizes: ResMut<'w, inventory::OwnedMotorSizes>,
+    owned_tube_types: ResMut<'w, inventory::OwnedTubeTypes>,
+    owned_nosecone_types: ResMut<'w, inventory::OwnedNoseconeTypes>,
+    equipped: ResMut<'w, inventory::EquippedLoadout>,
+    experience: ResMut<'w, inventory::PlayerExperience>,
 }
 
 fn ui_system(
@@ -854,6 +922,12 @@ fn ui_system(
     let owned_materials = &mut save_params.owned_materials;
     let rocket_cam_owned = &mut save_params.rocket_cam_owned;
     let parachute_config = &mut save_params.parachute_config;
+    let inv = &mut save_params.inventory;
+    let owned_motor_sizes = &mut save_params.owned_motor_sizes;
+    let owned_tube_types = &mut save_params.owned_tube_types;
+    let owned_nosecone_types = &mut save_params.owned_nosecone_types;
+    let equipped = &mut save_params.equipped;
+    let experience = &mut save_params.experience;
     let is_lab = *app_state.get() == AppState::Lab;
     let is_launch = *app_state.get() == AppState::Launch;
     let is_store = *app_state.get() == AppState::Store;
@@ -1074,6 +1148,88 @@ fn ui_system(
                                 .text("deploy delay (s)"),
                         );
                     });
+
+                if **game_mode == save::GameMode::Gameplay {
+                    ui.add_space(6.0);
+                    egui::CollapsingHeader::new("Loadout")
+                        .default_open(true)
+                        .show(ui, |ui| {
+                            let prev_motor = equipped.motor;
+                            egui::ComboBox::from_label("motor")
+                                .selected_text(equipped.motor.label())
+                                .show_ui(ui, |ui| {
+                                    for size in inventory::MotorSize::ALL {
+                                        if owned_motor_sizes.0.contains(&size)
+                                            && inv.motor_count(size) > 0
+                                        {
+                                            let count = inv.motor_count(size);
+                                            ui.selectable_value(
+                                                &mut equipped.motor,
+                                                size,
+                                                format!("{} ({})", size.label(), count),
+                                            );
+                                        }
+                                    }
+                                });
+                            if equipped.motor != prev_motor {
+                                info!("Equipped motor: {}", equipped.motor.label());
+                            }
+
+                            let prev_chute = equipped.parachute;
+                            egui::ComboBox::from_label("parachute")
+                                .selected_text(equipped.parachute.label())
+                                .show_ui(ui, |ui| {
+                                    for size in inventory::ParachuteSize::ALL {
+                                        if inv.parachute_count(size) > 0 {
+                                            ui.selectable_value(
+                                                &mut equipped.parachute,
+                                                size,
+                                                size.label(),
+                                            );
+                                        }
+                                    }
+                                });
+                            if equipped.parachute != prev_chute {
+                                info!("Equipped parachute: {}", equipped.parachute.label());
+                            }
+
+                            let prev_tube = equipped.tube_type;
+                            egui::ComboBox::from_label("tube")
+                                .selected_text(equipped.tube_type.label())
+                                .show_ui(ui, |ui| {
+                                    for tt in inventory::TubeType::ALL {
+                                        if owned_tube_types.0.contains(&tt) {
+                                            ui.selectable_value(
+                                                &mut equipped.tube_type,
+                                                tt,
+                                                tt.label(),
+                                            );
+                                        }
+                                    }
+                                });
+                            if equipped.tube_type != prev_tube {
+                                info!("Equipped tube: {}", equipped.tube_type.label());
+                            }
+
+                            let prev_nose = equipped.nosecone_type;
+                            egui::ComboBox::from_label("nosecone")
+                                .selected_text(equipped.nosecone_type.label())
+                                .show_ui(ui, |ui| {
+                                    for nt in inventory::NoseconeType::ALL {
+                                        if owned_nosecone_types.0.contains(&nt) {
+                                            ui.selectable_value(
+                                                &mut equipped.nosecone_type,
+                                                nt,
+                                                nt.label(),
+                                            );
+                                        }
+                                    }
+                                });
+                            if equipped.nosecone_type != prev_nose {
+                                info!("Equipped nosecone: {}", equipped.nosecone_type.label());
+                            }
+                        });
+                }
 
                 #[cfg(not(target_arch = "wasm32"))]
                 {
@@ -1353,6 +1509,29 @@ fn ui_system(
                             return;
                         }
 
+                        let save_meta = |balance: &save::PlayerBalance,
+                                         owned_materials: &save::OwnedMaterials,
+                                         rocket_cam_owned: &save::RocketCamOwned,
+                                         inv: &inventory::Inventory,
+                                         owned_motor_sizes: &inventory::OwnedMotorSizes,
+                                         owned_tube_types: &inventory::OwnedTubeTypes,
+                                         owned_nosecone_types: &inventory::OwnedNoseconeTypes,
+                                         experience: &inventory::PlayerExperience,
+                                         player: &str| {
+                            let meta = save::build_player_meta(
+                                player,
+                                balance.0,
+                                &owned_materials.0,
+                                rocket_cam_owned.0,
+                                inv,
+                                &owned_motor_sizes.0,
+                                &owned_tube_types.0,
+                                &owned_nosecone_types.0,
+                                experience.0,
+                            );
+                            let _ = save::save_player_meta(&meta);
+                        };
+
                         // Starter rocket purchase
                         let owns_starter = save_state.rocket_saves.contains(&"Starter".to_string());
                         if owns_starter {
@@ -1379,13 +1558,7 @@ fn ui_system(
                                     save_state.status_message = Some(format!("Error: {e}"));
                                 } else {
                                     balance.0 -= 10.0;
-                                    let meta = save::PlayerMeta {
-                                        name: player.clone(),
-                                        balance: balance.0,
-                                        owned_materials: owned_materials.0.clone(),
-                                        rocket_cam_owned: rocket_cam_owned.0,
-                                    };
-                                    let _ = save::save_player_meta(&meta);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
                                     save_state.rocket_saves = save::list_rockets(&player);
                                     save_state.status_message = Some("Purchased Starter Rocket!".to_string());
                                 }
@@ -1410,13 +1583,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= price;
                                     owned_materials.0.push(mat);
-                                    let meta = save::PlayerMeta {
-                                        name: player.clone(),
-                                        balance: balance.0,
-                                        owned_materials: owned_materials.0.clone(),
-                                        rocket_cam_owned: rocket_cam_owned.0,
-                                    };
-                                    let _ = save::save_player_meta(&meta);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
                                     save_state.status_message = Some(format!("Purchased {}!", mat.label()));
                                 }
                                 if !can_afford {
@@ -1436,17 +1603,146 @@ fn ui_system(
                             if ui.add_enabled(can_afford, btn).clicked() {
                                 balance.0 -= price;
                                 rocket_cam_owned.0 = true;
-                                let meta = save::PlayerMeta {
-                                    name: player.clone(),
-                                    balance: balance.0,
-                                    owned_materials: owned_materials.0.clone(),
-                                    rocket_cam_owned: true,
-                                };
-                                let _ = save::save_player_meta(&meta);
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
                                 save_state.status_message = Some("Purchased Rocket Cam!".to_string());
                             }
                             if !can_afford {
                                 ui.label("Not enough funds.");
+                            }
+                        }
+
+                        ui.separator();
+                        ui.label("Motor Unlocks");
+                        for size in inventory::MotorSize::ALL {
+                            let unlock_price = size.unlock_price();
+                            if unlock_price == 0.0 {
+                                continue;
+                            }
+                            if owned_motor_sizes.0.contains(&size) {
+                                ui.label(format!("{} Motors — Unlocked", size.label()));
+                            } else {
+                                let can_afford = balance.0 >= unlock_price;
+                                let btn = egui::Button::new(format!(
+                                    "Unlock {} Motors — ${unlock_price}",
+                                    size.label()
+                                ));
+                                if ui.add_enabled(can_afford, btn).clicked() {
+                                    balance.0 -= unlock_price;
+                                    owned_motor_sizes.0.push(size);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                    save_state.status_message =
+                                        Some(format!("Unlocked {} Motors!", size.label()));
+                                }
+                                if !can_afford {
+                                    ui.label("Not enough funds.");
+                                }
+                            }
+                        }
+
+                        ui.separator();
+                        ui.label("Buy Motors");
+                        for size in inventory::MotorSize::ALL {
+                            if !owned_motor_sizes.0.contains(&size) {
+                                continue;
+                            }
+                            let pack_price = size.pack_price();
+                            let count = inv.motor_count(size);
+                            let can_afford = balance.0 >= pack_price;
+                            let btn = egui::Button::new(format!(
+                                "Buy 3x {} Motors — ${pack_price}  (have {count})",
+                                size.label()
+                            ));
+                            if ui.add_enabled(can_afford, btn).clicked() {
+                                balance.0 -= pack_price;
+                                inv.add_motors(size, 3);
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                save_state.status_message =
+                                    Some(format!("Purchased 3x {} Motors!", size.label()));
+                            }
+                            if !can_afford {
+                                ui.label("Not enough funds.");
+                            }
+                        }
+
+                        ui.separator();
+                        ui.label("Parachutes");
+                        for size in inventory::ParachuteSize::ALL {
+                            let count = inv.parachute_count(size);
+                            if count > 0 {
+                                ui.label(format!("{} Parachute — Owned", size.label()));
+                            } else {
+                                let price = size.price();
+                                let can_afford = balance.0 >= price;
+                                let btn = egui::Button::new(format!(
+                                    "Buy {} Parachute — ${price}",
+                                    size.label()
+                                ));
+                                if ui.add_enabled(can_afford, btn).clicked() {
+                                    balance.0 -= price;
+                                    *inv.parachutes.entry(size).or_insert(0) += 1;
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                    save_state.status_message =
+                                        Some(format!("Purchased {} Parachute!", size.label()));
+                                }
+                                if !can_afford {
+                                    ui.label("Not enough funds.");
+                                }
+                            }
+                        }
+
+                        ui.separator();
+                        ui.label("Tube Types");
+                        for tt in inventory::TubeType::ALL {
+                            if tt.price() == 0.0 {
+                                continue;
+                            }
+                            if owned_tube_types.0.contains(&tt) {
+                                ui.label(format!("{} — Owned", tt.label()));
+                            } else {
+                                let price = tt.price();
+                                let can_afford = balance.0 >= price;
+                                let btn = egui::Button::new(format!(
+                                    "Buy {} Tube — ${price}",
+                                    tt.label()
+                                ));
+                                if ui.add_enabled(can_afford, btn).clicked() {
+                                    balance.0 -= price;
+                                    owned_tube_types.0.push(tt);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                    save_state.status_message =
+                                        Some(format!("Purchased {} Tube!", tt.label()));
+                                }
+                                if !can_afford {
+                                    ui.label("Not enough funds.");
+                                }
+                            }
+                        }
+
+                        ui.separator();
+                        ui.label("Nosecone Types");
+                        for nt in inventory::NoseconeType::ALL {
+                            if nt.price() == 0.0 {
+                                continue;
+                            }
+                            if owned_nosecone_types.0.contains(&nt) {
+                                ui.label(format!("{} — Owned", nt.label()));
+                            } else {
+                                let price = nt.price();
+                                let can_afford = balance.0 >= price;
+                                let btn = egui::Button::new(format!(
+                                    "Buy {} Nosecone — ${price}",
+                                    nt.label()
+                                ));
+                                if ui.add_enabled(can_afford, btn).clicked() {
+                                    balance.0 -= price;
+                                    owned_nosecone_types.0.push(nt);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                    save_state.status_message =
+                                        Some(format!("Purchased {} Nosecone!", nt.label()));
+                                }
+                                if !can_afford {
+                                    ui.label("Not enough funds.");
+                                }
                             }
                         }
                     });
@@ -1477,6 +1773,17 @@ fn ui_system(
         });
 
     Ok(())
+}
+
+fn sync_equipped_loadout(
+    equipped: Res<inventory::EquippedLoadout>,
+    game_mode: Res<save::GameMode>,
+    mut parachute_config: ResMut<parachute::ParachuteConfig>,
+) {
+    if *game_mode != save::GameMode::Gameplay || !equipped.is_changed() {
+        return;
+    }
+    parachute_config.diameter = equipped.parachute.diameter();
 }
 
 fn update_rocket_dimensions_system(
@@ -2126,6 +2433,17 @@ mod tests {
         app.insert_resource(CameraProperties::default());
         app.insert_resource(RocketState::default());
         app.insert_resource(parachute::ParachuteConfig::default());
+        app.insert_resource(inventory::Inventory::default());
+        app.insert_resource(inventory::EquippedLoadout::default());
+        app.insert_resource(save::GameMode::default());
+        app.insert_resource(save::SaveState::default());
+        app.insert_resource(save::PlayerBalance::default());
+        app.insert_resource(save::OwnedMaterials::default());
+        app.insert_resource(save::RocketCamOwned::default());
+        app.insert_resource(inventory::OwnedMotorSizes::default());
+        app.insert_resource(inventory::OwnedTubeTypes::default());
+        app.insert_resource(inventory::OwnedNoseconeTypes::default());
+        app.insert_resource(inventory::PlayerExperience::default());
         app
     }
 
