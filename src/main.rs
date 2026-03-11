@@ -16,7 +16,9 @@ use bevy::{
 use bevy_firework::plugin::ParticleSystemPlugin;
 
 use avian3d::prelude::*;
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use bevy_egui::{
+    EguiContext, EguiContexts, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext, egui,
+};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use egui::Key;
@@ -25,7 +27,7 @@ use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 
 use crate::{
     camera::{
-        CAMERA_MODES, CameraProperties, FollowMode, INITIAL_CAMERA_POS, RocketCamMarker,
+        CAMERA_MODES, CameraProperties, FollowMode, INITIAL_CAMERA_POS, RocketCamMarker, UiOverlayCam,
         ZOOM_LEVELS, mouse_orbit_system, update_camera_transform_system,
         update_camera_zoom_perspective_system,
     },
@@ -275,6 +277,7 @@ fn main() {
                 music_crossfade_system,
                 toggle_physics_debug,
                 rocket_cam_viewport_resize_system,
+                move_egui_to_overlay_system,
             ),
         )
         .add_systems(
@@ -369,7 +372,7 @@ fn sync_sky_render_mode_system(
             Option<&Atmosphere>,
             &mut Tonemapping,
         ),
-        With<Camera3d>,
+        (With<Camera3d>, Without<RocketCamMarker>),
     >,
 ) {
     if !sky_mode.is_changed() {
@@ -682,10 +685,9 @@ fn on_reset_event(
         cam.is_active = false;
         if let Ok(cone_entity) = cone_query.single() {
             commands.entity(cone_entity).add_child(cam_entity);
-            commands.entity(cam_entity).insert(
-                Transform::from_xyz(0.0, -0.02, 0.0)
-                    .looking_to(Vec3::new(0.0, -0.5, 1.0).normalize(), Vec3::Y),
-            );
+            commands
+                .entity(cam_entity)
+                .insert(rocket_cam_mount_transform(&rocket_dims));
         }
     }
     if let Some(mut time) = virtual_time {
@@ -1461,7 +1463,7 @@ fn ui_system(
                         "Esc: world inspector",
                         "F10: collider gizmos",
                         "F11: profiling HUD",
-                        "V: toggle rocket-cam PiP",
+                        "V: rocket-cam PiP / Shift+V: swap",
                         "F12: toggle FPS",
                     ] {
                         ui.label(line);
@@ -1653,6 +1655,13 @@ fn move_toward(current: f32, target: f32, max_delta: f32) -> f32 {
 
 const DEFAULT_FOV_DEGREES: f32 = 45.0;
 
+fn rocket_cam_mount_transform(rocket_dims: &RocketDimensions) -> Transform {
+    // Keep the camera outside the cone mesh so fullscreen swap doesn't stare into geometry.
+    let mount_pos = Vec3::new(0.0, rocket_dims.cone_length * 0.15, rocket_dims.radius + 0.03);
+    Transform::from_translation(mount_pos)
+        .looking_to(Vec3::new(0.0, -0.25, 1.0).normalize(), Vec3::Y)
+}
+
 fn setup_camera_system(
     mut commands: Commands,
     camera_properties: ResMut<CameraProperties>,
@@ -1674,7 +1683,6 @@ fn setup_camera_system(
         Camera3d::default(),
         camera_transform,
         Camera::default(),
-        IsDefaultUiCamera,
         Hdr,
         Tonemapping::TonyMcMapface,
         Projection::Perspective(PerspectiveProjection {
@@ -1696,12 +1704,48 @@ fn setup_camera_system(
             ..default()
         },
     ));
+
+    commands.spawn((
+        Camera2d,
+        Camera {
+            order: 2,
+            clear_color: ClearColorConfig::None,
+            ..default()
+        },
+        IsDefaultUiCamera,
+        UiOverlayCam,
+    ));
+}
+
+fn move_egui_to_overlay_system(
+    mut commands: Commands,
+    egui_cam: Query<Entity, (With<EguiContext>, Without<UiOverlayCam>)>,
+    overlay_cam: Query<Entity, (With<UiOverlayCam>, Without<EguiContext>)>,
+    mut done: Local<bool>,
+) {
+    if *done {
+        return;
+    }
+    let Ok(from) = egui_cam.single() else {
+        return;
+    };
+    let Ok(to) = overlay_cam.single() else {
+        return;
+    };
+    commands
+        .entity(from)
+        .remove::<(EguiContext, PrimaryEguiContext)>();
+    commands
+        .entity(to)
+        .insert((EguiContext::default(), PrimaryEguiContext));
+    *done = true;
 }
 
 fn spawn_rocket_cam_system(
     mut commands: Commands,
     cone_query: Query<Entity, With<RocketCone>>,
     main_cam_query: Query<&Skybox, (With<Camera3d>, Without<RocketCone>)>,
+    rocket_dims: Res<RocketDimensions>,
 ) {
     let Ok(cone_entity) = cone_query.single() else {
         return;
@@ -1726,8 +1770,7 @@ fn spawn_rocket_cam_system(
                 fov: 100f32.to_radians(),
                 ..default()
             }),
-            Transform::from_xyz(0.0, -0.02, 0.0)
-                .looking_to(Vec3::new(0.0, -0.5, 1.0).normalize(), Vec3::Y),
+            rocket_cam_mount_transform(&rocket_dims),
             RocketCamMarker,
             skybox,
             Bloom {
@@ -1743,12 +1786,11 @@ fn spawn_rocket_cam_system(
 
 fn rocket_cam_viewport_resize_system(
     windows: Query<&Window>,
-    mut cam_query: Query<&mut Camera, With<RocketCamMarker>>,
+    camera_properties: Res<CameraProperties>,
+    mut rocket_cam_query: Query<&mut Camera, With<RocketCamMarker>>,
+    mut main_cam_query: Query<&mut Camera, (With<Camera3d>, Without<RocketCamMarker>)>,
 ) {
     let Ok(window) = windows.single() else {
-        return;
-    };
-    let Ok(mut camera) = cam_query.single_mut() else {
         return;
     };
 
@@ -1761,18 +1803,37 @@ fn rocket_cam_viewport_resize_system(
     let pip_w = w / 4;
     let pip_h = h / 4;
     let margin = 16;
-
-    camera.viewport = Some(Viewport {
+    let pip_viewport = Some(Viewport {
         physical_position: UVec2::new(w - pip_w - margin, h - pip_h - margin),
         physical_size: UVec2::new(pip_w, pip_h),
         ..default()
     });
+
+    if camera_properties.camera_swapped {
+        if let Ok(mut cam) = rocket_cam_query.single_mut() {
+            cam.order = 0;
+            cam.viewport = None;
+        }
+        if let Ok(mut cam) = main_cam_query.single_mut() {
+            cam.order = 1;
+            cam.viewport = pip_viewport;
+        }
+    } else {
+        if let Ok(mut cam) = main_cam_query.single_mut() {
+            cam.order = 0;
+            cam.viewport = None;
+        }
+        if let Ok(mut cam) = rocket_cam_query.single_mut() {
+            cam.order = 1;
+            cam.viewport = pip_viewport;
+        }
+    }
 }
 
 fn toggle_rocket_cam_system(
     mut contexts: EguiContexts,
     mut camera_properties: ResMut<CameraProperties>,
-    mut cam_query: Query<&mut Camera, With<RocketCamMarker>>,
+    mut rocket_cam_query: Query<&mut Camera, With<RocketCamMarker>>,
     rocket_cam_owned: Res<save::RocketCamOwned>,
     game_mode: Res<save::GameMode>,
 ) -> Result {
@@ -1780,13 +1841,28 @@ fn toggle_rocket_cam_system(
     if ctx.wants_keyboard_input() {
         return Ok(());
     }
-    if ctx.input(|i| i.key_pressed(Key::V)) {
+    let v_pressed = ctx.input(|i| i.key_pressed(Key::V));
+    let shift_held = ctx.input(|i| i.modifiers.shift);
+
+    if v_pressed && shift_held {
+        if !rocket_cam_owned.0 && *game_mode != save::GameMode::Sandbox {
+            return Ok(());
+        }
+        if !camera_properties.rocket_cam_enabled {
+            camera_properties.rocket_cam_enabled = true;
+            if let Ok(mut cam) = rocket_cam_query.single_mut() {
+                cam.is_active = true;
+            }
+        }
+        camera_properties.camera_swapped = !camera_properties.camera_swapped;
+    } else if v_pressed {
         if !rocket_cam_owned.0 && *game_mode != save::GameMode::Sandbox {
             return Ok(());
         }
         camera_properties.rocket_cam_enabled = !camera_properties.rocket_cam_enabled;
-        if let Ok(mut camera) = cam_query.single_mut() {
-            camera.is_active = camera_properties.rocket_cam_enabled;
+        camera_properties.camera_swapped = false;
+        if let Ok(mut cam) = rocket_cam_query.single_mut() {
+            cam.is_active = camera_properties.rocket_cam_enabled;
         }
     }
     Ok(())

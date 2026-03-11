@@ -8,6 +8,9 @@ use crate::rocket::RocketMarker;
 #[derive(Component)]
 pub struct RocketCamMarker;
 
+#[derive(Component)]
+pub struct UiOverlayCam;
+
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 
@@ -51,6 +54,7 @@ pub struct CameraProperties {
     pub fixed_distance: f32,
     pub egui_has_pointer: bool,
     pub rocket_cam_enabled: bool,
+    pub camera_swapped: bool,
 }
 impl Default for CameraProperties {
     fn default() -> Self {
@@ -70,12 +74,13 @@ impl Default for CameraProperties {
             fixed_distance: 6.0,
             egui_has_pointer: false,
             rocket_cam_enabled: false,
+            camera_swapped: false,
         }
     }
 }
 
 pub fn update_camera_zoom_perspective_system(
-    mut query_camera: Query<&mut Projection, Without<RocketCamMarker>>,
+    mut query_camera: Query<&mut Projection, (With<Camera3d>, Without<RocketCamMarker>)>,
     camera_properties: Res<CameraProperties>,
 ) {
     let Ok(projection) = query_camera.single_mut() else {
@@ -94,7 +99,7 @@ pub fn update_camera_zoom_perspective_system(
 pub fn update_camera_transform_system(
     time: Res<Time>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<(&Projection, &mut Transform), Without<RocketCamMarker>>,
+    mut camera_query: Query<(&Projection, &mut Transform), (With<Camera3d>, Without<RocketCamMarker>)>,
     mut last_follow_mode: Local<Option<FollowMode>>,
     rocket_velocity_query: Query<&LinearVelocity, With<RocketMarker>>,
 ) {
@@ -310,6 +315,73 @@ pub fn update_camera_transform_system(
 
     *transform = Transform::from_translation(camera_properties.lagged_translation)
         .looking_at(camera_properties.lagged_target, Vec3::Y);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn approx_eq(a: f32, b: f32) {
+        assert!((a - b).abs() < 1e-5, "left={a}, right={b}");
+    }
+
+    #[test]
+    fn zoom_system_ignores_overlay_camera() {
+        let mut app = App::new();
+        let mut camera_properties = CameraProperties::default();
+        camera_properties.zoom = 2.0;
+        app.insert_resource(camera_properties);
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
+        ));
+        app.world_mut().spawn((
+            Camera2d,
+            Projection::Orthographic(OrthographicProjection::default_2d()),
+            UiOverlayCam,
+        ));
+        app.add_systems(Update, update_camera_zoom_perspective_system);
+
+        app.update();
+
+        let mut projections = app.world_mut().query_filtered::<&Projection, With<Camera3d>>();
+        let projection = projections
+            .single(app.world())
+            .expect("expected one 3D camera projection");
+        let Projection::Perspective(persp) = projection else {
+            panic!("expected perspective projection");
+        };
+        approx_eq(persp.fov, CameraProperties::default().base_fov / 2.0);
+    }
+
+    #[test]
+    fn transform_system_ignores_overlay_camera() {
+        let mut app = App::new();
+        app.insert_resource(CameraProperties::default());
+        app.insert_resource(Time::<()>::default());
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
+            Transform::IDENTITY,
+        ));
+        app.world_mut().spawn((
+            Camera2d,
+            Projection::Orthographic(OrthographicProjection::default_2d()),
+            Transform::IDENTITY,
+            UiOverlayCam,
+        ));
+        app.add_systems(Update, update_camera_transform_system);
+
+        app.update();
+
+        let mut query = app
+            .world_mut()
+            .query_filtered::<&Transform, (With<Camera3d>, Without<RocketCamMarker>)>();
+        let transform = query
+            .single(app.world())
+            .expect("expected one non-rocket 3D camera transform");
+        assert_eq!(transform.translation, INITIAL_CAMERA_POS);
+    }
 }
 
 fn spring_to_target(
