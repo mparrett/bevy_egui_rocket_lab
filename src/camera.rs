@@ -1,5 +1,5 @@
 use avian3d::prelude::LinearVelocity;
-use bevy::input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll};
+use bevy::input::mouse::AccumulatedMouseMotion;
 use bevy::prelude::*;
 use std::f32::consts::PI;
 
@@ -43,7 +43,6 @@ pub const CAMERA_FAST_FOLLOW_FREQ_HZ: f32 = 6.5;
 pub const CAMERA_FOLLOW_FREQ_HZ: f32 = 4.5;
 pub const HUMAN_LOOK_FREQ_HZ: f32 = 2.8;
 pub const CAMERA_MAX_SPEED: f32 = 85.0;
-pub const SCROLL_ZOOM_SENSITIVITY: f32 = 0.01;
 pub const FREELOOK_MOVE_SPEED: f32 = 3.0;
 pub const ZOOM_LEVELS: &[f32] = &[0.8, 1.0, 2.0, 4.0, 8.0, 16.0];
 pub const CAMERA_MODES: &[FollowMode] = &[
@@ -582,7 +581,6 @@ pub fn mouse_orbit_system(
     mouse_button: Res<ButtonInput<MouseButton>>,
     keyboard: Res<ButtonInput<KeyCode>>,
     accumulated_motion: Res<AccumulatedMouseMotion>,
-    accumulated_scroll: Res<AccumulatedMouseScroll>,
     mut camera_properties: ResMut<CameraProperties>,
 ) {
     if camera_properties.egui_has_pointer {
@@ -613,21 +611,6 @@ pub fn mouse_orbit_system(
             camera_properties.desired_translation.y -= delta.y * 0.01;
             camera_properties.desired_translation.y =
                 camera_properties.desired_translation.y.clamp(0.1, 50.0);
-        }
-    }
-
-    let scroll_y = accumulated_scroll.delta.y;
-    if scroll_y != 0.0 {
-        if camera_properties.follow_mode == FollowMode::FreeLook {
-            // Dolly along look direction
-            let cam_pos = camera_properties.desired_translation;
-            let look_dir = (camera_properties.target - cam_pos).normalize_or_zero();
-            let dolly = look_dir * scroll_y * 0.1;
-            camera_properties.desired_translation += dolly;
-            camera_properties.lagged_translation = camera_properties.desired_translation;
-        } else {
-            camera_properties.fixed_distance -= scroll_y * SCROLL_ZOOM_SENSITIVITY;
-            camera_properties.fixed_distance = camera_properties.fixed_distance.clamp(0.0, 50.0);
         }
     }
 
