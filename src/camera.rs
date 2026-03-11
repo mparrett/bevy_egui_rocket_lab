@@ -79,6 +79,7 @@ pub struct CameraProperties {
     pub aux_cam_enabled: bool,
     pub camera_swapped: bool,
     pub aux_cam_kind: AuxCamKind,
+    pub drone_sway: f32,
 }
 impl Default for CameraProperties {
     fn default() -> Self {
@@ -100,6 +101,7 @@ impl Default for CameraProperties {
             aux_cam_enabled: false,
             camera_swapped: false,
             aux_cam_kind: AuxCamKind::default(),
+            drone_sway: 1.0,
         }
     }
 }

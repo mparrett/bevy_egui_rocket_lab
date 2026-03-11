@@ -1041,6 +1041,12 @@ fn ui_system(
                         if camera_properties.aux_cam_kind != prev_kind {
                             camera_properties.camera_swapped = false;
                         }
+                        if camera_properties.aux_cam_kind == AuxCamKind::DroneCam {
+                            ui.add(
+                                egui::Slider::new(&mut camera_properties.drone_sway, 0.0..=3.0)
+                                    .text("drone sway"),
+                            );
+                        }
                     }
                 });
 
@@ -2082,14 +2088,15 @@ fn drone_cam_track_rocket_system(
     state.gust_timer -= dt;
     if state.gust_timer <= 0.0 {
         let t = time.elapsed_secs();
-        let yaw_impulse = (t * 7.31).sin() * 0.04;
-        let pitch_impulse = (t * 13.17).sin() * 0.015;
+        let sway = camera_properties.drone_sway;
+        let yaw_impulse = (t * 7.31).sin() * 0.04 * sway;
+        let pitch_impulse = (t * 13.17).sin() * 0.015 * sway;
         state.angular_velocity += Vec3::new(pitch_impulse, yaw_impulse, 0.0);
         state.gust_timer = 2.0 + ((t * 3.73).sin() + 1.0) * 1.5;
     }
 
     // Vertical bob
-    let bob = 0.15 * (time.elapsed_secs() * 0.7 * std::f32::consts::TAU).sin();
+    let bob = 0.15 * camera_properties.drone_sway * (time.elapsed_secs() * 0.7 * std::f32::consts::TAU).sin();
     tf.translation.y = DRONE_CAM_POSITION.y + bob;
 }
 
