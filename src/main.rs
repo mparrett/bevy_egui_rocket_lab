@@ -1,5 +1,5 @@
 use bevy::{
-    camera::{CameraOutputMode, Exposure, Viewport},
+    camera::{CameraOutputMode, Exposure, Viewport, visibility::RenderLayers},
     window::{CursorIcon, SystemCursorIcon},
     core_pipeline::{Skybox, tonemapping::Tonemapping},
     diagnostic::FrameTimeDiagnosticsPlugin,
@@ -1724,6 +1724,7 @@ fn setup_camera_system(
             clear_color: ClearColorConfig::Custom(Color::NONE),
             ..default()
         },
+        RenderLayers::layer(31),
         IsDefaultUiCamera,
     ));
 }
