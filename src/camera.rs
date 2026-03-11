@@ -8,9 +8,6 @@ use crate::rocket::RocketMarker;
 #[derive(Component)]
 pub struct RocketCamMarker;
 
-#[derive(Component)]
-pub struct UiOverlayCam;
-
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 
@@ -326,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn zoom_system_ignores_overlay_camera() {
+    fn zoom_system_ignores_rocket_camera() {
         let mut app = App::new();
         let mut camera_properties = CameraProperties::default();
         camera_properties.zoom = 2.0;
@@ -336,18 +333,20 @@ mod tests {
             Projection::Perspective(PerspectiveProjection::default()),
         ));
         app.world_mut().spawn((
-            Camera2d,
-            Projection::Orthographic(OrthographicProjection::default_2d()),
-            UiOverlayCam,
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
+            RocketCamMarker,
         ));
         app.add_systems(Update, update_camera_zoom_perspective_system);
 
         app.update();
 
-        let mut projections = app.world_mut().query_filtered::<&Projection, With<Camera3d>>();
+        let mut projections = app
+            .world_mut()
+            .query_filtered::<&Projection, (With<Camera3d>, Without<RocketCamMarker>)>();
         let projection = projections
             .single(app.world())
-            .expect("expected one 3D camera projection");
+            .expect("expected one non-rocket 3D camera projection");
         let Projection::Perspective(persp) = projection else {
             panic!("expected perspective projection");
         };
@@ -355,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn transform_system_ignores_overlay_camera() {
+    fn transform_system_ignores_rocket_camera() {
         let mut app = App::new();
         app.insert_resource(CameraProperties::default());
         app.insert_resource(Time::<()>::default());
@@ -365,10 +364,10 @@ mod tests {
             Transform::IDENTITY,
         ));
         app.world_mut().spawn((
-            Camera2d,
-            Projection::Orthographic(OrthographicProjection::default_2d()),
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
             Transform::IDENTITY,
-            UiOverlayCam,
+            RocketCamMarker,
         ));
         app.add_systems(Update, update_camera_transform_system);
 

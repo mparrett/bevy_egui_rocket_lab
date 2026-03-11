@@ -16,9 +16,7 @@ use bevy::{
 use bevy_firework::plugin::ParticleSystemPlugin;
 
 use avian3d::prelude::*;
-use bevy_egui::{
-    EguiContext, EguiContexts, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext, egui,
-};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use egui::Key;
@@ -27,7 +25,7 @@ use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 
 use crate::{
     camera::{
-        CAMERA_MODES, CameraProperties, FollowMode, INITIAL_CAMERA_POS, RocketCamMarker, UiOverlayCam,
+        CAMERA_MODES, CameraProperties, FollowMode, INITIAL_CAMERA_POS, RocketCamMarker,
         ZOOM_LEVELS, mouse_orbit_system, update_camera_transform_system,
         update_camera_zoom_perspective_system,
     },
@@ -277,7 +275,6 @@ fn main() {
                 music_crossfade_system,
                 toggle_physics_debug,
                 rocket_cam_viewport_resize_system,
-                move_egui_to_overlay_system,
             ),
         )
         .add_systems(
@@ -1683,6 +1680,7 @@ fn setup_camera_system(
         Camera3d::default(),
         camera_transform,
         Camera::default(),
+        IsDefaultUiCamera,
         Hdr,
         Tonemapping::TonyMcMapface,
         Projection::Perspective(PerspectiveProjection {
@@ -1705,41 +1703,8 @@ fn setup_camera_system(
         },
     ));
 
-    commands.spawn((
-        Camera2d,
-        Camera {
-            order: 2,
-            clear_color: ClearColorConfig::None,
-            ..default()
-        },
-        IsDefaultUiCamera,
-        UiOverlayCam,
-    ));
 }
 
-fn move_egui_to_overlay_system(
-    mut commands: Commands,
-    egui_cam: Query<Entity, (With<EguiContext>, Without<UiOverlayCam>)>,
-    overlay_cam: Query<Entity, (With<UiOverlayCam>, Without<EguiContext>)>,
-    mut done: Local<bool>,
-) {
-    if *done {
-        return;
-    }
-    let Ok(from) = egui_cam.single() else {
-        return;
-    };
-    let Ok(to) = overlay_cam.single() else {
-        return;
-    };
-    commands
-        .entity(from)
-        .remove::<(EguiContext, PrimaryEguiContext)>();
-    commands
-        .entity(to)
-        .insert((EguiContext::default(), PrimaryEguiContext));
-    *done = true;
-}
 
 fn spawn_rocket_cam_system(
     mut commands: Commands,
@@ -1785,10 +1750,11 @@ fn spawn_rocket_cam_system(
 }
 
 fn rocket_cam_viewport_resize_system(
+    mut commands: Commands,
     windows: Query<&Window>,
     camera_properties: Res<CameraProperties>,
-    mut rocket_cam_query: Query<&mut Camera, With<RocketCamMarker>>,
-    mut main_cam_query: Query<&mut Camera, (With<Camera3d>, Without<RocketCamMarker>)>,
+    mut rocket_cam_query: Query<(Entity, &mut Camera), With<RocketCamMarker>>,
+    mut main_cam_query: Query<(Entity, &mut Camera), (With<Camera3d>, Without<RocketCamMarker>)>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -1810,22 +1776,26 @@ fn rocket_cam_viewport_resize_system(
     });
 
     if camera_properties.camera_swapped {
-        if let Ok(mut cam) = rocket_cam_query.single_mut() {
+        if let Ok((entity, mut cam)) = rocket_cam_query.single_mut() {
             cam.order = 0;
             cam.viewport = None;
+            commands.entity(entity).insert(IsDefaultUiCamera);
         }
-        if let Ok(mut cam) = main_cam_query.single_mut() {
+        if let Ok((entity, mut cam)) = main_cam_query.single_mut() {
             cam.order = 1;
             cam.viewport = pip_viewport;
+            commands.entity(entity).remove::<IsDefaultUiCamera>();
         }
     } else {
-        if let Ok(mut cam) = main_cam_query.single_mut() {
+        if let Ok((entity, mut cam)) = main_cam_query.single_mut() {
             cam.order = 0;
             cam.viewport = None;
+            commands.entity(entity).insert(IsDefaultUiCamera);
         }
-        if let Ok(mut cam) = rocket_cam_query.single_mut() {
+        if let Ok((entity, mut cam)) = rocket_cam_query.single_mut() {
             cam.order = 1;
             cam.viewport = pip_viewport;
+            commands.entity(entity).remove::<IsDefaultUiCamera>();
         }
     }
 }
