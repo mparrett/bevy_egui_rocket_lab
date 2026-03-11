@@ -2040,8 +2040,57 @@ fn spawn_drone_cam_system(
     ));
 }
 
-fn drone_cam_track_rocket_system() {
-    // Currently a fixed-view drone. Rocket tracking can be added later.
+const DRONE_SPRING_STIFFNESS: f32 = 2.0;
+const DRONE_SPRING_DAMPING: f32 = 3.0;
+
+#[derive(Default)]
+struct DroneMotionState {
+    angular_velocity: Vec3,
+    gust_timer: f32,
+    target_rotation: Option<Quat>,
+}
+
+fn drone_cam_track_rocket_system(
+    time: Res<Time>,
+    camera_properties: Res<CameraProperties>,
+    mut state: Local<DroneMotionState>,
+    mut query: Query<(&Camera, &mut Transform), With<DroneCamMarker>>,
+) {
+    let Ok((cam, mut tf)) = query.single_mut() else { return };
+    if !cam.is_active || camera_properties.aux_cam_kind != AuxCamKind::DroneCam {
+        state.target_rotation = None;
+        return;
+    }
+    let dt = time.delta_secs();
+    if dt == 0.0 { return; }
+
+    let target = *state.target_rotation.get_or_insert(tf.rotation);
+
+    // Spring-damper rotation
+    let error_quat = target * tf.rotation.inverse();
+    let (axis, angle) = error_quat.to_axis_angle();
+    let error = if angle.abs() > std::f32::consts::PI {
+        axis * (angle - std::f32::consts::TAU * angle.signum())
+    } else {
+        axis * angle
+    };
+    let torque = error * DRONE_SPRING_STIFFNESS - state.angular_velocity * DRONE_SPRING_DAMPING;
+    state.angular_velocity += torque * dt;
+    tf.rotation *= Quat::from_scaled_axis(state.angular_velocity * dt);
+
+    // Wind gust impulses
+    state.gust_timer -= dt;
+    if state.gust_timer <= 0.0 {
+        let t = time.elapsed_secs();
+        let yaw_impulse = (t * 7.31).sin() * 0.04;
+        let pitch_impulse = (t * 13.17).sin() * 0.015;
+        state.angular_velocity += Vec3::new(pitch_impulse, yaw_impulse, 0.0);
+        state.gust_timer = 2.0 + ((t * 3.73).sin() + 1.0) * 1.5;
+    }
+
+    // Vertical bob
+    let bob = 0.15 * (time.elapsed_secs() * 0.7 * std::f32::consts::TAU).sin();
+    tf.translation.y = DRONE_CAM_POSITION.y + bob;
 }
 
 fn sync_aux_cam_kind_system(
