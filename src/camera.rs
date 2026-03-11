@@ -8,6 +8,9 @@ use crate::rocket::RocketMarker;
 #[derive(Component)]
 pub struct RocketCamMarker;
 
+#[derive(Component)]
+pub struct EguiOverlayCam;
+
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 
@@ -77,7 +80,7 @@ impl Default for CameraProperties {
 }
 
 pub fn update_camera_zoom_perspective_system(
-    mut query_camera: Query<&mut Projection, (With<Camera3d>, Without<RocketCamMarker>)>,
+    mut query_camera: Query<&mut Projection, (With<Camera3d>, Without<RocketCamMarker>, Without<EguiOverlayCam>)>,
     camera_properties: Res<CameraProperties>,
 ) {
     let Ok(projection) = query_camera.single_mut() else {
@@ -96,7 +99,7 @@ pub fn update_camera_zoom_perspective_system(
 pub fn update_camera_transform_system(
     time: Res<Time>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<(&Projection, &mut Transform), (With<Camera3d>, Without<RocketCamMarker>)>,
+    mut camera_query: Query<(&Projection, &mut Transform), (With<Camera3d>, Without<RocketCamMarker>, Without<EguiOverlayCam>)>,
     mut last_follow_mode: Local<Option<FollowMode>>,
     rocket_velocity_query: Query<&LinearVelocity, With<RocketMarker>>,
 ) {
@@ -323,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn zoom_system_ignores_rocket_camera() {
+    fn zoom_system_ignores_extra_cameras() {
         let mut app = App::new();
         let mut camera_properties = CameraProperties::default();
         camera_properties.zoom = 2.0;
@@ -337,16 +340,23 @@ mod tests {
             Projection::Perspective(PerspectiveProjection::default()),
             RocketCamMarker,
         ));
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
+            EguiOverlayCam,
+        ));
         app.add_systems(Update, update_camera_zoom_perspective_system);
 
         app.update();
 
-        let mut projections = app
-            .world_mut()
-            .query_filtered::<&Projection, (With<Camera3d>, Without<RocketCamMarker>)>();
+        let mut projections = app.world_mut().query_filtered::<&Projection, (
+            With<Camera3d>,
+            Without<RocketCamMarker>,
+            Without<EguiOverlayCam>,
+        )>();
         let projection = projections
             .single(app.world())
-            .expect("expected one non-rocket 3D camera projection");
+            .expect("expected one main 3D camera projection");
         let Projection::Perspective(persp) = projection else {
             panic!("expected perspective projection");
         };
@@ -354,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn transform_system_ignores_rocket_camera() {
+    fn transform_system_ignores_extra_cameras() {
         let mut app = App::new();
         app.insert_resource(CameraProperties::default());
         app.insert_resource(Time::<()>::default());
@@ -369,16 +379,24 @@ mod tests {
             Transform::IDENTITY,
             RocketCamMarker,
         ));
+        app.world_mut().spawn((
+            Camera3d::default(),
+            Projection::Perspective(PerspectiveProjection::default()),
+            Transform::IDENTITY,
+            EguiOverlayCam,
+        ));
         app.add_systems(Update, update_camera_transform_system);
 
         app.update();
 
-        let mut query = app
-            .world_mut()
-            .query_filtered::<&Transform, (With<Camera3d>, Without<RocketCamMarker>)>();
+        let mut query = app.world_mut().query_filtered::<&Transform, (
+            With<Camera3d>,
+            Without<RocketCamMarker>,
+            Without<EguiOverlayCam>,
+        )>();
         let transform = query
             .single(app.world())
-            .expect("expected one non-rocket 3D camera transform");
+            .expect("expected one main 3D camera transform");
         assert_eq!(transform.translation, INITIAL_CAMERA_POS);
     }
 }

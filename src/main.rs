@@ -1,5 +1,5 @@
 use bevy::{
-    camera::{Exposure, Viewport},
+    camera::{CameraOutputMode, Exposure, Viewport},
     window::{CursorIcon, SystemCursorIcon},
     core_pipeline::{Skybox, tonemapping::Tonemapping},
     diagnostic::FrameTimeDiagnosticsPlugin,
@@ -11,12 +11,14 @@ use bevy::{
     pbr::{Atmosphere, AtmosphereSettings, ScatteringMedium},
     post_process::bloom::Bloom,
     prelude::*,
-    render::view::Hdr,
+    render::{render_resource::BlendState, view::Hdr},
 };
 use bevy_firework::plugin::ParticleSystemPlugin;
 
 use avian3d::prelude::*;
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use bevy_egui::{
+    EguiContexts, EguiGlobalSettings, EguiPlugin, EguiPrimaryContextPass, PrimaryEguiContext, egui,
+};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use egui::Key;
@@ -185,6 +187,10 @@ fn main() {
         .insert_resource(SunDiscSettings::default())
         .insert_resource(Gravity(Vec3::NEG_Y * 9.81 * 1.0))
         .add_plugins(EguiPlugin::default())
+        .insert_resource(EguiGlobalSettings {
+            auto_create_primary_context: false,
+            ..default()
+        })
         .add_plugins(RocketParticlesPlugin)
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(profiling::ProfilingPlugin)
@@ -369,7 +375,7 @@ fn sync_sky_render_mode_system(
             Option<&Atmosphere>,
             &mut Tonemapping,
         ),
-        (With<Camera3d>, Without<RocketCamMarker>),
+        (With<Camera3d>, Without<RocketCamMarker>, Without<camera::EguiOverlayCam>),
     >,
 ) {
     if !sky_mode.is_changed() {
@@ -839,7 +845,7 @@ fn ui_system(
         (With<RocketMarker>, Without<Camera>),
     >,
     mut fog_query: Query<&mut DistanceFog>,
-    mut bloom_query: Query<&mut Bloom, (With<Camera3d>, Without<RocketCamMarker>)>,
+    mut bloom_query: Query<&mut Bloom, (With<Camera3d>, Without<RocketCamMarker>, Without<camera::EguiOverlayCam>)>,
     app_state: Res<State<AppState>>,
 ) -> Result {
     let save_state = &mut save_params.save_state;
@@ -1680,7 +1686,6 @@ fn setup_camera_system(
         Camera3d::default(),
         camera_transform,
         Camera::default(),
-        IsDefaultUiCamera,
         Hdr,
         Tonemapping::TonyMcMapface,
         Projection::Perspective(PerspectiveProjection {
@@ -1703,13 +1708,31 @@ fn setup_camera_system(
         },
     ));
 
+    // Dedicated egui overlay camera — renders UI on top of all 3D cameras.
+    // Pattern from bevy_egui's split_screen example: Camera3d with alpha
+    // blending output so it composites without clearing the framebuffer.
+    commands.spawn((
+        PrimaryEguiContext,
+        camera::EguiOverlayCam,
+        Camera3d::default(),
+        Camera {
+            order: 10,
+            output_mode: CameraOutputMode::Write {
+                blend_state: Some(BlendState::ALPHA_BLENDING),
+                clear_color: ClearColorConfig::None,
+            },
+            clear_color: ClearColorConfig::Custom(Color::NONE),
+            ..default()
+        },
+        IsDefaultUiCamera,
+    ));
 }
 
 
 fn spawn_rocket_cam_system(
     mut commands: Commands,
     cone_query: Query<Entity, With<RocketCone>>,
-    main_cam_query: Query<&Skybox, (With<Camera3d>, Without<RocketCone>)>,
+    main_cam_query: Query<&Skybox, (With<Camera3d>, Without<RocketCone>, Without<camera::EguiOverlayCam>)>,
     rocket_dims: Res<RocketDimensions>,
 ) {
     let Ok(cone_entity) = cone_query.single() else {
@@ -1750,11 +1773,10 @@ fn spawn_rocket_cam_system(
 }
 
 fn rocket_cam_viewport_resize_system(
-    mut commands: Commands,
     windows: Query<&Window>,
     camera_properties: Res<CameraProperties>,
-    mut rocket_cam_query: Query<(Entity, &mut Camera), With<RocketCamMarker>>,
-    mut main_cam_query: Query<(Entity, &mut Camera), (With<Camera3d>, Without<RocketCamMarker>)>,
+    mut rocket_cam_query: Query<&mut Camera, With<RocketCamMarker>>,
+    mut main_cam_query: Query<&mut Camera, (With<Camera3d>, Without<RocketCamMarker>, Without<camera::EguiOverlayCam>)>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -1776,26 +1798,22 @@ fn rocket_cam_viewport_resize_system(
     });
 
     if camera_properties.camera_swapped {
-        if let Ok((entity, mut cam)) = rocket_cam_query.single_mut() {
+        if let Ok(mut cam) = rocket_cam_query.single_mut() {
             cam.order = 0;
             cam.viewport = None;
-            commands.entity(entity).insert(IsDefaultUiCamera);
         }
-        if let Ok((entity, mut cam)) = main_cam_query.single_mut() {
+        if let Ok(mut cam) = main_cam_query.single_mut() {
             cam.order = 1;
             cam.viewport = pip_viewport;
-            commands.entity(entity).remove::<IsDefaultUiCamera>();
         }
     } else {
-        if let Ok((entity, mut cam)) = main_cam_query.single_mut() {
+        if let Ok(mut cam) = main_cam_query.single_mut() {
             cam.order = 0;
             cam.viewport = None;
-            commands.entity(entity).insert(IsDefaultUiCamera);
         }
-        if let Ok((entity, mut cam)) = rocket_cam_query.single_mut() {
+        if let Ok(mut cam) = rocket_cam_query.single_mut() {
             cam.order = 1;
             cam.viewport = pip_viewport;
-            commands.entity(entity).remove::<IsDefaultUiCamera>();
         }
     }
 }
