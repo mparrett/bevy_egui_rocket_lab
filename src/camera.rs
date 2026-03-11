@@ -25,7 +25,7 @@ pub enum AuxCamKind {
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
 pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 
-pub const DRONE_CAM_POSITION: Vec3 = Vec3::new(0.0, 50.0, 8.0);
+pub const DRONE_CAM_POSITION: Vec3 = Vec3::new(0.0, 50.0, 20.0);
 pub const DRONE_CAM_FOV_DEGREES: f32 = 65.0;
 
 pub const LAUNCH_CAMERA_POS: Vec3 = INITIAL_CAMERA_POS;

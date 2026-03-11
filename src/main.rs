@@ -2029,7 +2029,7 @@ fn spawn_drone_cam_system(
             ..default()
         }),
         Transform::from_translation(DRONE_CAM_POSITION)
-            .looking_at(Vec3::ZERO, Vec3::Y),
+            .looking_at(DRONE_CAM_POSITION + Vec3::NEG_Z, Vec3::Y),
         DroneCamMarker,
         skybox,
         Bloom {
@@ -2040,21 +2040,8 @@ fn spawn_drone_cam_system(
     ));
 }
 
-fn drone_cam_track_rocket_system(
-    rocket_query: Query<&Transform, (With<RocketMarker>, Without<Camera>)>,
-    mut drone_query: Query<(&Camera, &mut Transform), (With<DroneCamMarker>, Without<RocketMarker>)>,
-) {
-    let Ok(rocket_transform) = rocket_query.single() else {
-        return;
-    };
-    let Ok((cam, mut drone_transform)) = drone_query.single_mut() else {
-        return;
-    };
-    if !cam.is_active {
-        return;
-    }
-    *drone_transform = Transform::from_translation(DRONE_CAM_POSITION)
-        .looking_at(rocket_transform.translation, Vec3::Y);
+fn drone_cam_track_rocket_system() {
+    // Currently a fixed-view drone. Rocket tracking can be added later.
 }
 
 fn sync_aux_cam_kind_system(
