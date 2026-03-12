@@ -29,7 +29,7 @@ enum MenuState {
 
 #[derive(Component)]
 enum MenuButtonAction {
-    Launch,
+    Play,
     Settings,
     LoadPlayer,
     SelectPlayer(String),
@@ -109,7 +109,7 @@ fn spawn_main_menu(mut commands: Commands, asset_server: Res<AssetServer>) {
                 TextColor(Color::WHITE),
             ));
 
-            spawn_button(parent, font.clone(), "Play", MenuButtonAction::Launch);
+            spawn_button(parent, font.clone(), "Play", MenuButtonAction::Play);
             #[cfg(not(target_arch = "wasm32"))]
             spawn_button(
                 parent,
@@ -318,7 +318,7 @@ fn menu_action(
             continue;
         }
         match action {
-            MenuButtonAction::Launch => {
+            MenuButtonAction::Play => {
                 app_state.set(AppState::Lab);
                 menu_state.set(MenuState::Disabled);
             }
