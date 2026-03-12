@@ -16,18 +16,18 @@ impl Plugin for ScenePlugin {
         app.add_systems(OnEnter(AppState::Lab), (spawn_lab_room, enter_lab))
             .add_systems(OnEnter(AppState::Launch), enter_launch)
             .add_systems(OnEnter(AppState::Store), (spawn_store_room, enter_store))
-            .add_systems(OnExit(AppState::Lab), save_camera_on_exit)
-            .add_systems(OnExit(AppState::Store), save_camera_on_exit)
-            .add_systems(OnExit(AppState::Launch), save_camera_on_exit);
+            .add_systems(OnExit(AppState::Lab), save_camera_on_exit(AppState::Lab))
+            .add_systems(OnExit(AppState::Store), save_camera_on_exit(AppState::Store))
+            .add_systems(OnExit(AppState::Launch), save_camera_on_exit(AppState::Launch));
     }
 }
 
 fn save_camera_on_exit(
-    camera_properties: Res<CameraProperties>,
-    mut scene_camera: ResMut<SceneCameraState>,
-    state: Res<State<AppState>>,
-) {
-    scene_camera.set(state.get(), camera_properties.save_snapshot());
+    exiting: AppState,
+) -> impl FnMut(Res<CameraProperties>, ResMut<SceneCameraState>) {
+    move |camera_properties: Res<CameraProperties>, mut scene_camera: ResMut<SceneCameraState>| {
+        scene_camera.set(&exiting, camera_properties.save_snapshot());
+    }
 }
 
 #[derive(Component)]
