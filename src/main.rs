@@ -109,6 +109,12 @@ struct WindIconMarker;
 #[derive(Component)]
 struct NavButton(AppState);
 
+#[derive(Component)]
+struct CameraModeButton;
+
+#[derive(Component)]
+struct CameraModeLabel;
+
 #[derive(Resource)]
 pub struct AudioSettings {
     pub music_enabled: bool,
@@ -251,6 +257,8 @@ fn main() {
             (
                 handle_nav_button_clicks,
                 update_store_balance_text.run_if(in_state(AppState::Store)),
+                camera_mode_button_system.run_if(in_state(AppState::Launch)),
+                update_camera_mode_label.run_if(in_state(AppState::Launch)),
             )
                 .run_if(in_gameplay),
         )
@@ -2542,6 +2550,29 @@ fn handle_nav_button_clicks(
     }
 }
 
+fn camera_mode_button_system(
+    query: Query<(&Interaction, &CameraModeButton), Changed<Interaction>>,
+    mut camera_properties: ResMut<camera::CameraProperties>,
+) {
+    for (interaction, _) in &query {
+        if *interaction == Interaction::Pressed {
+            camera_properties.follow_mode = camera_properties.follow_mode.next();
+        }
+    }
+}
+
+fn update_camera_mode_label(
+    camera_properties: Res<camera::CameraProperties>,
+    mut query: Query<&mut Text, With<CameraModeLabel>>,
+) {
+    if !camera_properties.is_changed() {
+        return;
+    }
+    for mut text in &mut query {
+        **text = format!("{} ", camera_properties.follow_mode.label());
+    }
+}
+
 fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn((
@@ -2557,7 +2588,7 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         ))
         .with_child((
-            Text::new("Enter/Space: launch\nR: reset  C: camera\nZ: zoom  Tab: lab  Q: quit"),
+            Text::new("Enter/Space: launch\nR: reset  Z: zoom\nTab: lab  Q: quit"),
             TextFont {
                 font_size: 13.,
                 ..default()
@@ -2578,6 +2609,44 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
         ))
         .with_children(|parent| {
             spawn_nav_button(parent, "\u{2190} Lab", AppState::Lab);
+
+            parent
+                .spawn((
+                    Button,
+                    CameraModeButton,
+                    CursorIcon::System(SystemCursorIcon::Pointer),
+                    Node {
+                        padding: UiRect::new(
+                            Val::Px(10.0),
+                            Val::Px(10.0),
+                            Val::Px(5.0),
+                            Val::Px(5.0),
+                        ),
+                        border_radius: BorderRadius::all(Val::Px(4.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Text::new("Free "),
+                        TextFont {
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+                        CameraModeLabel,
+                    ))
+                    .with_child((
+                        TextSpan::new("\u{2B6E}"),
+                        TextFont {
+                            font: asset_server.load("fonts/NotoSansSymbols2-Regular.ttf"),
+                            font_size: 13.0,
+                            ..default()
+                        },
+                        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+                    ));
+                });
         });
 
     let mono_font = asset_server.load("fonts/FiraMono-Medium.ttf");

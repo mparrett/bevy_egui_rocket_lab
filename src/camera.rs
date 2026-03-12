@@ -73,6 +73,26 @@ pub enum FollowMode {
     FollowSide,
 }
 
+impl FollowMode {
+    pub fn next(self) -> Self {
+        match self {
+            Self::FixedGround => Self::FollowSide,
+            Self::FollowSide => Self::FollowAbove,
+            Self::FollowAbove => Self::FreeLook,
+            Self::FreeLook => Self::FixedGround,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::FixedGround => "Ground",
+            Self::FollowSide => "Side",
+            Self::FollowAbove => "Above",
+            Self::FreeLook => "Free",
+        }
+    }
+}
+
 #[derive(Resource)]
 pub struct CameraProperties {
     pub orbit_angle_degrees: f32,
