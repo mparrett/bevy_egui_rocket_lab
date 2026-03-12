@@ -45,8 +45,8 @@ pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 pub const DRONE_CAM_POSITION: Vec3 = Vec3::new(0.0, 50.0, 20.0);
 pub const DRONE_CAM_FOV_DEGREES: f32 = 65.0;
 
-pub const LAUNCH_CAMERA_POS: Vec3 = Vec3::new(-0.56, 1.20, 3.78);
-pub const LAUNCH_CAMERA_TARGET: Vec3 = Vec3::new(-0.27, 1.18, 0.88);
+pub const LAUNCH_CAMERA_POS: Vec3 = Vec3::new(-0.97, 1.50, 3.13);
+pub const LAUNCH_CAMERA_TARGET: Vec3 = Vec3::new(-0.67, 1.28, 1.49);
 pub const LAUNCH_CAMERA_DISTANCE: f32 = 2.5;
 
 pub const LAB_CAMERA_POS: Vec3 = Vec3::new(0.05, 1.50, 1.69);
@@ -183,7 +183,7 @@ impl CameraProperties {
                 self.fixed_distance = LAUNCH_CAMERA_DISTANCE;
                 self.desired_translation = LAUNCH_CAMERA_POS;
                 self.target = LAUNCH_CAMERA_TARGET;
-                self.orbit_angle_degrees = 26.0;
+                self.orbit_angle_degrees = 20.0;
             }
         }
         self.lagged_translation = self.desired_translation;
