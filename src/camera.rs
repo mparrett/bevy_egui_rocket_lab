@@ -45,15 +45,17 @@ pub const INITIAL_CAMERA_POS: Vec3 = Vec3::new(-6.0, 2.0, 4.0);
 pub const DRONE_CAM_POSITION: Vec3 = Vec3::new(0.0, 50.0, 20.0);
 pub const DRONE_CAM_FOV_DEGREES: f32 = 65.0;
 
-pub const LAUNCH_CAMERA_POS: Vec3 = INITIAL_CAMERA_POS;
-pub const LAUNCH_CAMERA_DISTANCE: f32 = 6.0;
+pub const LAUNCH_CAMERA_POS: Vec3 = Vec3::new(-0.56, 1.20, 3.78);
+pub const LAUNCH_CAMERA_TARGET: Vec3 = Vec3::new(-0.27, 1.18, 0.88);
+pub const LAUNCH_CAMERA_DISTANCE: f32 = 2.5;
 
-pub const LAB_CAMERA_POS: Vec3 = Vec3::new(-0.6, 1.5, 1.5);
+pub const LAB_CAMERA_POS: Vec3 = Vec3::new(0.05, 1.50, 1.69);
+pub const LAB_CAMERA_TARGET: Vec3 = Vec3::new(-0.15, 1.29, 0.04);
 pub const LAB_CAMERA_DISTANCE: f32 = 2.5;
 
-pub const STORE_CAMERA_POS: Vec3 = Vec3::new(-0.3, 1.3, -0.5);
-pub const STORE_CAMERA_TARGET: Vec3 = Vec3::new(0.3, 1.15, -2.2);
-pub const STORE_CAMERA_DISTANCE: f32 = 1.5;
+pub const STORE_CAMERA_POS: Vec3 = Vec3::new(-0.28, 1.50, -0.33);
+pub const STORE_CAMERA_TARGET: Vec3 = Vec3::new(-0.29, 1.34, -2.00);
+pub const STORE_CAMERA_DISTANCE: f32 = 2.5;
 
 pub const CAMERA_DAMPING_RATIO: f32 = 1.0; // Critically damped by default.
 pub const CAMERA_FAST_FOLLOW_FREQ_HZ: f32 = 6.5;
@@ -62,12 +64,6 @@ pub const HUMAN_LOOK_FREQ_HZ: f32 = 2.8;
 pub const CAMERA_MAX_SPEED: f32 = 85.0;
 pub const FREELOOK_MOVE_SPEED: f32 = 3.0;
 pub const ZOOM_LEVELS: &[f32] = &[0.8, 1.0, 2.0, 4.0, 8.0, 16.0];
-pub const CAMERA_MODES: &[FollowMode] = &[
-    FollowMode::FixedGround,
-    FollowMode::FollowSide,
-    FollowMode::FollowAbove,
-    FollowMode::FreeLook,
-];
 
 #[derive(PartialEq, Copy, Clone)]
 pub enum FollowMode {
@@ -168,13 +164,13 @@ impl CameraProperties {
         self.lagged_target_velocity = Vec3::ZERO;
     }
 
-    pub fn apply_scene_defaults(&mut self, state: &AppState, rocket_target: Vec3) {
+    pub fn apply_scene_defaults(&mut self, state: &AppState) {
         match state {
             AppState::Lab => {
                 self.follow_mode = FollowMode::FreeLook;
                 self.fixed_distance = LAB_CAMERA_DISTANCE;
                 self.desired_translation = LAB_CAMERA_POS;
-                self.target = rocket_target;
+                self.target = LAB_CAMERA_TARGET;
             }
             AppState::Store => {
                 self.follow_mode = FollowMode::FreeLook;
@@ -186,8 +182,8 @@ impl CameraProperties {
                 self.follow_mode = FollowMode::FreeLook;
                 self.fixed_distance = LAUNCH_CAMERA_DISTANCE;
                 self.desired_translation = LAUNCH_CAMERA_POS;
-                self.target = rocket_target;
-                self.orbit_angle_degrees = 20.0;
+                self.target = LAUNCH_CAMERA_TARGET;
+                self.orbit_angle_degrees = 26.0;
             }
         }
         self.lagged_translation = self.desired_translation;

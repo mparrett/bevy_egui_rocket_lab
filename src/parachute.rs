@@ -73,6 +73,7 @@ pub struct ParachuteConfig {
     pub diameter: f32,
     pub deploy_delay: f32,
     pub deployed: bool,
+    pub cord_at_tip: bool,
 }
 
 impl Default for ParachuteConfig {
@@ -81,6 +82,7 @@ impl Default for ParachuteConfig {
             diameter: 0.3,
             deploy_delay: EJECTION_DELAY_SECS,
             deployed: false,
+            cord_at_tip: false,
         }
     }
 }
@@ -165,7 +167,13 @@ pub fn deploy_parachute_system(
     let cone_mass =
         std::f32::consts::PI * r * slant * mass_model.nose_wall_thickness_m * mass_model.nose_density_kg_m3;
 
+    let has_cam = rocket_cam_query.single().is_ok();
     let cone_ejection_vel = rocket_velocity.0 + Vec3::new(0.2, 1.5, 0.1);
+    let (cone_angular_vel, cone_angular_damping) = if has_cam {
+        (Vec3::new(0.1, 0.2, 0.0), 5.0)
+    } else {
+        (Vec3::new(2.0, 1.0, 3.0), 1.0)
+    };
     let cone_entity = commands
         .spawn((
             DetachedCone,
@@ -174,9 +182,9 @@ pub fn deploy_parachute_system(
             Collider::cone(r, cl),
             Mass(cone_mass.max(1e-4)),
             LinearVelocity(cone_ejection_vel),
-            AngularVelocity(Vec3::new(2.0, 1.0, 3.0)),
+            AngularVelocity(cone_angular_vel),
             LinearDamping(0.0),
-            AngularDamping(1.0),
+            AngularDamping(cone_angular_damping),
             CollisionLayers::new([GameLayer::Debris], [GameLayer::Ground]),
             Restitution::new(0.3),
             Friction::new(0.5),
@@ -191,8 +199,12 @@ pub fn deploy_parachute_system(
         .id();
 
     if let Ok(cam_entity) = rocket_cam_query.single() {
-        commands.entity(cam_entity).set_parent_in_place(cone_entity);
+        commands.entity(cone_entity).add_child(cam_entity);
+        commands.entity(cam_entity).insert(
+            crate::rocket_cam_mount_transform(&rocket_dims),
+        );
     }
+    parachute_config.cord_at_tip = has_cam;
 
     // Shock cord
     let cord_mesh = meshes.add(
@@ -300,11 +312,16 @@ pub fn deploy_parachute_system(
         }
     }
 
-    // Shock cord joint: rocket tube top ↔ detached cone base
+    // Shock cord joint: rocket tube top ↔ detached cone (tip if cam, base otherwise)
+    let cone_cord_anchor = if has_cam {
+        Vec3::Y * cl * 0.5
+    } else {
+        Vec3::NEG_Y * cl * 0.5
+    };
     commands.spawn((
         DistanceJoint::new(rocket_entity, cone_entity)
             .with_local_anchor1(Vec3::Y * rocket_dims.length * 0.5)
-            .with_local_anchor2(Vec3::NEG_Y * cl * 0.5)
+            .with_local_anchor2(cone_cord_anchor)
             .with_limits(0.0, TETHER_LENGTH),
         JointDamping { linear: 1.0, angular: 0.0 },
         RecoveryJoint,
@@ -530,10 +547,11 @@ pub fn update_shock_cord_system(
     };
 
     let tube_top = rocket_tf.translation + rocket_tf.rotation * (Vec3::Y * rocket_dims.length * 0.5);
-    let cone_base = cone_tf.translation
-        + cone_tf.rotation * (Vec3::NEG_Y * rocket_dims.cone_length * 0.5);
-    let midpoint = (tube_top + cone_base) * 0.5;
-    let diff = cone_base - tube_top;
+    let cone_anchor_dir = if parachute_config.cord_at_tip { Vec3::Y } else { Vec3::NEG_Y };
+    let cone_attach = cone_tf.translation
+        + cone_tf.rotation * (cone_anchor_dir * rocket_dims.cone_length * 0.5);
+    let midpoint = (tube_top + cone_attach) * 0.5;
+    let diff = cone_attach - tube_top;
     let distance = diff.length();
 
     cord_tf.translation = midpoint;
@@ -544,6 +562,56 @@ pub fn update_shock_cord_system(
     }
 }
 
+
+fn do_parachute_cleanup(
+    commands: &mut Commands,
+    parachute_config: &mut ParachuteConfig,
+    rocket_dims: &mut RocketDimensions,
+    detached_cone_query: &Query<Entity, With<DetachedCone>>,
+    hidden_cone_query: &Query<Entity, With<RocketCone>>,
+    cord_query: &Query<Entity, With<ShockCord>>,
+    chute_query: &Query<Entity, With<ParachuteVisual>>,
+    shroud_query: &Query<Entity, With<ShroudLine>>,
+    chute_body_query: &Query<Entity, With<ParachuteBody>>,
+    joint_query: &Query<Entity, With<RecoveryJoint>>,
+    rocket_cam_query: &Query<Entity, With<RocketCamMarker>>,
+) {
+    if !parachute_config.deployed {
+        return;
+    }
+
+    // Unparent the rocket cam before despawning the detached cone (which is
+    // its current parent after parachute deploy). Bevy's despawn is recursive,
+    // so without this the camera entity would be destroyed.
+    if let Ok(cam_entity) = rocket_cam_query.single() {
+        commands.entity(cam_entity).remove_parent_in_place();
+    }
+
+    for entity in detached_cone_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in hidden_cone_query {
+        commands.entity(entity).insert(Visibility::Inherited);
+    }
+    for entity in cord_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in chute_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in shroud_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in chute_body_query {
+        commands.entity(entity).despawn();
+    }
+    for entity in joint_query {
+        commands.entity(entity).despawn();
+    }
+
+    parachute_config.deployed = false;
+    rocket_dims.flag_changed = true;
+}
 
 pub fn cleanup_parachute_system(
     mut commands: Commands,
@@ -568,43 +636,52 @@ pub fn cleanup_parachute_system(
         commands.entity(entity).remove::<EjectionTimer>();
     }
 
-    if !parachute_config.deployed {
-        return;
+    do_parachute_cleanup(
+        &mut commands,
+        &mut parachute_config,
+        &mut rocket_dims,
+        &detached_cone_query,
+        &hidden_cone_query,
+        &cord_query,
+        &chute_query,
+        &shroud_query,
+        &chute_body_query,
+        &joint_query,
+        &rocket_cam_query,
+    );
+}
+
+pub fn cleanup_parachute_on_scene_exit(
+    mut commands: Commands,
+    mut parachute_config: ResMut<ParachuteConfig>,
+    mut rocket_dims: ResMut<RocketDimensions>,
+    detached_cone_query: Query<Entity, With<DetachedCone>>,
+    hidden_cone_query: Query<Entity, With<RocketCone>>,
+    cord_query: Query<Entity, With<ShockCord>>,
+    chute_query: Query<Entity, With<ParachuteVisual>>,
+    shroud_query: Query<Entity, With<ShroudLine>>,
+    chute_body_query: Query<Entity, With<ParachuteBody>>,
+    joint_query: Query<Entity, With<RecoveryJoint>>,
+    ejection_query: Query<Entity, (With<RocketMarker>, With<EjectionTimer>)>,
+    rocket_cam_query: Query<Entity, With<RocketCamMarker>>,
+) {
+    for entity in &ejection_query {
+        commands.entity(entity).remove::<EjectionTimer>();
     }
 
-    // Unparent the rocket cam before despawning the detached cone (which is
-    // its current parent after parachute deploy). Bevy's despawn is recursive,
-    // so without this the camera entity would be destroyed.
-    if let Ok(cam_entity) = rocket_cam_query.single() {
-        commands.entity(cam_entity).remove_parent_in_place();
-    }
-
-    for entity in &detached_cone_query {
-        commands.entity(entity).despawn();
-    }
-    // Restore the hidden cone child on the rocket
-    for entity in &hidden_cone_query {
-        commands.entity(entity).insert(Visibility::Inherited);
-    }
-
-    for entity in &cord_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &chute_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &shroud_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &chute_body_query {
-        commands.entity(entity).despawn();
-    }
-    for entity in &joint_query {
-        commands.entity(entity).despawn();
-    }
-
-    parachute_config.deployed = false;
-    rocket_dims.flag_changed = true;
+    do_parachute_cleanup(
+        &mut commands,
+        &mut parachute_config,
+        &mut rocket_dims,
+        &detached_cone_query,
+        &hidden_cone_query,
+        &cord_query,
+        &chute_query,
+        &shroud_query,
+        &chute_body_query,
+        &joint_query,
+        &rocket_cam_query,
+    );
 }
 
 #[cfg(test)]

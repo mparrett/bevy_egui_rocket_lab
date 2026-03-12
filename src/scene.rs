@@ -563,7 +563,7 @@ fn enter_indoor(
     >,
     commands: &mut Commands,
     show_rocket: bool,
-) -> Vec3 {
+) {
     for mut vis in outdoor_query.iter_mut() {
         *vis = Visibility::Hidden;
     }
@@ -582,7 +582,6 @@ fn enter_indoor(
     rocket_state.max_height = 0.0;
     rocket_state.max_velocity = 0.0;
 
-    let mut rocket_pos = Vec3::ZERO;
     if let Ok((rocket_ent, mut transform, mut lin_vel, mut ang_vel, mut locked)) =
         rocket_query.single_mut()
     {
@@ -599,9 +598,7 @@ fn enter_indoor(
         *ang_vel = AngularVelocity::ZERO;
         *locked = lock_all_axes(LockedAxes::new());
         rocket_state.launch_origin_y = transform.translation.y;
-        rocket_pos = transform.translation;
     }
-    rocket_pos
 }
 
 fn enter_lab(
@@ -627,7 +624,7 @@ fn enter_lab(
     mut sky_props: ResMut<SkyProperties>,
     scene_camera: Res<SceneCameraState>,
 ) {
-    let rocket_pos = enter_indoor(
+    enter_indoor(
         &mut outdoor_query,
         &mut rocket_query,
         &mut rocket_state,
@@ -639,7 +636,7 @@ fn enter_lab(
     if let Some(snap) = scene_camera.get(&AppState::Lab) {
         camera_properties.restore_snapshot(snap);
     } else {
-        camera_properties.apply_scene_defaults(&AppState::Lab, rocket_pos);
+        camera_properties.apply_scene_defaults(&AppState::Lab);
     }
     sky_props.skybox_index = sky_props.lab_skybox_index;
     sky_props.skybox_changed = true;
@@ -668,7 +665,7 @@ fn enter_store(
     mut sky_props: ResMut<SkyProperties>,
     scene_camera: Res<SceneCameraState>,
 ) {
-    let rocket_pos = enter_indoor(
+    enter_indoor(
         &mut outdoor_query,
         &mut rocket_query,
         &mut rocket_state,
@@ -680,7 +677,7 @@ fn enter_store(
     if let Some(snap) = scene_camera.get(&AppState::Store) {
         camera_properties.restore_snapshot(snap);
     } else {
-        camera_properties.apply_scene_defaults(&AppState::Store, rocket_pos);
+        camera_properties.apply_scene_defaults(&AppState::Store);
     }
     sky_props.skybox_index = sky_props.store_skybox_index;
     sky_props.skybox_changed = true;
@@ -719,7 +716,7 @@ fn enter_launch(
     rocket_state.max_height = 0.0;
     rocket_state.max_velocity = 0.0;
 
-    let mut rocket_pos = Vec3::new(0.0, rocket_dims.length * 0.5, 0.0);
+    let rocket_pos = Vec3::new(0.0, rocket_dims.length * 0.5, 0.0);
     if let Ok((rocket_ent, mut transform, mut lin_vel, mut ang_vel, mut locked)) =
         rocket_query.single_mut()
     {
@@ -730,13 +727,12 @@ fn enter_launch(
         *ang_vel = AngularVelocity::ZERO;
         *locked = lock_all_axes(LockedAxes::new());
         rocket_state.launch_origin_y = transform.translation.y;
-        rocket_pos = transform.translation;
     }
 
     if let Some(snap) = scene_camera.get(&AppState::Launch) {
         camera_properties.restore_snapshot(snap);
     } else {
-        camera_properties.apply_scene_defaults(&AppState::Launch, rocket_pos);
+        camera_properties.apply_scene_defaults(&AppState::Launch);
     }
 
     sky_props.skybox_index = sky_props.lab_skybox_index;

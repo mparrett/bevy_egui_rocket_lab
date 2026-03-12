@@ -27,7 +27,7 @@ use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 
 use crate::{
     camera::{
-        AuxCamKind, CAMERA_MODES, CameraProperties, DroneCamMarker, DRONE_CAM_FOV_DEGREES,
+        AuxCamKind, CameraProperties, DroneCamMarker, DRONE_CAM_FOV_DEGREES,
         DRONE_CAM_POSITION, DroneDistance, DroneWaypoint, FollowMode, INITIAL_CAMERA_POS,
         RocketCamMarker, SceneCameraState, ZOOM_LEVELS, mouse_orbit_system, spring_to_target,
         update_camera_transform_system, update_camera_zoom_perspective_system,
@@ -207,6 +207,7 @@ fn main() {
         .init_resource::<RocketMassModel>()
         .init_resource::<RocketFlightParameters>()
         .init_resource::<CameraProperties>()
+        .init_resource::<CameraDebugOpen>()
         .init_resource::<RocketState>()
         .init_resource::<AudioSettings>()
         .init_resource::<save::SaveState>()
@@ -242,7 +243,7 @@ fn main() {
             (spawn_rocket_cam_system, spawn_drone_cam_system).after(spawn_rocket_system),
         )
         .add_systems(OnEnter(AppState::Launch), setup_launch_hud)
-        .add_systems(OnExit(AppState::Launch), disable_aux_cams_on_exit)
+        .add_systems(OnExit(AppState::Launch), (disable_aux_cams_on_exit, parachute::cleanup_parachute_on_scene_exit))
         .add_systems(OnEnter(AppState::Lab), setup_lab_hud)
         .add_systems(OnEnter(AppState::Store), setup_store_hud)
         .add_systems(
@@ -255,7 +256,7 @@ fn main() {
         )
         .add_systems(
             EguiPrimaryContextPass,
-            (ui_system, init_egui_ui_input_system).run_if(in_gameplay),
+            (ui_system, init_egui_ui_input_system, camera_debug_system).run_if(in_gameplay),
         )
         .add_systems(
             EguiPrimaryContextPass,
@@ -267,7 +268,7 @@ fn main() {
         )
         .add_systems(
             Update,
-            (update_rocket_dimensions_system, on_reset_event, sync_equipped_loadout).run_if(in_gameplay),
+            (update_rocket_dimensions_system, on_reset_event.after(parachute::cleanup_parachute_system), sync_equipped_loadout).run_if(in_gameplay),
         )
         .add_systems(
             Update,
@@ -510,14 +511,6 @@ fn do_launch_system(
     let arrow_up = ctx.input(|i| i.key_down(Key::ArrowUp));
     let arrow_down = ctx.input(|i| i.key_down(Key::ArrowDown));
 
-    if ctx.input(|i| i.key_pressed(Key::C)) {
-        let idx = CAMERA_MODES
-            .iter()
-            .position(|m| *m == camera_properties.follow_mode)
-            .unwrap_or(0);
-        camera_properties.follow_mode = CAMERA_MODES[(idx + 1) % CAMERA_MODES.len()];
-    }
-
     if ctx.input(|i| i.key_pressed(Key::Z)) {
         camera_properties.zoom_index = (camera_properties.zoom_index + 1) % ZOOM_LEVELS.len();
         camera_properties.zoom = ZOOM_LEVELS[camera_properties.zoom_index];
@@ -535,9 +528,17 @@ fn do_launch_system(
         }
     }
 
+    let plus_held = ctx.input(|i| i.key_down(Key::Plus) || i.key_down(Key::Equals));
+    let minus_held = ctx.input(|i| i.key_down(Key::Minus));
+
+    if plus_held {
+        camera_properties.desired_translation.y += 0.1;
+    } else if minus_held {
+        camera_properties.desired_translation.y -= 0.1;
+    }
+
     if arrow_up {
         if shift_held {
-            // Camera truck/dolly movement in toward target.
             let delta_to_target = camera_properties.desired_translation - camera_properties.target;
             let increment = 0.05;
             camera_properties.desired_translation.x -= increment * delta_to_target.x;
@@ -548,7 +549,6 @@ fn do_launch_system(
         }
     } else if arrow_down {
         if shift_held {
-            // Camera truck/dolly movement out away from target.
             let delta_to_target = camera_properties.desired_translation - camera_properties.target;
             let increment = 0.05;
             camera_properties.desired_translation.x += increment * delta_to_target.x;
@@ -784,7 +784,6 @@ fn on_reset_event(
         _ => rocket_dims.length * 0.5,
     };
 
-    let mut rocket_pos = Vec3::new(0.0, base_y, 0.0);
     if let Ok((rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity)) =
         rocket_query.single_mut()
     {
@@ -793,12 +792,11 @@ fn on_reset_event(
         *lin_velocity = LinearVelocity::ZERO;
         *ang_velocity = AngularVelocity::ZERO;
         rocket_state.launch_origin_y = rocket_transform.translation.y;
-        rocket_pos = rocket_transform.translation;
         commands.entity(rocket_ent).remove::<ForceTimer>();
     }
 
     scene_camera.clear(app_state.get());
-    camera_properties.apply_scene_defaults(app_state.get(), rocket_pos);
+    camera_properties.apply_scene_defaults(app_state.get());
 }
 
 fn detect_landing_from_collision_system(
@@ -1834,6 +1832,77 @@ fn ui_system(
     Ok(())
 }
 
+#[derive(Resource, Default)]
+struct CameraDebugOpen(bool);
+
+fn camera_debug_system(
+    mut contexts: EguiContexts,
+    mut debug_open: ResMut<CameraDebugOpen>,
+    camera_properties: Res<CameraProperties>,
+    main_cam_query: Query<&Transform, (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<camera::EguiOverlayCam>)>,
+    rocket_cam_query: Query<(&Camera, &GlobalTransform), (With<RocketCamMarker>, Without<DroneCamMarker>)>,
+    drone_cam_query: Query<(&Camera, &GlobalTransform), (With<DroneCamMarker>, Without<RocketCamMarker>)>,
+) -> Result {
+    let ctx = contexts.ctx_mut()?;
+
+    if ctx.input(|i| i.key_pressed(Key::F9)) {
+        debug_open.0 = !debug_open.0;
+    }
+    if !debug_open.0 {
+        return Ok(());
+    }
+
+    egui::Window::new("Camera Debug")
+        .default_open(true)
+        .default_pos([300.0, 10.0])
+        .resizable(false)
+        .show(ctx, |ui| {
+            let fmt_v3 = |v: Vec3| format!("({:6.2}, {:6.2}, {:6.2})", v.x, v.y, v.z);
+            let mode_str = match camera_properties.follow_mode {
+                FollowMode::FreeLook => "FreeLook",
+                FollowMode::FixedGround => "FixedGround",
+                FollowMode::FollowSide => "FollowSide",
+                FollowMode::FollowAbove => "FollowAbove",
+            };
+
+            ui.label(egui::RichText::new("Main Camera").strong());
+            if let Ok(tf) = main_cam_query.single() {
+                ui.monospace(format!("pos:    {}", fmt_v3(tf.translation)));
+                let fwd = tf.forward().as_vec3();
+                ui.monospace(format!("fwd:    {}", fmt_v3(fwd)));
+            }
+            ui.monospace(format!("target: {}", fmt_v3(camera_properties.target)));
+            ui.monospace(format!("mode:   {mode_str}"));
+            ui.monospace(format!("zoom:   {:.1}x", camera_properties.zoom));
+            ui.monospace(format!("orbit:  {:.1}°", camera_properties.orbit_angle_degrees));
+            ui.monospace(format!("dist:   {:.1}", camera_properties.fixed_distance));
+            ui.separator();
+
+            if let Ok((cam, gtf)) = rocket_cam_query.single() {
+                ui.label(egui::RichText::new("Rocket Cam").strong());
+                let status = if cam.is_active { "ACTIVE" } else { "off" };
+                ui.monospace(format!("status: {status}"));
+                let pos = gtf.translation();
+                let fwd = gtf.forward().as_vec3();
+                ui.monospace(format!("pos:    {}", fmt_v3(pos)));
+                ui.monospace(format!("fwd:    {}", fmt_v3(fwd)));
+                ui.separator();
+            }
+
+            if let Ok((cam, gtf)) = drone_cam_query.single() {
+                ui.label(egui::RichText::new("Drone Cam").strong());
+                let status = if cam.is_active { "ACTIVE" } else { "off" };
+                ui.monospace(format!("status: {status}"));
+                let pos = gtf.translation();
+                let fwd = gtf.forward().as_vec3();
+                ui.monospace(format!("pos:    {}", fmt_v3(pos)));
+                ui.monospace(format!("fwd:    {}", fmt_v3(fwd)));
+            }
+        });
+
+    Ok(())
+}
+
 fn sync_equipped_loadout(
     equipped: Res<inventory::EquippedLoadout>,
     game_mode: Res<save::GameMode>,
@@ -2204,9 +2273,9 @@ fn disable_aux_cams_on_exit(
 
 fn rocket_cam_mount_transform(rocket_dims: &RocketDimensions) -> Transform {
     // Keep the camera outside the cone mesh so fullscreen swap doesn't stare into geometry.
-    let mount_pos = Vec3::new(0.0, rocket_dims.cone_length * 0.15, rocket_dims.radius + 0.03);
+    let mount_pos = Vec3::new(0.0, rocket_dims.cone_length * 0.15, rocket_dims.radius + 0.08);
     Transform::from_translation(mount_pos)
-        .looking_to(Vec3::new(0.0, -0.25, 1.0).normalize(), Vec3::Y)
+        .looking_to(Vec3::new(0.0, -1.73, 1.0).normalize(), Vec3::Y)
 }
 
 fn setup_camera_system(
@@ -2689,6 +2758,7 @@ fn update_store_balance_text(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::camera::{LAUNCH_CAMERA_POS, LAUNCH_CAMERA_TARGET};
     use bevy::ecs::message::Messages;
 
     fn write_message<M: Message>(app: &mut App, message: M) {
@@ -2868,8 +2938,8 @@ mod tests {
         approx_eq(state.launch_origin_y, expected_y);
 
         let camera = app.world().resource::<CameraProperties>();
-        assert_eq!(camera.desired_translation, INITIAL_CAMERA_POS);
-        approx_eq(camera.target.y, expected_y);
+        assert_eq!(camera.desired_translation, LAUNCH_CAMERA_POS);
+        assert_eq!(camera.target, LAUNCH_CAMERA_TARGET);
     }
 
     #[test]

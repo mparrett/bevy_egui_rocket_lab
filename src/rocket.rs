@@ -1,5 +1,5 @@
 use avian3d::prelude::*;
-use bevy::{math::primitives::Cylinder, prelude::*};
+use bevy::{camera::visibility::NoFrustumCulling, math::primitives::Cylinder, prelude::*};
 use serde::{Deserialize, Serialize};
 
 use crate::cone::Cone;
@@ -562,6 +562,7 @@ pub fn spawn_rocket_system(
             Restitution::new(0.4),
             RocketCone,
             CollisionEventsEnabled,
+            NoFrustumCulling,
             Name::new("RocketCone"),
         ));
 
