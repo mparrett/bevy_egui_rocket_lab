@@ -82,9 +82,19 @@
   </body>
 
   <script type="module">
-    import init from './out/bevy-rocket-lab.js'
-    init().then(() => {
-      document.getElementById('loading').remove()
-    })
+    const hasWebGPU = "gpu" in navigator;
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const useWebGPU = hasWebGPU && !isIOS;
+
+    const variant = useWebGPU ? "webgpu" : "webgl";
+    const label = document.querySelector("#loading .label");
+    if (label) label.textContent = `Loading (${variant})…`;
+
+    const mod = useWebGPU
+      ? "./out-webgpu/bevy-rocket-lab.js"
+      : "./out-webgl/bevy-rocket-lab.js";
+    const { default: init } = await import(mod);
+    await init();
+    document.getElementById("loading").remove();
   </script>
 </html>

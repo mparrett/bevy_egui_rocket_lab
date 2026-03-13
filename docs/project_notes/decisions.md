@@ -40,9 +40,18 @@
 
 **Rationale**: avian3d's pipeline is First → Prepare → StepSimulation → Writeback. Modifying `Transform` in First gets synced to `Position` in Prepare but then overwritten by StepSimulation. Constraints must run post-sim. Without `TransformInterpolation`, Transforms update discretely at the fixed rate causing visible stutter. Without explicit system ordering in PostUpdate, Bevy runs systems in arbitrary order causing frame-to-frame jitter.
 
-## ADR-006: WebGPU-only for WASM (2026-03)
+## ADR-006: WebGPU-only for WASM (2026-03) [superseded]
 
 **Context**: Bevy 0.18 / wgpu 27 defaults to WebGPU for WASM builds. Dual-backend (WebGPU + WebGL2 fallback) in a single binary is not yet supported (bevyengine/bevy#13168).
 **Decision**: Stay WebGPU-only. All current desktop browsers support it (Chrome 113+, Firefox 141+, Safari 26).
 **Rationale**: This is a tech demo targeting desktop browsers. Adding a JS shim + dual builds for WebGL2 fallback isn't worth the complexity.
 **Consequences**: Older browsers and some mobile devices won't work. Revisit when Bevy ships #13168.
+**Superseded**: By ADR-007 (dual WASM builds).
+
+## ADR-007: Dual WASM builds — WebGPU + WebGL2 (2026-03)
+
+**Context**: iOS Safari disables WebGPU until Safari 26 (late 2026). The single WebGPU-only build (ADR-006) excludes all iOS users.
+**Decision**: Ship two separate WASM binaries — one compiled with `--features web_webgpu` and one with `--features web_webgl`. A JS loader in index.html detects WebGPU support and dynamically imports the correct build.
+**Rationale**: Bevy doesn't support dual backends in a single binary (bevyengine/bevy#13168). Two separate builds with Cargo features is the cleanest approach. The WebGL2 build disables HDR (Bloom, volumetric fog, high emissive values) via `cfg` gates since WebGL2 lacks the required framebuffer precision.
+**WebGL2 differences**: No Bloom, no volumetric fog, Reinhard tonemapping instead of TonyMcMapface, emissive values clamped to 1.0, skybox brightness 1.0 instead of 1000.0.
+**Consequences**: CI builds take ~2x longer. Two output directories (`out-webgpu/`, `out-webgl/`). Deploy artifact is larger. Native builds are unaffected (no web features enabled).

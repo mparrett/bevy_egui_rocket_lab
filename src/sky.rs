@@ -2,10 +2,9 @@ use bevy::prelude::*;
 
 use crate::camera::{DroneCamMarker, EguiOverlayCam, RocketCamMarker};
 use bevy::image::CompressedImageFormats;
-use bevy::light::{
-    CascadeShadowConfigBuilder, FogVolume, NotShadowCaster, NotShadowReceiver, VolumetricFog,
-    VolumetricLight,
-};
+use bevy::light::{CascadeShadowConfigBuilder, NotShadowCaster, NotShadowReceiver};
+#[cfg(not(feature = "web_webgl"))]
+use bevy::light::{FogVolume, VolumetricFog, VolumetricLight};
 use bevy::{
     core_pipeline::Skybox,
     render::render_resource::{TextureViewDescriptor, TextureViewDimension},
@@ -223,6 +222,7 @@ impl Default for SunDiscSettings {
     }
 }
 
+#[cfg(not(feature = "web_webgl"))]
 #[derive(Component)]
 pub struct VolumetricFogMarker;
 
@@ -266,13 +266,10 @@ pub fn spawn_sun_disc_system(
     settings: Res<SunDiscSettings>,
 ) {
     let initial_radius = sun_disc_radius(settings.distance, settings.angular_diameter_deg);
+    let em = crate::webcompat::hdr_emissive(settings.emissive_strength);
     let sun_material = materials.add(StandardMaterial {
         base_color: Color::WHITE,
-        emissive: LinearRgba::rgb(
-            settings.emissive_strength,
-            settings.emissive_strength * 0.95,
-            settings.emissive_strength * 0.85,
-        ),
+        emissive: LinearRgba::rgb(em, em * 0.95, em * 0.85),
         emissive_exposure_weight: 1.0,
         unlit: true,
         ..default()
@@ -295,6 +292,7 @@ pub fn spawn_sun_disc_system(
     ));
 }
 
+#[cfg(not(feature = "web_webgl"))]
 pub fn sync_volumetrics_system(
     mut commands: Commands,
     sky_props: Res<SkyProperties>,
@@ -537,7 +535,8 @@ pub fn update_sun_disc_system(
         let g = 0.95 - 0.28 * warmness;
         let b = 0.85 - 0.45 * warmness;
         let altitude_boost = ((sun_direction.y + 0.05) / 0.4).clamp(0.0, 1.0);
-        let emissive_strength = settings.emissive_strength * (0.25 + 0.75 * altitude_boost);
+        let emissive_strength =
+            crate::webcompat::hdr_emissive(settings.emissive_strength * (0.25 + 0.75 * altitude_boost));
         material.emissive = LinearRgba::rgb(
             r * emissive_strength,
             g * emissive_strength,

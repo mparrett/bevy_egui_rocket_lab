@@ -11,6 +11,7 @@ use std::f32::consts::PI;
 
 use crate::{
     rocket::{RocketDimensions, RocketFlightParameters, RocketMarker},
+    webcompat::hdr_emissive as hdr,
     LaunchEvent, ResetEvent, RocketGeometryChangedEvent,
 };
 
@@ -89,9 +90,9 @@ impl Particle {
                         (1., 0.3),
                     ]),
                     base_color: FireworkGradient::uneven_samples(vec![
-                        (0., LinearRgba::new(10., 7., 1., 1.)),
-                        (0.5, LinearRgba::new(3., 1., 0.3, 1.)),
-                        (0.7, LinearRgba::new(1., 0.3, 0.3, 0.8)),
+                        (0., LinearRgba::new(hdr(10.), hdr(7.), hdr(1.), 1.)),
+                        (0.5, LinearRgba::new(hdr(3.), hdr(1.), hdr(0.3), 1.)),
+                        (0.7, LinearRgba::new(hdr(1.), hdr(0.3), hdr(0.3), 0.8)),
                         (0.85, LinearRgba::new(0.2, 0.2, 0.2, 0.15)),
                         (1., LinearRgba::new(0., 0., 0., 0.)),
                     ]),

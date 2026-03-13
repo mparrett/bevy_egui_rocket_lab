@@ -11,7 +11,7 @@ use bevy::{
     pbr::{Atmosphere, AtmosphereSettings, ScatteringMedium},
     post_process::bloom::Bloom,
     prelude::*,
-    render::{render_resource::BlendState, view::Hdr},
+    render::render_resource::BlendState,
 };
 use bevy_firework::plugin::ParticleSystemPlugin;
 
@@ -45,9 +45,11 @@ use crate::{
     sky::{
         Cubemap, SKYBOXES, animate_light_direction, apply_fog_mode, cubemap_asset_loaded,
         pick_best_variant, setup_sky_system, spawn_regular_sky_map, spawn_sun_disc_system,
-        sync_volumetrics_system, update_sun_disc_system,
+        update_sun_disc_system,
     },
 };
+#[cfg(not(feature = "web_webgl"))]
+use sky::sync_volumetrics_system;
 
 mod camera;
 mod canopy;
@@ -67,6 +69,7 @@ mod rocket;
 mod save;
 mod scene;
 mod sky;
+mod webcompat;
 mod wind;
 
 #[derive(States, Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -369,9 +372,13 @@ fn main() {
         (
             sync_sky_render_mode_system,
             (animate_light_direction, update_sun_disc_system).chain(),
-            sync_volumetrics_system,
         )
             .run_if(in_state(AppState::Launch)),
+    );
+    #[cfg(not(feature = "web_webgl"))]
+    app.add_systems(
+        Update,
+        sync_volumetrics_system.run_if(in_state(AppState::Launch)),
     );
     app.add_systems(
         Update,
@@ -442,7 +449,11 @@ fn sync_sky_render_mode_system(
 
     match *sky_mode {
         SkyRenderMode::Cubemap => {
-            *tonemapping = Tonemapping::TonyMcMapface;
+            *tonemapping = if cfg!(feature = "web_webgl") {
+                Tonemapping::Reinhard
+            } else {
+                Tonemapping::TonyMcMapface
+            };
             commands.entity(camera).remove::<(
                 Exposure,
                 Atmosphere,
@@ -464,7 +475,7 @@ fn sync_sky_render_mode_system(
                         });
                 commands.entity(camera).insert(Skybox {
                     image: skybox_image,
-                    brightness: 1000.0,
+                    brightness: webcompat::skybox_brightness(),
                     ..default()
                 });
             }
@@ -1598,21 +1609,27 @@ fn ui_system(
                             ui.separator();
                         }
 
-                        if let Ok(mut bloom) = bloom_query.single_mut() {
-                            ui.add(
-                                egui::Slider::new(&mut bloom.intensity, 0.0..=1.0).text("bloom"),
-                            );
-                            ui.add(
-                                egui::Slider::new(&mut bloom.high_pass_frequency, 0.0..=1.0)
+                        if !cfg!(feature = "web_webgl") {
+                            if let Ok(mut bloom) = bloom_query.single_mut() {
+                                ui.add(
+                                    egui::Slider::new(&mut bloom.intensity, 0.0..=1.0)
+                                        .text("bloom"),
+                                );
+                                ui.add(
+                                    egui::Slider::new(
+                                        &mut bloom.high_pass_frequency,
+                                        0.0..=1.0,
+                                    )
                                     .text("bloom high-pass"),
+                                );
+                            }
+
+                            ui.separator();
+                            ui.checkbox(
+                                &mut sky_props.volumetrics_enabled,
+                                "Volumetrics (opt-in, GPU heavy)",
                             );
                         }
-
-                        ui.separator();
-                        ui.checkbox(
-                            &mut sky_props.volumetrics_enabled,
-                            "Volumetrics (opt-in, GPU heavy)",
-                        );
 
                         ui.separator();
                         let mut fog_changed = false;
@@ -2219,7 +2236,7 @@ fn spawn_drone_cam_system(
     };
     let skybox = skybox.clone();
 
-    commands.spawn((
+    let mut drone_cam = commands.spawn((
         Camera3d::default(),
         Camera {
             order: 1,
@@ -2227,8 +2244,6 @@ fn spawn_drone_cam_system(
             clear_color: ClearColorConfig::Custom(Color::BLACK),
             ..default()
         },
-        Hdr,
-        Tonemapping::TonyMcMapface,
         Projection::Perspective(PerspectiveProjection {
             fov: DRONE_CAM_FOV_DEGREES.to_radians(),
             ..default()
@@ -2237,12 +2252,9 @@ fn spawn_drone_cam_system(
             .looking_at(DRONE_CAM_POSITION + Vec3::NEG_Z, Vec3::Y),
         DroneCamMarker,
         skybox,
-        Bloom {
-            intensity: 0.15,
-            ..Bloom::NATURAL
-        },
         Name::new("DroneCam"),
     ));
+    webcompat::insert_hdr_aux_camera_components(&mut drone_cam, 0.15);
 }
 
 const DRONE_SPRING_STIFFNESS: f32 = 2.0;
@@ -2412,31 +2424,25 @@ fn setup_camera_system(
     let path = pick_best_variant(SKYBOXES[0].variants, supported);
     let skybox_handle = asset_server.load(path);
 
-    commands.spawn((
+    let mut main_cam = commands.spawn((
         Camera3d::default(),
         camera_transform,
         Camera::default(),
-        Hdr,
-        Tonemapping::TonyMcMapface,
         Projection::Perspective(PerspectiveProjection {
             fov: DEFAULT_FOV_DEGREES.to_radians(),
             ..default()
         }),
         Skybox {
             image: skybox_handle,
-            brightness: 1000.0,
+            brightness: webcompat::skybox_brightness(),
             ..default()
-        },
-        Bloom {
-            intensity: 0.1,
-            high_pass_frequency: 0.35,
-            ..Bloom::NATURAL
         },
         DistanceFog {
             color: Color::srgba(0.0, 0.0, 0.0, 0.0),
             ..default()
         },
     ));
+    webcompat::insert_hdr_camera_components(&mut main_cam);
 
     // Dedicated egui overlay camera — renders UI on top of all 3D cameras.
     // Pattern from bevy_egui's split_screen example: Camera3d with alpha
@@ -2474,31 +2480,25 @@ fn spawn_rocket_cam_system(
     };
     let skybox = skybox.clone();
 
-    let rocket_cam = commands
-        .spawn((
-            Camera3d::default(),
-            Camera {
-                order: 1,
-                is_active: false,
-                clear_color: ClearColorConfig::Custom(Color::BLACK),
-                ..default()
-            },
-            Hdr,
-            Tonemapping::TonyMcMapface,
-            Projection::Perspective(PerspectiveProjection {
-                fov: 100f32.to_radians(),
-                ..default()
-            }),
-            rocket_cam_mount_transform(&rocket_dims),
-            RocketCamMarker,
-            skybox,
-            Bloom {
-                intensity: 0.15,
-                ..Bloom::NATURAL
-            },
-            Name::new("RocketCam"),
-        ))
-        .id();
+    let mut rocket_cam_cmds = commands.spawn((
+        Camera3d::default(),
+        Camera {
+            order: 1,
+            is_active: false,
+            clear_color: ClearColorConfig::Custom(Color::BLACK),
+            ..default()
+        },
+        Projection::Perspective(PerspectiveProjection {
+            fov: 100f32.to_radians(),
+            ..default()
+        }),
+        rocket_cam_mount_transform(&rocket_dims),
+        RocketCamMarker,
+        skybox,
+        Name::new("RocketCam"),
+    ));
+    webcompat::insert_hdr_aux_camera_components(&mut rocket_cam_cmds, 0.15);
+    let rocket_cam = rocket_cam_cmds.id();
 
     commands.entity(cone_entity).add_child(rocket_cam);
 }

@@ -515,7 +515,12 @@ fn spawn_store_room(
     // Overhead light fixtures (4 in a grid)
     let fixture_mat = materials.add(StandardMaterial {
         base_color: Color::srgb(0.9, 0.9, 0.9),
-        emissive: bevy::color::LinearRgba::new(2.0, 1.9, 1.7, 1.0),
+        emissive: bevy::color::LinearRgba::new(
+            crate::webcompat::hdr_emissive(2.0),
+            crate::webcompat::hdr_emissive(1.9),
+            crate::webcompat::hdr_emissive(1.7),
+            1.0,
+        ),
         ..default()
     });
     let fixture_mesh = meshes.add(Cuboid::new(0.4, 0.03, 0.15));
@@ -575,7 +580,14 @@ fn enter_indoor(
             bevy::light::AtmosphereEnvironmentMapLight,
             bevy::camera::Exposure,
         )>();
-        *tonemapping = bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface;
+        #[cfg(not(feature = "web_webgl"))]
+        {
+            *tonemapping = bevy::core_pipeline::tonemapping::Tonemapping::TonyMcMapface;
+        }
+        #[cfg(feature = "web_webgl")]
+        {
+            *tonemapping = bevy::core_pipeline::tonemapping::Tonemapping::Reinhard;
+        }
     }
 
     rocket_state.state = RocketStateEnum::Initial;

@@ -1,5 +1,7 @@
 /target
 /out
+/out-webgpu
+/out-webgl
 /bevy-repo
 /_temp
 /terst

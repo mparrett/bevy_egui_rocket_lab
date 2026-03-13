@@ -32,25 +32,34 @@ jobs:
       - name: Install wasm-bindgen-cli
         run: cargo install wasm-bindgen-cli --version 0.2.114
 
-      - name: Build WASM
-        run: cargo build --profile wasm-release --target wasm32-unknown-unknown
+      - name: Build WASM (WebGPU)
+        run: cargo build --profile wasm-release --target wasm32-unknown-unknown --features web_webgpu
 
-      - name: Run wasm-bindgen
-        run: wasm-bindgen --out-dir ./out/ --target web ./target/wasm32-unknown-unknown/wasm-release/bevy-rocket-lab.wasm
+      - name: Run wasm-bindgen (WebGPU)
+        run: wasm-bindgen --out-dir ./out-webgpu/ --target web ./target/wasm32-unknown-unknown/wasm-release/bevy-rocket-lab.wasm
+
+      - name: Build WASM (WebGL2)
+        run: cargo build --profile wasm-release --target wasm32-unknown-unknown --features web_webgl
+
+      - name: Run wasm-bindgen (WebGL2)
+        run: wasm-bindgen --out-dir ./out-webgl/ --target web ./target/wasm32-unknown-unknown/wasm-release/bevy-rocket-lab.wasm
 
       - name: Install wasm-opt
         run: |
           curl -L https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz | tar xz
           echo "$PWD/binaryen-version_121/bin" >> $GITHUB_PATH
 
-      - name: Optimize WASM binary
-        run: wasm-opt -Oz --all-features -o out/bevy-rocket-lab_bg.wasm out/bevy-rocket-lab_bg.wasm
+      - name: Optimize WASM binaries
+        run: |
+          wasm-opt -Oz --all-features -o out-webgpu/bevy-rocket-lab_bg.wasm out-webgpu/bevy-rocket-lab_bg.wasm
+          wasm-opt -Oz --all-features -o out-webgl/bevy-rocket-lab_bg.wasm out-webgl/bevy-rocket-lab_bg.wasm
 
       - name: Assemble deploy directory
         run: |
           mkdir -p staging
           cp index.html staging/
-          cp -r out/ staging/out/
+          cp -r out-webgpu/ staging/out-webgpu/
+          cp -r out-webgl/ staging/out-webgl/
           mkdir -p staging/assets
           cp -r assets/audio/ staging/assets/audio/
           cp -r assets/textures/ staging/assets/textures/
