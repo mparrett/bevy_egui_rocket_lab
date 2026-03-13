@@ -554,6 +554,8 @@ fn enter_indoor(
         (
             Entity,
             &mut Transform,
+            &mut Position,
+            &mut Rotation,
             &mut LinearVelocity,
             &mut AngularVelocity,
             &mut LockedAxes,
@@ -594,7 +596,7 @@ fn enter_indoor(
     rocket_state.max_height = 0.0;
     rocket_state.max_velocity = 0.0;
 
-    if let Ok((rocket_ent, mut transform, mut lin_vel, mut ang_vel, mut locked)) =
+    if let Ok((rocket_ent, mut transform, mut position, mut rotation, mut lin_vel, mut ang_vel, mut locked)) =
         rocket_query.single_mut()
     {
         let rocket_vis = if show_rocket {
@@ -604,12 +606,15 @@ fn enter_indoor(
         };
         commands.entity(rocket_ent).insert(rocket_vis);
         let rocket_half = rocket_dims.length * 0.5;
-        transform.translation = Vec3::new(0.0, TABLE_TOP_Y + rocket_half, 0.0);
+        let pos = Vec3::new(0.0, TABLE_TOP_Y + rocket_half, 0.0);
+        transform.translation = pos;
         transform.rotation = Quat::IDENTITY;
+        *position = Position(pos);
+        *rotation = Rotation(Quat::IDENTITY);
         *lin_vel = LinearVelocity::ZERO;
         *ang_vel = AngularVelocity::ZERO;
         *locked = lock_all_axes(LockedAxes::new());
-        rocket_state.launch_origin_y = transform.translation.y;
+        rocket_state.launch_origin_y = pos.y;
     }
 }
 
@@ -619,6 +624,8 @@ fn enter_lab(
         (
             Entity,
             &mut Transform,
+            &mut Position,
+            &mut Rotation,
             &mut LinearVelocity,
             &mut AngularVelocity,
             &mut LockedAxes,
@@ -660,6 +667,8 @@ fn enter_store(
         (
             Entity,
             &mut Transform,
+            &mut Position,
+            &mut Rotation,
             &mut LinearVelocity,
             &mut AngularVelocity,
             &mut LockedAxes,
@@ -701,6 +710,8 @@ fn enter_launch(
         (
             Entity,
             &mut Transform,
+            &mut Position,
+            &mut Rotation,
             &mut LinearVelocity,
             &mut AngularVelocity,
             &mut LockedAxes,
@@ -729,16 +740,18 @@ fn enter_launch(
     rocket_state.max_velocity = 0.0;
 
     let rocket_pos = Vec3::new(0.0, rocket_dims.length * 0.5, 0.0);
-    if let Ok((rocket_ent, mut transform, mut lin_vel, mut ang_vel, mut locked)) =
+    if let Ok((rocket_ent, mut transform, mut position, mut rotation, mut lin_vel, mut ang_vel, mut locked)) =
         rocket_query.single_mut()
     {
         commands.entity(rocket_ent).insert(Visibility::Inherited);
         transform.translation = rocket_pos;
         transform.rotation = Quat::IDENTITY;
+        *position = Position(rocket_pos);
+        *rotation = Rotation(Quat::IDENTITY);
         *lin_vel = LinearVelocity::ZERO;
         *ang_vel = AngularVelocity::ZERO;
         *locked = lock_all_axes(LockedAxes::new());
-        rocket_state.launch_origin_y = transform.translation.y;
+        rocket_state.launch_origin_y = rocket_pos.y;
     }
 
     if let Some(snap) = scene_camera.get(&AppState::Launch) {

@@ -852,6 +852,8 @@ fn on_reset_event(
         (
             Entity,
             &mut Transform,
+            &mut Position,
+            &mut Rotation,
             &mut LinearVelocity,
             &mut AngularVelocity,
         ),
@@ -897,14 +899,17 @@ fn on_reset_event(
         _ => rocket_dims.length * 0.5,
     };
 
-    if let Ok((rocket_ent, mut rocket_transform, mut lin_velocity, mut ang_velocity)) =
+    if let Ok((rocket_ent, mut rocket_transform, mut position, mut rotation, mut lin_velocity, mut ang_velocity)) =
         rocket_query.single_mut()
     {
-        rocket_transform.translation = Vec3::new(0.0, base_y, 0.0);
+        let pos = Vec3::new(0.0, base_y, 0.0);
+        rocket_transform.translation = pos;
         rocket_transform.rotation = Quat::IDENTITY;
+        *position = Position(pos);
+        *rotation = Rotation(Quat::IDENTITY);
         *lin_velocity = LinearVelocity::ZERO;
         *ang_velocity = AngularVelocity::ZERO;
-        rocket_state.launch_origin_y = rocket_transform.translation.y;
+        rocket_state.launch_origin_y = pos.y;
         commands.entity(rocket_ent).remove::<ForceTimer>();
     }
 
@@ -3000,6 +3005,8 @@ mod tests {
                 RocketMarker,
                 Transform::from_xyz(0.0, y, 0.0),
                 GlobalTransform::default(),
+                Position(Vec3::new(0.0, y, 0.0)),
+                Rotation(Quat::IDENTITY),
                 LinearVelocity::ZERO,
                 AngularVelocity::ZERO,
                 LockedAxes::new(),
