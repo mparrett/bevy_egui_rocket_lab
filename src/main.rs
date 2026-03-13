@@ -115,6 +115,27 @@ struct CameraModeButton;
 #[derive(Component)]
 struct CameraModeLabel;
 
+#[derive(Component)]
+struct CountdownDisplayMarker;
+
+#[derive(Component)]
+struct CountdownOverlay;
+
+#[derive(Resource)]
+struct CountdownTimer {
+    timer: Timer,
+    remaining: u8,
+}
+
+impl CountdownTimer {
+    fn new() -> Self {
+        Self {
+            timer: Timer::from_seconds(1.0, TimerMode::Repeating),
+            remaining: 3,
+        }
+    }
+}
+
 #[derive(Resource)]
 pub struct AudioSettings {
     pub music_enabled: bool,
@@ -249,7 +270,7 @@ fn main() {
             (spawn_rocket_cam_system, spawn_drone_cam_system).after(spawn_rocket_system),
         )
         .add_systems(OnEnter(AppState::Launch), setup_launch_hud)
-        .add_systems(OnExit(AppState::Launch), (disable_aux_cams_on_exit, parachute::cleanup_parachute_on_scene_exit))
+        .add_systems(OnExit(AppState::Launch), (disable_aux_cams_on_exit, parachute::cleanup_parachute_on_scene_exit, cleanup_countdown_on_exit))
         .add_systems(OnEnter(AppState::Lab), setup_lab_hud)
         .add_systems(OnEnter(AppState::Store), setup_store_hud)
         .add_systems(
@@ -281,12 +302,14 @@ fn main() {
         .add_systems(
             Update,
             (
+                countdown_tick_system,
                 on_launch_event,
                 on_launch_audio_event,
                 detect_landing_from_collision_system,
                 on_crash_event,
                 update_stats_system,
                 update_wind_hud_system,
+                update_countdown_display,
                 wind::update_wind_system,
                 drone_cam_track_rocket_system,
             )
@@ -470,10 +493,12 @@ fn sync_sky_render_mode_system(
 
 fn init_egui_ui_input_system(
     mut contexts: EguiContexts,
+    mut commands: Commands,
     mut app_exit: MessageWriter<AppExit>,
     mut reset: MessageWriter<ResetEvent>,
     app_state: Res<State<AppState>>,
     mut next_state: ResMut<NextState<AppState>>,
+    countdown: Option<Res<CountdownTimer>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
 
@@ -497,6 +522,10 @@ fn init_egui_ui_input_system(
     }
 
     if ctx.input(|i| i.key_pressed(Key::R)) {
+        if countdown.is_some() {
+            info!("Countdown cancelled");
+            commands.remove_resource::<CountdownTimer>();
+        }
         info!("Resetting rocket state");
         reset.write_default();
     }
@@ -507,7 +536,9 @@ fn init_egui_ui_input_system(
 fn do_launch_system(
     mut contexts: EguiContexts,
     mut camera_properties: ResMut<CameraProperties>,
-    mut launch_event_writer: MessageWriter<LaunchEvent>,
+    mut commands: Commands,
+    rocket_state: Res<RocketState>,
+    countdown: Option<Res<CountdownTimer>>,
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
     if ctx.wants_keyboard_input() {
@@ -567,12 +598,61 @@ fn do_launch_system(
         }
     }
 
-    if ctx.input(|i| i.key_pressed(Key::Enter) || i.key_pressed(Key::Space)) {
-        info!("Begin launch sequence!");
-        launch_event_writer.write(LaunchEvent);
+    if ctx.input(|i| i.key_pressed(Key::Enter) || i.key_pressed(Key::Space))
+        && rocket_state.state == RocketStateEnum::Initial
+        && countdown.is_none()
+    {
+        info!("Begin countdown!");
+        commands.insert_resource(CountdownTimer::new());
     }
 
     Ok(())
+}
+
+fn countdown_tick_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    countdown: Option<ResMut<CountdownTimer>>,
+    mut launch_event_writer: MessageWriter<LaunchEvent>,
+) {
+    let Some(mut countdown) = countdown else {
+        return;
+    };
+    countdown.timer.tick(time.delta());
+    if countdown.timer.just_finished() {
+        if countdown.remaining > 1 {
+            countdown.remaining -= 1;
+        } else {
+            info!("Countdown complete — launching!");
+            launch_event_writer.write(LaunchEvent);
+            commands.remove_resource::<CountdownTimer>();
+        }
+    }
+}
+
+fn cleanup_countdown_on_exit(mut commands: Commands) {
+    commands.remove_resource::<CountdownTimer>();
+}
+
+fn update_countdown_display(
+    countdown: Option<Res<CountdownTimer>>,
+    mut overlay_query: Query<&mut Visibility, With<CountdownOverlay>>,
+    mut text_query: Query<&mut Text, With<CountdownDisplayMarker>>,
+) {
+    let Ok(mut visibility) = overlay_query.single_mut() else {
+        return;
+    };
+    match countdown {
+        Some(cd) => {
+            *visibility = Visibility::Visible;
+            if let Ok(mut text) = text_query.single_mut() {
+                **text = cd.remaining.to_string();
+            }
+        }
+        None => {
+            *visibility = Visibility::Hidden;
+        }
+    }
 }
 
 fn rocket_position_system(
@@ -2724,6 +2804,29 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                         ));
                 });
         });
+
+    commands.spawn((
+        DespawnOnExit(AppState::Launch),
+        Node {
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            position_type: PositionType::Absolute,
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            ..default()
+        },
+        Visibility::Hidden,
+        CountdownOverlay,
+    ))
+    .with_child((
+        Text::new("3"),
+        TextFont {
+            font_size: 120.0,
+            ..default()
+        },
+        TextColor(Color::srgba(1.0, 1.0, 1.0, 0.9)),
+        CountdownDisplayMarker,
+    ));
 }
 
 fn setup_lab_hud(mut commands: Commands) {
