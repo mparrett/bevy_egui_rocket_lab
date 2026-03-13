@@ -450,7 +450,7 @@ fn sync_sky_render_mode_system(
     match *sky_mode {
         SkyRenderMode::Cubemap => {
             *tonemapping = if cfg!(feature = "web_webgl") {
-                Tonemapping::Reinhard
+                Tonemapping::None
             } else {
                 Tonemapping::TonyMcMapface
             };

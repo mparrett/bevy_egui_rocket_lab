@@ -586,7 +586,7 @@ fn enter_indoor(
         }
         #[cfg(feature = "web_webgl")]
         {
-            *tonemapping = bevy::core_pipeline::tonemapping::Tonemapping::Reinhard;
+            *tonemapping = bevy::core_pipeline::tonemapping::Tonemapping::None;
         }
     }
 
