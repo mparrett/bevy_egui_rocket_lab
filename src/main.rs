@@ -13,6 +13,7 @@ use bevy::{
     prelude::*,
     render::render_resource::BlendState,
 };
+#[cfg(not(feature = "web_webgl"))]
 use bevy_firework::plugin::ParticleSystemPlugin;
 
 use avian3d::prelude::*;
@@ -22,7 +23,9 @@ use bevy_egui::{
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use egui::Key;
-use particles::{ParticleProperties, RocketParticlesPlugin};
+use particles::ParticleProperties;
+#[cfg(not(feature = "web_webgl"))]
+use particles::RocketParticlesPlugin;
 use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 
 use crate::{
@@ -61,6 +64,10 @@ mod ground;
 mod inventory;
 mod menu;
 mod parachute;
+#[cfg(not(feature = "web_webgl"))]
+mod particles;
+#[cfg(feature = "web_webgl")]
+#[path = "particles_stub.rs"]
 mod particles;
 mod physics;
 mod profiling;
@@ -211,8 +218,11 @@ fn main() {
     app.add_message::<RocketGeometryChangedEvent>();
     app.add_message::<parachute::DeployParachuteEvent>();
 
-    app.add_plugins(ParticleSystemPlugin::default())
-        .add_plugins(PhysicsPlugins::default())
+    #[cfg(not(feature = "web_webgl"))]
+    app.add_plugins(ParticleSystemPlugin::default());
+    #[cfg(not(feature = "web_webgl"))]
+    app.add_plugins(RocketParticlesPlugin);
+    app.add_plugins(PhysicsPlugins::default())
         .add_plugins(PhysicsDebugPlugin)
         .insert_resource(SkyProperties::default())
         .insert_resource(SkyRenderMode::default())
@@ -223,7 +233,6 @@ fn main() {
             auto_create_primary_context: false,
             ..default()
         })
-        .add_plugins(RocketParticlesPlugin)
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(profiling::ProfilingPlugin)
         .register_type::<ForceTimer>()
@@ -1291,32 +1300,34 @@ fn ui_system(
                         );
                     });
 
-                ui.add_space(6.0);
-                egui::CollapsingHeader::new("Particles")
-                    .default_open(false)
-                    .show(ui, |ui| {
-                        ui.add(
-                            egui::Slider::new(
-                                &mut particle_props.exhaust_lifetime,
-                                0.1..=2.0,
-                            )
-                            .text("exhaust lifetime"),
-                        );
-                        ui.add(
-                            egui::Slider::new(
-                                &mut particle_props.active_smoke_lifetime,
-                                1.0..=15.0,
-                            )
-                            .text("active smoke lifetime"),
-                        );
-                        ui.add(
-                            egui::Slider::new(
-                                &mut particle_props.residual_smoke_lifetime,
+                if !cfg!(feature = "web_webgl") {
+                    ui.add_space(6.0);
+                    egui::CollapsingHeader::new("Particles")
+                        .default_open(false)
+                        .show(ui, |ui| {
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut particle_props.exhaust_lifetime,
+                                    0.1..=2.0,
+                                )
+                                .text("exhaust lifetime"),
+                            );
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut particle_props.active_smoke_lifetime,
+                                    1.0..=15.0,
+                                )
+                                .text("active smoke lifetime"),
+                            );
+                            ui.add(
+                                egui::Slider::new(
+                                    &mut particle_props.residual_smoke_lifetime,
                                 0.5..=8.0,
                             )
-                            .text("residual smoke lifetime"),
-                        );
-                    });
+                                .text("residual smoke lifetime"),
+                            );
+                        });
+                }
 
                 ui.add_space(6.0);
                 egui::CollapsingHeader::new("Parachute")
