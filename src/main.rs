@@ -2840,6 +2840,11 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
             position_type: PositionType::Absolute,
+            padding: UiRect {
+                left: Val::Px(200.0),
+                bottom: Val::Px(75.0),
+                ..default()
+            },
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
             ..default()
