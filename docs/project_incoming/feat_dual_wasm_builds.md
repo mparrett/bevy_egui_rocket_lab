@@ -39,6 +39,42 @@ A small `<script type="module">` block that checks `navigator.gpu` and UA string
 
 Use `#[cfg(feature = "web_webgpu")]` / `#[cfg(feature = "web_webgl")]` for any backend-specific rendering. Keep gameplay and shared logic backend-agnostic.
 
+## Scoping (assessed 2026-03-13)
+
+### WebGPU-only features that need gating
+
+**Critical — must disable for WebGL2:**
+- Bloom (all 3 cameras in `main.rs`)
+- HDR / `Hdr` component (all 3 cameras)
+- TonyMcMapface tonemapping (all 3 cameras) — use a simpler tonemapper
+- Volumetric fog (`sky.rs`) — already has a runtime `volumetrics_enabled` toggle
+- HDR emissive values up to 22,000.0 (`sky.rs`, `rocket.rs`, `parachute.rs`, `particles.rs`, `scene.rs`) — clamp to [0-1]
+
+**Moderate — may need adjustment:**
+- Cascade shadows (`sky.rs`, `scene.rs`) — may need simpler shadow config
+- bevy_firework (`particles.rs`) — unknown WebGL2 compat, needs investigation
+
+**Already handled:**
+- ASTC/ETC2 textures — `sky.rs` already falls back to PNG via `RenderDevice::features()`
+
+### Build infrastructure changes
+
+- **Cargo.toml**: `bevy/webgpu` is currently hardcoded; make it feature-conditional
+- **justfile**: add `release-wasm-webgl` / `dev-wasm-webgl` targets with separate output dirs
+- **index.html**: JS loader to detect `navigator.gpu` + iOS UA and pick the right artifact
+- **CI** (`.github/workflows/ci.yml`): build and deploy both artifacts to GitHub Pages
+
+### What's already backend-agnostic (no changes needed)
+
+Gameplay, physics (avian3d), parachute system, UI (egui), save/load, menu, input handling — all clean.
+
+### Effort estimate
+
+- Build plumbing (Cargo features, justfile, index.html, CI): ~1 day
+- Feature-gate rendering (Bloom/HDR/volumetrics/tonemapping/emissives): ~1 day
+- Testing WebGL2 build in Safari + mobile: ~half day
+- bevy_firework investigation: unknown (could be zero, could require a fallback particle system)
+
 ## Design constraints
 
 - WebGL2 build must avoid compute shaders, storage-buffer-heavy techniques, and other WebGPU-only features
