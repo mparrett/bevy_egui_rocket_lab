@@ -23,8 +23,8 @@ The skybox cubemaps have visible hard seams where faces meet. Not subtle filteri
 **Observed:** 2026-03-03
 
 Current chase camera behavior is improved, but naming/intent still diverges from feel:
-- `FollowAbove` should bias to stay above the rocket and avoid under-looking shots.
-- `FollowSide` is currently a fixed offset; it does not support dynamic side framing around rocket heading/orbit intent.
+- `FollowAbove` (now `CameraViewpoint::FollowAbove`) should bias to stay above the rocket and avoid under-looking shots.
+- `FollowSide` (now `CameraViewpoint::FollowSide`) is currently a fixed offset; it does not support dynamic side framing around rocket heading/orbit intent.
 
 **Next steps:**
 1. Define explicit constraints for `FollowAbove` (min relative height, max under-angle)
@@ -44,3 +44,18 @@ When `Atmosphere` is on the camera, Bevy adds extra bind group entries (bindings
 **Workaround:** `enter_launch` forces `SkyRenderMode::Cubemap`, and the atmosphere option is greyed out in the launch UI. All atmosphere code paths are preserved for when the upstream fix lands.
 
 **Resolution:** Wait for bevy_firework to support atmosphere bind group layouts, or for Bevy to decouple atmosphere bindings from the mesh view bind group.
+
+## Multi-camera viewport rendering broken on WebGL2 (glow backend)
+
+**Status:** Upstream limitation — documented
+**Severity:** Feature loss — PiP cameras non-functional on WebGL2
+**Observed:** 2026-03-13
+**Upstream:** [bevyengine/bevy#17167](https://github.com/bevyengine/bevy/issues/17167), [bevyengine/bevy#17375](https://github.com/bevyengine/bevy/issues/17375)
+
+A second camera with `Camera { order: 1, viewport: Some(...) }` produces no visible output on the glow/WebGL2 backend. Tested with `is_active: true` from spawn, a hardcoded viewport, and `ClearColorConfig::Custom(Color::RED)` — nothing renders. No console errors or panics; the failure is completely silent. The main camera shows through as if the second camera doesn't exist.
+
+The same setup works correctly on native (wgpu Metal/Vulkan) and WebGPU WASM builds.
+
+**Impact:** PiP cameras (drone cam, rocket cam) are non-functional on the WebGL2 build. The V-key toggle and all aux-cam systems still compile and run, but the second camera's output is never visible.
+
+**Workaround:** Accepted as a known limitation of the WebGL2 build. PiP is a nice-to-have, not essential. The feature remains functional on native and WebGPU builds. On WebGL2, RocketCam is still usable as a main camera viewpoint (cycle with the mode button), which provides the same rocket-perspective view without requiring PiP.

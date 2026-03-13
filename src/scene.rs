@@ -2,7 +2,7 @@ use avian3d::prelude::*;
 use bevy::{math::primitives::Cylinder, prelude::*};
 
 use crate::{
-    camera::{CameraProperties, DroneCamMarker, EguiOverlayCam, RocketCamMarker, SceneCameraState},
+    camera::{CameraProperties, MainCamMarker, SceneCameraState},
     physics::lock_all_axes,
     rocket::{RocketDimensions, RocketMarker, RocketState, RocketStateEnum},
     sky::{SkyProperties, SkyRenderMode},
@@ -564,7 +564,7 @@ fn enter_indoor(
     rocket_dims: &RocketDimensions,
     camera_query: &mut Query<
         (Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping),
-        (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>),
+        With<MainCamMarker>,
     >,
     commands: &mut Commands,
     show_rocket: bool,
@@ -630,7 +630,7 @@ fn enter_lab(
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<
         (Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping),
-        (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>),
+        With<MainCamMarker>,
     >,
     mut commands: Commands,
     mut sky_props: ResMut<SkyProperties>,
@@ -671,7 +671,7 @@ fn enter_store(
     mut camera_properties: ResMut<CameraProperties>,
     mut camera_query: Query<
         (Entity, &mut bevy::core_pipeline::tonemapping::Tonemapping),
-        (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>),
+        With<MainCamMarker>,
     >,
     mut commands: Commands,
     mut sky_props: ResMut<SkyProperties>,

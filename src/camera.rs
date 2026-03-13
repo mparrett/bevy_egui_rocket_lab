@@ -7,6 +7,9 @@ use crate::AppState;
 use crate::rocket::RocketMarker;
 
 #[derive(Component)]
+pub struct MainCamMarker;
+
+#[derive(Component)]
 pub struct RocketCamMarker;
 
 #[derive(Component)]
@@ -24,6 +27,17 @@ pub enum DroneWaypoint {
     Sky,
 }
 
+impl DroneWaypoint {
+    pub fn altitude(self) -> f32 {
+        match self {
+            Self::Ground => 5.0,
+            Self::Low => 10.0,
+            Self::High => 50.0,
+            Self::Sky => 100.0,
+        }
+    }
+}
+
 #[derive(PartialEq, Copy, Clone, Default)]
 pub enum DroneDistance {
     Near,
@@ -32,11 +46,14 @@ pub enum DroneDistance {
     Far,
 }
 
-#[derive(PartialEq, Copy, Clone, Default)]
-pub enum AuxCamKind {
-    #[default]
-    RocketCam,
-    DroneCam,
+impl DroneDistance {
+    pub fn distance(self) -> f32 {
+        match self {
+            Self::Near => 10.0,
+            Self::Mid => 50.0,
+            Self::Far => 100.0,
+        }
+    }
 }
 
 pub const INITIAL_CAMERA_TARGET: Vec3 = Vec3::ZERO;
@@ -65,20 +82,25 @@ pub const CAMERA_MAX_SPEED: f32 = 85.0;
 pub const FREELOOK_MOVE_SPEED: f32 = 3.0;
 pub const ZOOM_LEVELS: &[f32] = &[0.8, 1.0, 2.0, 4.0, 8.0, 16.0];
 
-#[derive(PartialEq, Copy, Clone)]
-pub enum FollowMode {
+#[derive(PartialEq, Copy, Clone, Default)]
+pub enum CameraViewpoint {
+    #[default]
     FreeLook,
     FixedGround,
     FollowAbove,
     FollowSide,
+    DroneCam,
+    RocketCam,
 }
 
-impl FollowMode {
+impl CameraViewpoint {
     pub fn next(self) -> Self {
         match self {
             Self::FixedGround => Self::FollowSide,
             Self::FollowSide => Self::FollowAbove,
-            Self::FollowAbove => Self::FreeLook,
+            Self::FollowAbove => Self::DroneCam,
+            Self::DroneCam => Self::RocketCam,
+            Self::RocketCam => Self::FreeLook,
             Self::FreeLook => Self::FixedGround,
         }
     }
@@ -88,6 +110,8 @@ impl FollowMode {
             Self::FixedGround => "Ground",
             Self::FollowSide => "Side",
             Self::FollowAbove => "Above",
+            Self::DroneCam => "Drone",
+            Self::RocketCam => "Rocket",
             Self::FreeLook => "Free",
         }
     }
@@ -106,12 +130,12 @@ pub struct CameraProperties {
     pub zoom: f32,
     pub zoom_index: usize,
     pub base_fov: f32,
-    pub follow_mode: FollowMode,
+    pub viewpoint: CameraViewpoint,
     pub fixed_distance: f32,
     pub egui_has_pointer: bool,
-    pub aux_cam_enabled: bool,
-    pub camera_swapped: bool,
-    pub aux_cam_kind: AuxCamKind,
+    pub pip_enabled: bool,
+    pub pip_swapped: bool,
+    pub pip_viewpoint: CameraViewpoint,
     pub drone_sway: f32,
     pub drone_waypoint: DroneWaypoint,
     pub drone_distance: DroneDistance,
@@ -130,12 +154,12 @@ impl Default for CameraProperties {
             zoom: 1.0,
             zoom_index: 1,
             base_fov: 60.0_f32.to_radians(),
-            follow_mode: FollowMode::FreeLook,
+            viewpoint: CameraViewpoint::FreeLook,
             fixed_distance: 6.0,
             egui_has_pointer: false,
-            aux_cam_enabled: false,
-            camera_swapped: false,
-            aux_cam_kind: AuxCamKind::default(),
+            pip_enabled: false,
+            pip_swapped: false,
+            pip_viewpoint: CameraViewpoint::DroneCam,
             drone_sway: 0.05,
             drone_waypoint: DroneWaypoint::default(),
             drone_distance: DroneDistance::default(),
@@ -150,7 +174,7 @@ pub struct CameraSnapshot {
     pub target_y_offset: f32,
     pub orbit_angle_degrees: f32,
     pub fixed_distance: f32,
-    pub follow_mode: FollowMode,
+    pub viewpoint: CameraViewpoint,
     pub zoom: f32,
     pub zoom_index: usize,
 }
@@ -163,7 +187,7 @@ impl CameraProperties {
             target_y_offset: self.target_y_offset,
             orbit_angle_degrees: self.orbit_angle_degrees,
             fixed_distance: self.fixed_distance,
-            follow_mode: self.follow_mode,
+            viewpoint: self.viewpoint,
             zoom: self.zoom,
             zoom_index: self.zoom_index,
         }
@@ -175,7 +199,7 @@ impl CameraProperties {
         self.target_y_offset = snap.target_y_offset;
         self.orbit_angle_degrees = snap.orbit_angle_degrees;
         self.fixed_distance = snap.fixed_distance;
-        self.follow_mode = snap.follow_mode;
+        self.viewpoint = snap.viewpoint;
         self.zoom = snap.zoom;
         self.zoom_index = snap.zoom_index;
         self.lagged_translation = snap.desired_translation;
@@ -187,19 +211,19 @@ impl CameraProperties {
     pub fn apply_scene_defaults(&mut self, state: &AppState) {
         match state {
             AppState::Lab => {
-                self.follow_mode = FollowMode::FreeLook;
+                self.viewpoint = CameraViewpoint::FreeLook;
                 self.fixed_distance = LAB_CAMERA_DISTANCE;
                 self.desired_translation = LAB_CAMERA_POS;
                 self.target = LAB_CAMERA_TARGET;
             }
             AppState::Store => {
-                self.follow_mode = FollowMode::FreeLook;
+                self.viewpoint = CameraViewpoint::FreeLook;
                 self.fixed_distance = STORE_CAMERA_DISTANCE;
                 self.desired_translation = STORE_CAMERA_POS;
                 self.target = STORE_CAMERA_TARGET;
             }
             AppState::Launch | AppState::Menu => {
-                self.follow_mode = FollowMode::FreeLook;
+                self.viewpoint = CameraViewpoint::FreeLook;
                 self.fixed_distance = LAUNCH_CAMERA_DISTANCE;
                 self.desired_translation = LAUNCH_CAMERA_POS;
                 self.target = LAUNCH_CAMERA_TARGET;
@@ -250,7 +274,7 @@ impl SceneCameraState {
 }
 
 pub fn update_camera_zoom_perspective_system(
-    mut query_camera: Query<&mut Projection, (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>)>,
+    mut query_camera: Query<&mut Projection, With<MainCamMarker>>,
     camera_properties: Res<CameraProperties>,
 ) {
     let Ok(projection) = query_camera.single_mut() else {
@@ -269,9 +293,10 @@ pub fn update_camera_zoom_perspective_system(
 pub fn update_camera_transform_system(
     time: Res<Time>,
     mut camera_properties: ResMut<CameraProperties>,
-    mut camera_query: Query<(&Projection, &mut Transform), (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>)>,
-    mut last_follow_mode: Local<Option<FollowMode>>,
+    mut camera_query: Query<(&Projection, &mut Transform), With<MainCamMarker>>,
+    mut last_viewpoint: Local<Option<CameraViewpoint>>,
     rocket_velocity_query: Query<&LinearVelocity, With<RocketMarker>>,
+    rocket_cam_query: Query<&GlobalTransform, With<RocketCamMarker>>,
 ) {
     let Ok((projection, mut transform)) = camera_query.single_mut() else {
         return;
@@ -286,18 +311,18 @@ pub fn update_camera_transform_system(
 
     let desired_target = camera_properties.target + Vec3::Y * camera_properties.target_y_offset;
     let camera_dist = camera_properties.fixed_distance;
-    let follow_mode = camera_properties.follow_mode;
+    let viewpoint = camera_properties.viewpoint;
 
     // Re-seed spring state on mode switches so chase modes immediately acquire the rocket.
-    if last_follow_mode.is_none_or(|prev| prev != follow_mode) {
+    if last_viewpoint.is_none_or(|prev| prev != viewpoint) {
         let rocket_velocity = rocket_velocity_query
             .single()
             .map(|v| v.0)
             .unwrap_or(Vec3::ZERO);
         camera_properties.lagged_target = desired_target;
 
-        match follow_mode {
-            FollowMode::FollowAbove => {
+        match viewpoint {
+            CameraViewpoint::FollowAbove => {
                 camera_properties.lagged_target_velocity = rocket_velocity;
                 camera_properties.lagged_translation_velocity = rocket_velocity;
                 camera_properties.lagged_translation = Vec3::new(
@@ -306,7 +331,7 @@ pub fn update_camera_transform_system(
                     desired_target.z + 0.1,
                 );
             }
-            FollowMode::FollowSide => {
+            CameraViewpoint::FollowSide => {
                 camera_properties.lagged_target_velocity = rocket_velocity;
                 camera_properties.lagged_translation_velocity = rocket_velocity;
                 camera_properties.lagged_translation = Vec3::new(
@@ -315,7 +340,7 @@ pub fn update_camera_transform_system(
                     desired_target.z + 0.1,
                 );
             }
-            FollowMode::FixedGround => {
+            CameraViewpoint::FixedGround => {
                 camera_properties.lagged_target_velocity = Vec3::ZERO;
                 camera_properties.lagged_translation_velocity = Vec3::ZERO;
                 let angle_rad = camera_properties.orbit_angle_degrees.to_radians();
@@ -325,16 +350,33 @@ pub fn update_camera_transform_system(
                     desired_target.z + camera_dist * angle_rad.cos(),
                 );
             }
-            FollowMode::FreeLook => {
+            CameraViewpoint::FreeLook => {
                 camera_properties.lagged_target_velocity = Vec3::ZERO;
                 camera_properties.lagged_translation_velocity = Vec3::ZERO;
                 camera_properties.lagged_translation = camera_properties.desired_translation;
             }
+            CameraViewpoint::DroneCam => {
+                let drone_pos = drone_viewpoint_position(camera_properties);
+                camera_properties.lagged_target_velocity = Vec3::ZERO;
+                camera_properties.lagged_translation_velocity = Vec3::ZERO;
+                camera_properties.lagged_translation = drone_pos;
+                camera_properties.lagged_target = drone_pos + Vec3::NEG_Z;
+            }
+            CameraViewpoint::RocketCam => {
+                camera_properties.lagged_target_velocity = Vec3::ZERO;
+                camera_properties.lagged_translation_velocity = Vec3::ZERO;
+                if let Ok(gtf) = rocket_cam_query.single() {
+                    let pos = gtf.translation();
+                    let fwd = gtf.forward().as_vec3();
+                    camera_properties.lagged_translation = pos;
+                    camera_properties.lagged_target = pos + fwd * 10.0;
+                }
+            }
         }
     }
-    *last_follow_mode = Some(follow_mode);
+    *last_viewpoint = Some(viewpoint);
 
-    if follow_mode == FollowMode::FixedGround {
+    if viewpoint == CameraViewpoint::FixedGround {
         {
             let (lagged_target, lagged_target_velocity) = (
                 &mut camera_properties.lagged_target,
@@ -373,7 +415,7 @@ pub fn update_camera_transform_system(
                 time.delta_secs(),
             );
         }
-    } else if follow_mode == FollowMode::FreeLook {
+    } else if viewpoint == CameraViewpoint::FreeLook {
         {
             let (lagged_target, lagged_target_velocity) = (
                 &mut camera_properties.lagged_target,
@@ -405,7 +447,7 @@ pub fn update_camera_transform_system(
                 time.delta_secs(),
             );
         }
-    } else if follow_mode == FollowMode::FollowAbove {
+    } else if viewpoint == CameraViewpoint::FollowAbove {
         // Interpolate look target
         {
             let (lagged_target, lagged_target_velocity) = (
@@ -442,7 +484,7 @@ pub fn update_camera_transform_system(
                 time.delta_secs(),
             );
         }
-    } else if follow_mode == FollowMode::FollowSide {
+    } else if viewpoint == CameraViewpoint::FollowSide {
         // Interpolate look target
         // We want fast follow on translation but slower on look
         {
@@ -481,6 +523,75 @@ pub fn update_camera_transform_system(
                 time.delta_secs(),
             );
         }
+    } else if viewpoint == CameraViewpoint::DroneCam {
+        let drone_pos = drone_viewpoint_position(camera_properties);
+        let drone_look = drone_pos + Vec3::NEG_Z;
+        {
+            let (lagged_target, lagged_target_velocity) = (
+                &mut camera_properties.lagged_target,
+                &mut camera_properties.lagged_target_velocity,
+            );
+            spring_to_target(
+                lagged_target,
+                lagged_target_velocity,
+                drone_look,
+                CAMERA_FOLLOW_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
+        {
+            let (lagged_translation, lagged_translation_velocity) = (
+                &mut camera_properties.lagged_translation,
+                &mut camera_properties.lagged_translation_velocity,
+            );
+            spring_to_target(
+                lagged_translation,
+                lagged_translation_velocity,
+                drone_pos,
+                CAMERA_FOLLOW_FREQ_HZ,
+                CAMERA_DAMPING_RATIO,
+                CAMERA_MAX_SPEED,
+                time.delta_secs(),
+            );
+        }
+    } else if viewpoint == CameraViewpoint::RocketCam
+        && let Ok(gtf) = rocket_cam_query.single()
+    {
+            let pos = gtf.translation();
+            let fwd = gtf.forward().as_vec3();
+            let rocket_cam_target = pos + fwd * 10.0;
+            {
+                let (lagged_target, lagged_target_velocity) = (
+                    &mut camera_properties.lagged_target,
+                    &mut camera_properties.lagged_target_velocity,
+                );
+                spring_to_target(
+                    lagged_target,
+                    lagged_target_velocity,
+                    rocket_cam_target,
+                    CAMERA_FOLLOW_FREQ_HZ,
+                    CAMERA_DAMPING_RATIO,
+                    CAMERA_MAX_SPEED,
+                    time.delta_secs(),
+                );
+            }
+            {
+                let (lagged_translation, lagged_translation_velocity) = (
+                    &mut camera_properties.lagged_translation,
+                    &mut camera_properties.lagged_translation_velocity,
+                );
+                spring_to_target(
+                    lagged_translation,
+                    lagged_translation_velocity,
+                    pos,
+                    CAMERA_FOLLOW_FREQ_HZ,
+                    CAMERA_DAMPING_RATIO,
+                    CAMERA_MAX_SPEED,
+                    time.delta_secs(),
+                );
+            }
     }
 
     *transform = Transform::from_translation(camera_properties.lagged_translation)
@@ -504,6 +615,7 @@ mod tests {
         app.world_mut().spawn((
             Camera3d::default(),
             Projection::Perspective(PerspectiveProjection::default()),
+            MainCamMarker,
         ));
         app.world_mut().spawn((
             Camera3d::default(),
@@ -524,12 +636,7 @@ mod tests {
 
         app.update();
 
-        let mut projections = app.world_mut().query_filtered::<&Projection, (
-            With<Camera3d>,
-            Without<RocketCamMarker>,
-            Without<DroneCamMarker>,
-            Without<EguiOverlayCam>,
-        )>();
+        let mut projections = app.world_mut().query_filtered::<&Projection, With<MainCamMarker>>();
         let projection = projections
             .single(app.world())
             .expect("expected one main 3D camera projection");
@@ -548,6 +655,7 @@ mod tests {
             Camera3d::default(),
             Projection::Perspective(PerspectiveProjection::default()),
             Transform::IDENTITY,
+            MainCamMarker,
         ));
         app.world_mut().spawn((
             Camera3d::default(),
@@ -571,17 +679,20 @@ mod tests {
 
         app.update();
 
-        let mut query = app.world_mut().query_filtered::<&Transform, (
-            With<Camera3d>,
-            Without<RocketCamMarker>,
-            Without<DroneCamMarker>,
-            Without<EguiOverlayCam>,
-        )>();
+        let mut query = app.world_mut().query_filtered::<&Transform, With<MainCamMarker>>();
         let transform = query
             .single(app.world())
             .expect("expected one main 3D camera transform");
         assert_eq!(transform.translation, INITIAL_CAMERA_POS);
     }
+}
+
+pub fn drone_viewpoint_position(params: &CameraProperties) -> Vec3 {
+    Vec3::new(
+        0.0,
+        params.drone_waypoint.altitude(),
+        params.drone_distance.distance(),
+    )
 }
 
 pub fn spring_to_target(
@@ -622,14 +733,19 @@ pub fn mouse_orbit_system(
     accumulated_motion: Res<AccumulatedMouseMotion>,
     mut camera_properties: ResMut<CameraProperties>,
 ) {
-    if camera_properties.egui_has_pointer {
+    if camera_properties.egui_has_pointer
+        || matches!(
+            camera_properties.viewpoint,
+            CameraViewpoint::RocketCam | CameraViewpoint::DroneCam
+        )
+    {
         return;
     }
 
     if mouse_button.pressed(MouseButton::Left) {
         let delta = accumulated_motion.delta;
 
-        if camera_properties.follow_mode == FollowMode::FreeLook {
+        if camera_properties.viewpoint == CameraViewpoint::FreeLook {
             // Mouselook: rotate the look direction around the camera position
             let cam_pos = camera_properties.desired_translation;
             let look_dir = (camera_properties.target - cam_pos).normalize_or_zero();
@@ -653,7 +769,7 @@ pub fn mouse_orbit_system(
         }
     }
 
-    if camera_properties.follow_mode == FollowMode::FreeLook {
+    if camera_properties.viewpoint == CameraViewpoint::FreeLook {
         let cam_pos = camera_properties.desired_translation;
         let look_dir = (camera_properties.target - cam_pos).normalize_or_zero();
         let forward = Vec3::new(look_dir.x, 0.0, look_dir.z).normalize_or_zero();

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::camera::{DroneCamMarker, EguiOverlayCam, RocketCamMarker};
+use crate::camera::MainCamMarker;
 use bevy::image::CompressedImageFormats;
 use bevy::light::{CascadeShadowConfigBuilder, NotShadowCaster, NotShadowReceiver};
 #[cfg(not(feature = "web_webgl"))]
@@ -296,7 +296,7 @@ pub fn spawn_sun_disc_system(
 pub fn sync_volumetrics_system(
     mut commands: Commands,
     sky_props: Res<SkyProperties>,
-    camera_query: Query<(Entity, Option<&VolumetricFog>), (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>)>,
+    camera_query: Query<(Entity, Option<&VolumetricFog>), With<MainCamMarker>>,
     light_query: Query<(Entity, Option<&VolumetricLight>), With<DirectionalLight>>,
     volume_query: Query<Entity, With<VolumetricFogMarker>>,
 ) {
@@ -495,7 +495,7 @@ pub fn update_sun_disc_system(
     sky_props: Res<SkyProperties>,
     sky_mode: Res<SkyRenderMode>,
     settings: Res<SunDiscSettings>,
-    camera_query: Query<&GlobalTransform, (With<Camera3d>, Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>)>,
+    camera_query: Query<&GlobalTransform, With<MainCamMarker>>,
     mut disc_query: Query<
         (
             &mut Transform,
