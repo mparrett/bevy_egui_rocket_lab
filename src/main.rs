@@ -22,7 +22,7 @@ use bevy_egui::{
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 
 use egui::Key;
-use particles::RocketParticlesPlugin;
+use particles::{ParticleProperties, RocketParticlesPlugin};
 use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 
 use crate::{
@@ -250,6 +250,7 @@ fn main() {
         .init_resource::<inventory::PlayerExperience>()
         .init_resource::<wind::WindProperties>()
         .init_resource::<parachute::ParachuteConfig>()
+        .init_resource::<ParticleProperties>()
         .init_resource::<SceneCameraState>()
         .add_systems(
             Startup,
@@ -1006,6 +1007,7 @@ fn ui_system(
     mut sky_mode: ResMut<SkyRenderMode>,
     mut sun_disc_settings: ResMut<SunDiscSettings>,
     mut wind: ResMut<wind::WindProperties>,
+    mut particle_props: ResMut<ParticleProperties>,
     mut save_params: SaveUiParams,
     ambient_light: Res<GlobalAmbientLight>,
     sun_query: Query<&DirectionalLight, With<sky::SunLightMarker>>,
@@ -1275,6 +1277,33 @@ fn ui_system(
                         ui.add(
                             egui::Slider::new(&mut rocket_flight_parameters.duration, 0.5..=10.0)
                                 .text("duration"),
+                        );
+                    });
+
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new("Particles")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::Slider::new(
+                                &mut particle_props.exhaust_lifetime,
+                                0.1..=2.0,
+                            )
+                            .text("exhaust lifetime"),
+                        );
+                        ui.add(
+                            egui::Slider::new(
+                                &mut particle_props.active_smoke_lifetime,
+                                1.0..=15.0,
+                            )
+                            .text("active smoke lifetime"),
+                        );
+                        ui.add(
+                            egui::Slider::new(
+                                &mut particle_props.residual_smoke_lifetime,
+                                0.5..=8.0,
+                            )
+                            .text("residual smoke lifetime"),
                         );
                     });
 

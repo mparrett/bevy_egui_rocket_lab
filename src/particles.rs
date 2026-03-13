@@ -49,30 +49,51 @@ impl ParticleTimers {
     }
 }
 
-#[derive(Component)]
+#[derive(Resource)]
+pub struct ParticleProperties {
+    pub exhaust_lifetime: f32,
+    pub active_smoke_lifetime: f32,
+    pub residual_smoke_lifetime: f32,
+}
+
+impl Default for ParticleProperties {
+    fn default() -> Self {
+        Self {
+            exhaust_lifetime: 0.8,
+            active_smoke_lifetime: 6.5,
+            residual_smoke_lifetime: 3.25,
+        }
+    }
+}
+
+#[derive(Component, Clone, Copy)]
 enum Particle {
-    Sparks,
+    Exhaust,
     ActiveSmoke,
     ResidualSmoke,
 }
 
 impl Particle {
-    fn into_spawner(self) -> ParticleSpawner {
+    fn to_spawner(self, props: &ParticleProperties) -> ParticleSpawner {
         let (particle_settings, emission_settings) = match self {
-            Particle::Sparks => (
+            Particle::Exhaust => (
                 ParticleSettings {
-                    lifetime: RandF32::constant(0.5),
+                    lifetime: RandF32::constant(props.exhaust_lifetime),
                     initial_scale: RandF32 {
                         min: 0.01,
                         max: 0.05,
                     },
-                    scale_curve: FireworkCurve::constant(1.),
+                    scale_curve: FireworkCurve::uneven_samples(vec![
+                        (0., 1.),
+                        (0.7, 1.),
+                        (1., 0.3),
+                    ]),
                     base_color: FireworkGradient::uneven_samples(vec![
                         (0., LinearRgba::new(10., 7., 1., 1.)),
-                        (0.7, LinearRgba::new(3., 1., 1., 1.)),
-                        (0.8, LinearRgba::new(1., 0.3, 0.3, 1.)),
-                        (0.9, LinearRgba::new(0.3, 0.3, 0.3, 1.)),
-                        (1., LinearRgba::new(0.1, 0.1, 0.1, 0.)),
+                        (0.5, LinearRgba::new(3., 1., 0.3, 1.)),
+                        (0.7, LinearRgba::new(1., 0.3, 0.3, 0.8)),
+                        (0.85, LinearRgba::new(0.2, 0.2, 0.2, 0.15)),
+                        (1., LinearRgba::new(0., 0., 0., 0.)),
                     ]),
                     blend_mode: BlendMode::Blend,
                     linear_drag: 0.1,
@@ -101,7 +122,10 @@ impl Particle {
             ),
             Particle::ActiveSmoke => (
                 ParticleSettings {
-                    lifetime: RandF32 { min: 5., max: 8. },
+                    lifetime: RandF32 {
+                        min: props.active_smoke_lifetime * 0.77,
+                        max: props.active_smoke_lifetime * 1.23,
+                    },
                     initial_scale: RandF32 {
                         min: 0.05,
                         max: 0.065,
@@ -144,7 +168,10 @@ impl Particle {
             ),
             Particle::ResidualSmoke => (
                 ParticleSettings {
-                    lifetime: RandF32 { min: 2.5, max: 4.0 },
+                    lifetime: RandF32 {
+                        min: props.residual_smoke_lifetime * 0.77,
+                        max: props.residual_smoke_lifetime * 1.23,
+                    },
                     initial_scale: RandF32 {
                         min: 0.04,
                         max: 0.05,
@@ -201,35 +228,41 @@ fn spawn(
     mut commands: Commands,
     rocket_dims: Res<RocketDimensions>,
     rocket_flight_parameters: ResMut<RocketFlightParameters>,
+    particle_props: Res<ParticleProperties>,
 ) {
     for rocket_ent in &query {
-        let sparks = commands
+        let emitter_y = -rocket_dims.total_length() * 0.5;
+
+        let exhaust = commands
             .spawn((
-                Particle::Sparks.into_spawner(),
-                Transform::from_xyz(0., -rocket_dims.total_length() * 0.5, 0.0),
+                Particle::Exhaust,
+                Particle::Exhaust.to_spawner(&particle_props),
+                Transform::from_xyz(0., emitter_y, 0.0),
                 ParticleTimers::new(0., Some(rocket_flight_parameters.duration)),
             ))
             .id();
 
         let active_smoke = commands
             .spawn((
-                Particle::ActiveSmoke.into_spawner(),
-                Transform::from_xyz(0., -rocket_dims.total_length() * 0.5, 0.0),
+                Particle::ActiveSmoke,
+                Particle::ActiveSmoke.to_spawner(&particle_props),
+                Transform::from_xyz(0., emitter_y, 0.0),
                 ParticleTimers::new(0., Some(rocket_flight_parameters.duration)),
             ))
             .id();
 
         let residual_smoke = commands
             .spawn((
-                Particle::ResidualSmoke.into_spawner(),
-                Transform::from_xyz(0., -rocket_dims.total_length() * 0.5, 0.0),
+                Particle::ResidualSmoke,
+                Particle::ResidualSmoke.to_spawner(&particle_props),
+                Transform::from_xyz(0., emitter_y, 0.0),
                 ParticleTimers::new(rocket_flight_parameters.duration, None),
             ))
             .id();
 
         commands
             .entity(rocket_ent)
-            .add_children(&[sparks, active_smoke, residual_smoke]);
+            .add_children(&[exhaust, active_smoke, residual_smoke]);
     }
 }
 
@@ -242,21 +275,45 @@ fn launch(mut events: MessageReader<LaunchEvent>, mut rocket_query: Query<&mut P
     }
 }
 
-fn timers(mut query: Query<(&mut ParticleTimers, &mut ParticleSpawner)>, time: Res<Time>) {
-    for (mut timers, mut spawner) in &mut query {
+fn timers(
+    mut query: Query<(&mut ParticleTimers, &Particle, &mut ParticleSpawner)>,
+    time: Res<Time>,
+    particle_props: Res<ParticleProperties>,
+) {
+    for (mut timers, particle, mut spawner) in &mut query {
         if timers.paused {
             continue;
         }
 
         timers.delay.tick(time.delta());
         if timers.delay.just_finished() {
+            // Rebuild spawner settings from the Particle variant. This restores
+            // emission pacing that was zeroed on the previous engine shutdown,
+            // and sets starts_enabled = true, all in one Changed trigger so
+            // sync_spawner_data inits cleanly.
+            let fresh = particle.to_spawner(&particle_props);
+            spawner.emission_settings = fresh.emission_settings;
+            spawner.particle_settings = fresh.particle_settings;
             spawner.starts_enabled = true;
         }
 
         if let Some(deactivate) = &mut timers.shut_down {
             deactivate.tick(time.delta());
             if deactivate.just_finished() {
-                spawner.starts_enabled = false;
+                // Zero out emission count instead of toggling starts_enabled.
+                // Toggling starts_enabled triggers sync_spawner_data which
+                // clears all in-flight particles instantly. Zeroing the count
+                // via bypass_change_detection stops new spawns while letting
+                // existing particles fade out naturally.
+                let spawner = spawner.bypass_change_detection();
+                for emission in &mut spawner.emission_settings {
+                    emission.emission_pacing = EmissionPacing::CountOverDuration {
+                        count: 0.,
+                        duration: 1.,
+                        offset_start: 0.,
+                        offset_end: 1.,
+                    };
+                }
                 timers.paused = true;
             }
         }
@@ -320,7 +377,7 @@ mod tests {
         let rocket = app.world_mut().spawn(RocketMarker).id();
         let child_a = app
             .world_mut()
-            .spawn((Particle::Sparks, Transform::from_xyz(1.0, 2.0, 3.0)))
+            .spawn((Particle::Exhaust, Transform::from_xyz(1.0, 2.0, 3.0)))
             .id();
         let child_b = app
             .world_mut()
