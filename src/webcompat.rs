@@ -14,6 +14,19 @@ pub fn hdr_emissive(val: f32) -> f32 {
     }
 }
 
+pub fn light_scale() -> f32 {
+    #[cfg(feature = "web_webgl")]
+    {
+        // LDR framebuffer: scale down physically-based lux values so the
+        // ground isn't blown out without tonemapping.
+        0.45
+    }
+    #[cfg(not(feature = "web_webgl"))]
+    {
+        1.0
+    }
+}
+
 pub fn skybox_brightness() -> f32 {
     #[cfg(feature = "web_webgl")]
     {
@@ -22,7 +35,7 @@ pub fn skybox_brightness() -> f32 {
         // We use a moderate multiplier; values >1.0 clip but the dim sky
         // regions become visible. Combined with no tonemapping, this gives
         // a reasonable approximation of the HDR look.
-        150.0
+        700.0
     }
     #[cfg(not(feature = "web_webgl"))]
     {
