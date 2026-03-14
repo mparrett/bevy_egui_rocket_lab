@@ -15,16 +15,7 @@ pub fn hdr_emissive(val: f32) -> f32 {
 }
 
 pub fn light_scale() -> f32 {
-    #[cfg(feature = "web_webgl")]
-    {
-        // LDR framebuffer: scale down physically-based lux values so the
-        // ground isn't blown out without tonemapping.
-        0.45
-    }
-    #[cfg(not(feature = "web_webgl"))]
-    {
-        1.0
-    }
+    0.45
 }
 
 pub fn skybox_brightness() -> f32 {
