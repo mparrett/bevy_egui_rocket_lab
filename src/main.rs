@@ -126,6 +126,12 @@ struct CameraModeButton;
 struct CameraModeLabel;
 
 #[derive(Component)]
+struct PipToggleButton;
+
+#[derive(Component)]
+struct LaunchButton;
+
+#[derive(Component)]
 struct CountdownDisplayMarker;
 
 #[derive(Component)]
@@ -199,7 +205,10 @@ fn check_loading_complete(
 fn main() {
     let mut app = App::new();
 
-    app.add_plugins(DefaultPlugins.set(ImagePlugin {
+    app.add_plugins(DefaultPlugins.set(AssetPlugin {
+        meta_check: bevy::asset::AssetMetaCheck::Never,
+        ..default()
+    }).set(ImagePlugin {
         default_sampler: ImageSamplerDescriptor {
             address_mode_u: ImageAddressMode::Repeat,
             address_mode_v: ImageAddressMode::Repeat,
@@ -280,7 +289,9 @@ fn main() {
         )
         .add_systems(
             Startup,
-            (spawn_rocket_cam_system, spawn_drone_cam_system).after(spawn_rocket_system),
+            (spawn_rocket_cam_system, spawn_drone_cam_system)
+                .after(spawn_rocket_system)
+                .after(setup_sky_system),
         )
         .add_systems(OnEnter(AppState::Launch), setup_launch_hud)
         .add_systems(OnExit(AppState::Launch), (disable_aux_cams_on_exit, parachute::cleanup_parachute_on_scene_exit, cleanup_countdown_on_exit))
@@ -292,6 +303,8 @@ fn main() {
                 handle_nav_button_clicks,
                 update_store_balance_text.run_if(in_state(AppState::Store)),
                 camera_mode_button_system.run_if(in_state(AppState::Launch)),
+                pip_toggle_button_system.run_if(in_state(AppState::Launch)),
+                launch_button_system.run_if(in_state(AppState::Launch)),
                 update_camera_mode_label.run_if(in_state(AppState::Launch)),
             )
                 .run_if(in_gameplay),
@@ -378,11 +391,12 @@ fn main() {
     app.add_systems(Update, (cubemap_asset_loaded, check_loading_complete));
     app.add_systems(
         Update,
-        (
-            sync_sky_render_mode_system,
-            (animate_light_direction, update_sun_disc_system).chain(),
-        )
-            .run_if(in_state(AppState::Launch)),
+        (sync_sky_render_mode_system, animate_light_direction)
+            .run_if(in_gameplay),
+    );
+    app.add_systems(
+        Update,
+        update_sun_disc_system.run_if(in_state(AppState::Launch)),
     );
     #[cfg(not(feature = "web_webgl"))]
     app.add_systems(
@@ -523,9 +537,10 @@ fn init_egui_ui_input_system(
 ) -> Result {
     let ctx = contexts.ctx_mut()?;
 
-    if ctx.input(|i| i.key_pressed(Key::Tab)) {
-        let shift = ctx.input(|i| i.modifiers.shift);
-        match (app_state.get(), shift) {
+    let tab_pressed = ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Tab));
+    let shift_tab = ctx.input_mut(|i| i.consume_key(egui::Modifiers::SHIFT, Key::Tab));
+    if tab_pressed || shift_tab {
+        match (app_state.get(), shift_tab) {
             (AppState::Lab, false) => next_state.set(AppState::Launch),
             (AppState::Lab, true) => next_state.set(AppState::Store),
             (AppState::Launch, _) => next_state.set(AppState::Lab),
@@ -1565,6 +1580,16 @@ fn ui_system(
                             egui::Slider::new(&mut sky_props.ambient_floor, 0.0..=1.0)
                                 .text("ambient floor"),
                         );
+                        ui.add(
+                            egui::Slider::new(&mut sky_props.light_scale, 0.0001..=1.0)
+                                .logarithmic(true)
+                                .text("light scale"),
+                        );
+                        ui.add(
+                            egui::Slider::new(&mut sky_props.skybox_brightness, 1.0..=2000.0)
+                                .logarithmic(true)
+                                .text("skybox brightness"),
+                        );
                         ui.label(format!(
                             "  ambient brightness: {:.3}",
                             ambient_light.brightness
@@ -2244,15 +2269,7 @@ fn move_toward(current: f32, target: f32, max_delta: f32) -> f32 {
 
 const DEFAULT_FOV_DEGREES: f32 = 45.0;
 
-fn spawn_drone_cam_system(
-    mut commands: Commands,
-    main_cam_query: Query<&Skybox, (With<Camera3d>, Without<RocketCone>, Without<camera::EguiOverlayCam>)>,
-) {
-    let Ok(skybox) = main_cam_query.single() else {
-        return;
-    };
-    let skybox = skybox.clone();
-
+fn spawn_drone_cam_system(mut commands: Commands) {
     let mut drone_cam = commands.spawn((
         Camera3d::default(),
         Camera {
@@ -2268,7 +2285,6 @@ fn spawn_drone_cam_system(
         Transform::from_translation(DRONE_CAM_POSITION)
             .looking_at(DRONE_CAM_POSITION + Vec3::NEG_Z, Vec3::Y),
         DroneCamMarker,
-        skybox,
         Name::new("DroneCam"),
     ));
     webcompat::insert_hdr_aux_camera_components(&mut drone_cam, 0.15);
@@ -2467,16 +2483,11 @@ fn setup_camera_system(
 fn spawn_rocket_cam_system(
     mut commands: Commands,
     cone_query: Query<Entity, With<RocketCone>>,
-    main_cam_query: Query<&Skybox, (With<Camera3d>, Without<RocketCone>, Without<camera::EguiOverlayCam>)>,
     rocket_dims: Res<RocketDimensions>,
 ) {
     let Ok(cone_entity) = cone_query.single() else {
         return;
     };
-    let Ok(skybox) = main_cam_query.single() else {
-        return;
-    };
-    let skybox = skybox.clone();
 
     let mut rocket_cam_cmds = commands.spawn((
         Camera3d::default(),
@@ -2492,7 +2503,6 @@ fn spawn_rocket_cam_system(
         }),
         rocket_cam_mount_transform(&rocket_dims),
         RocketCamMarker,
-        skybox,
         Name::new("RocketCam"),
     ));
     webcompat::insert_hdr_aux_camera_components(&mut rocket_cam_cmds, 0.15);
@@ -2573,6 +2583,13 @@ fn toggle_aux_cam_system(
     if !v_pressed {
         return Ok(());
     }
+    info!(
+        "V pressed: pip_viewpoint={:?} pip_enabled={} drone_cam_exists={} rocket_cam_exists={}",
+        camera_properties.pip_viewpoint,
+        camera_properties.pip_enabled,
+        drone_cam_query.single().is_ok(),
+        rocket_cam_query.single().is_ok(),
+    );
 
     // RocketCam requires ownership (or sandbox); DroneCam is always available
     if camera_properties.pip_viewpoint == CameraViewpoint::RocketCam
@@ -2670,6 +2687,52 @@ fn camera_mode_button_system(
     }
 }
 
+fn pip_toggle_button_system(
+    query: Query<&Interaction, (Changed<Interaction>, With<PipToggleButton>)>,
+    mut camera_properties: ResMut<camera::CameraProperties>,
+    mut rocket_cam_query: Query<&mut Camera, (With<RocketCamMarker>, Without<DroneCamMarker>)>,
+    mut drone_cam_query: Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>,
+) {
+    for interaction in &query {
+        if *interaction == Interaction::Pressed {
+            camera_properties.pip_enabled = !camera_properties.pip_enabled;
+            camera_properties.pip_swapped = false;
+            let active = camera_properties.pip_enabled;
+            match camera_properties.pip_viewpoint {
+                CameraViewpoint::RocketCam => {
+                    if let Ok(mut cam) = rocket_cam_query.single_mut() {
+                        cam.is_active = active;
+                    }
+                }
+                CameraViewpoint::DroneCam => {
+                    if let Ok(mut cam) = drone_cam_query.single_mut() {
+                        cam.is_active = active;
+                    }
+                }
+                _ => {}
+            }
+            info!("PiP toggled: enabled={}", camera_properties.pip_enabled);
+        }
+    }
+}
+
+fn launch_button_system(
+    query: Query<&Interaction, (Changed<Interaction>, With<LaunchButton>)>,
+    mut commands: Commands,
+    rocket_state: Res<RocketState>,
+    countdown: Option<Res<CountdownTimer>>,
+) {
+    for interaction in &query {
+        if *interaction == Interaction::Pressed
+            && rocket_state.state == RocketStateEnum::Initial
+            && countdown.is_none()
+        {
+            info!("Begin countdown!");
+            commands.insert_resource(CountdownTimer::new());
+        }
+    }
+}
+
 fn update_camera_mode_label(
     camera_properties: Res<camera::CameraProperties>,
     mut query: Query<&mut Text, With<CameraModeLabel>>,
@@ -2756,6 +2819,58 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
                         TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
                     ));
                 });
+
+            parent
+                .spawn((
+                    Button,
+                    PipToggleButton,
+                    CursorIcon::System(SystemCursorIcon::Pointer),
+                    Node {
+                        padding: UiRect::new(
+                            Val::Px(10.0),
+                            Val::Px(10.0),
+                            Val::Px(5.0),
+                            Val::Px(5.0),
+                        ),
+                        border_radius: BorderRadius::all(Val::Px(4.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
+                ))
+                .with_child((
+                    Text::new("PiP"),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(Color::srgba(1.0, 1.0, 1.0, 0.85)),
+                ));
+
+            parent
+                .spawn((
+                    Button,
+                    LaunchButton,
+                    CursorIcon::System(SystemCursorIcon::Pointer),
+                    Node {
+                        padding: UiRect::new(
+                            Val::Px(10.0),
+                            Val::Px(10.0),
+                            Val::Px(5.0),
+                            Val::Px(5.0),
+                        ),
+                        border_radius: BorderRadius::all(Val::Px(4.0)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.5, 0.0, 0.0, 0.7)),
+                ))
+                .with_child((
+                    Text::new("Launch"),
+                    TextFont {
+                        font_size: 13.0,
+                        ..default()
+                    },
+                    TextColor(Color::WHITE),
+                ));
         });
 
     let mono_font = asset_server.load("fonts/FiraMono-Medium.ttf");

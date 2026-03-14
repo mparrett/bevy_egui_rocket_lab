@@ -82,7 +82,7 @@ pub const CAMERA_MAX_SPEED: f32 = 85.0;
 pub const FREELOOK_MOVE_SPEED: f32 = 3.0;
 pub const ZOOM_LEVELS: &[f32] = &[0.8, 1.0, 2.0, 4.0, 8.0, 16.0];
 
-#[derive(PartialEq, Copy, Clone, Default)]
+#[derive(Debug, PartialEq, Copy, Clone, Default)]
 pub enum CameraViewpoint {
     #[default]
     FreeLook,

@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::camera::MainCamMarker;
+use crate::camera::{DroneCamMarker, MainCamMarker, RocketCamMarker};
 use bevy::image::CompressedImageFormats;
 use bevy::light::{CascadeShadowConfigBuilder, NotShadowCaster, NotShadowReceiver};
 #[cfg(not(feature = "web_webgl"))]
@@ -179,6 +179,8 @@ pub struct SkyProperties {
     /// Compresses the ambient brightness curve toward 1.0.
     /// 0.0 = full twilight/night range; 1.0 = always fully lit.
     pub ambient_floor: f32,
+    pub light_scale: f32,
+    pub skybox_brightness: f32,
 }
 
 impl Default for SkyProperties {
@@ -199,6 +201,8 @@ impl Default for SkyProperties {
             lab_skybox_index: 0,
             store_skybox_index: store_index,
             ambient_floor: 0.20,
+            light_scale: crate::webcompat::light_scale(),
+            skybox_brightness: crate::webcompat::skybox_brightness(),
         }
     }
 }
@@ -233,9 +237,10 @@ pub struct SunDiscMarker;
 pub struct SunLightMarker;
 
 pub fn setup_sky_system(mut commands: Commands) {
+    let scale = crate::webcompat::light_scale();
     commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb_u8(210, 220, 240),
-        brightness: 0.9,
+        brightness: 0.9 * scale,
         affects_lightmapped_meshes: true,
     });
 
@@ -249,7 +254,7 @@ pub fn setup_sky_system(mut commands: Commands) {
     commands.spawn((
         DirectionalLight {
             color: Color::srgb(0.98, 0.95, 0.82),
-            illuminance: light_consts::lux::FULL_DAYLIGHT,
+            illuminance: light_consts::lux::FULL_DAYLIGHT * scale,
             shadows_enabled: true,
             ..default()
         },
@@ -391,10 +396,12 @@ pub fn spawn_regular_sky_map(
 }
 
 pub fn cubemap_asset_loaded(
+    mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut images: ResMut<Assets<Image>>,
     mut cubemap_opt: Option<ResMut<Cubemap>>,
     mut skybox_query: Query<&mut Skybox>,
+    aux_cams_without_skybox: Query<Entity, (Or<(With<DroneCamMarker>, With<RocketCamMarker>)>, Without<Skybox>)>,
     mut sky_props: ResMut<SkyProperties>,
     render_device: Option<Res<bevy::render::renderer::RenderDevice>>,
 ) {
@@ -424,11 +431,25 @@ pub fn cubemap_asset_loaded(
             });
         }
 
+        let eff_load = effective_skybox_brightness(sky_props.skybox_brightness, sky_props.time_of_day);
         for mut skybox in &mut skybox_query {
             skybox.image = cubemap.image_handle.clone();
+            skybox.brightness = eff_load;
+        }
+        for entity in &aux_cams_without_skybox {
+            commands.entity(entity).insert(Skybox {
+                image: cubemap.image_handle.clone(),
+                brightness: eff_load,
+                ..default()
+            });
         }
 
         cubemap.is_loaded = true;
+    }
+
+    let eff = effective_skybox_brightness(sky_props.skybox_brightness, sky_props.time_of_day);
+    for mut skybox in &mut skybox_query {
+        skybox.brightness = eff;
     }
 }
 
@@ -454,7 +475,6 @@ pub fn animate_light_direction(
         Vec3::Y
     };
 
-    // This system only runs in Launch state (indoor ambient is set by enter_indoor).
     let natural = match *sky_mode {
         SkyRenderMode::Cubemap => {
             // Twilight blend: midnight ≈ 0.35, horizon ≈ 0.675, noon = 1.0.
@@ -470,11 +490,11 @@ pub fn animate_light_direction(
         }
     };
     let floor_brightness = sky_props.ambient_floor * 3000.0;
-    ambient_light.brightness = natural + floor_brightness;
+    ambient_light.brightness = (natural + floor_brightness) * sky_props.light_scale;
 
     for (mut transform, mut light) in &mut query {
         *transform = Transform::default().looking_to(-direction, up);
-        light.illuminance = match *sky_mode {
+        let illuminance = match *sky_mode {
             SkyRenderMode::Cubemap => {
                 let base = if daylight > 0.0 {
                     light_consts::lux::CLEAR_SUNRISE
@@ -488,6 +508,7 @@ pub fn animate_light_direction(
             }
             SkyRenderMode::Atmosphere => light_consts::lux::RAW_SUNLIGHT,
         };
+        light.illuminance = illuminance * sky_props.light_scale;
     }
 }
 
@@ -543,6 +564,21 @@ pub fn update_sun_disc_system(
             b * emissive_strength,
         );
     }
+}
+
+pub fn effective_skybox_brightness(base: f32, time_of_day: f32) -> f32 {
+    const NIGHT_MIN: f32 = 50.0;
+    let t = time_of_day.rem_euclid(24.0);
+    let factor = if (6.0..=18.0).contains(&t) {
+        1.0
+    } else if t > 18.0 && t < 20.0 {
+        1.0 - (t - 18.0) / 2.0
+    } else if t >= 4.0 && t < 6.0 {
+        (t - 4.0) / 2.0
+    } else {
+        0.0
+    };
+    NIGHT_MIN + (base - NIGHT_MIN) * factor
 }
 
 pub fn sun_direction_for_time(time_of_day: f32) -> Vec3 {
