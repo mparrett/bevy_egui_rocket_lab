@@ -2,6 +2,8 @@
 /out
 /out-webgpu
 /out-webgl
+/out-dev-webgpu
+/out-dev-webgl
 /bevy-repo
 /_temp
 /terst

@@ -37,6 +37,19 @@
         #top-bar a:hover {
           color: #fff;
         }
+        #top-bar .active {
+          color: #fff;
+          font-weight: 600;
+        }
+        #top-bar .sep {
+          color: #555;
+          margin: 0 2px;
+        }
+        #top-bar .links {
+          display: flex;
+          gap: 12px;
+          align-items: center;
+        }
         canvas {
           flex: 1;
         }
@@ -47,12 +60,19 @@
           right: 0;
           bottom: 0;
           display: flex;
+          flex-direction: column;
           align-items: center;
           justify-content: center;
           background: black;
           z-index: 10;
+          gap: 16px;
+        }
+        #loading .status {
+          display: flex;
+          align-items: center;
         }
         #loading .spinner {
+          display: none;
           width: 32px;
           height: 32px;
           border: 3px solid #333;
@@ -65,6 +85,20 @@
           color: #888;
           font-size: 15px;
         }
+        #play-btn {
+          color: #6c6;
+          font-weight: 600;
+          font-size: 16px;
+          background: none;
+          border: 1px solid #6c6;
+          border-radius: 6px;
+          padding: 8px 24px;
+          cursor: pointer;
+        }
+        #play-btn:hover {
+          color: #8f8;
+          border-color: #8f8;
+        }
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
@@ -73,28 +107,74 @@
   <body>
     <div id="top-bar">
       <span class="title">Bevy Rocket Lab</span>
-      <a href="https://github.com/mparrett/bevy_egui_rocket_lab" target="_blank" rel="noopener">GitHub</a>
+      <div class="links">
+        <span>
+          <a id="link-release" href="?profile=release">release</a>
+          <span class="sep">/</span>
+          <a id="link-dev" href="?profile=dev">dev</a>
+        </span>
+        <span>
+          <a id="link-webgpu" href="?backend=webgpu">webgpu</a>
+          <span class="sep">/</span>
+          <a id="link-webgl" href="?backend=webgl">webgl</a>
+        </span>
+        <a href="https://github.com/mparrett/bevy_egui_rocket_lab" target="_blank" rel="noopener">GitHub</a>
+      </div>
     </div>
     <div id="loading">
-      <div class="spinner"></div>
-      <span class="label">Loading...</span>
+      <span class="label"></span>
+      <button id="play-btn">&#9654; Load</button>
+      <div class="status">
+        <div class="spinner"></div>
+      </div>
     </div>
   </body>
 
   <script type="module">
+    const params = new URLSearchParams(location.search);
+
+    function buildUrl(key, value) {
+      const p = new URLSearchParams(location.search);
+      p.set(key, value);
+      return '?' + p.toString();
+    }
+
+    document.getElementById('link-release').href = buildUrl('profile', 'release');
+    document.getElementById('link-dev').href = buildUrl('profile', 'dev');
+    document.getElementById('link-webgpu').href = buildUrl('backend', 'webgpu');
+    document.getElementById('link-webgl').href = buildUrl('backend', 'webgl');
+
+    const forceBackend = params.get("backend");
     const hasWebGPU = "gpu" in navigator;
     const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
-    const useWebGPU = hasWebGPU && !isIOS;
+    const useWebGPU = forceBackend === "webgl" ? false
+      : forceBackend === "webgpu" ? true
+      : hasWebGPU && !isIOS;
 
+    const profile = params.get("profile") === "dev" ? "dev" : "release";
     const variant = useWebGPU ? "webgpu" : "webgl";
-    const label = document.querySelector("#loading .label");
-    if (label) label.textContent = `Loading (${variant})…`;
+    const dir = profile === "dev" ? `out-dev-${variant}` : `out-${variant}`;
 
-    const mod = useWebGPU
-      ? "./out-webgpu/bevy-rocket-lab.js"
-      : "./out-webgl/bevy-rocket-lab.js";
-    const { default: init } = await import(mod);
-    await init();
-    document.getElementById("loading").remove();
+    document.getElementById(`link-${profile}`).classList.add('active');
+    document.getElementById(`link-${variant}`).classList.add('active');
+
+    const label = document.querySelector("#loading .label");
+    label.textContent = `${variant}, ${profile}`;
+
+    async function launch() {
+      document.getElementById('play-btn').style.display = 'none';
+      label.textContent = `Loading (${variant}, ${profile})…`;
+      document.querySelector("#loading .spinner").style.display = 'block';
+
+      const showAt = Date.now();
+      const mod = `./${dir}/bevy-rocket-lab.js`;
+      const { default: init } = await import(mod);
+      await init();
+      const elapsed = Date.now() - showAt;
+      if (elapsed < 1000) await new Promise(r => setTimeout(r, 1000 - elapsed));
+      document.getElementById("loading").remove();
+    }
+
+    document.getElementById('play-btn').addEventListener('click', launch);
   </script>
 </html>

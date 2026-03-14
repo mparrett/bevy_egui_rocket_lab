@@ -20,7 +20,7 @@ release-wasm-webgpu:
 
 dev-wasm-webgpu:
     cargo build --target wasm32-unknown-unknown --features web_webgpu
-    wasm-bindgen --out-dir ./out-webgpu/ --target web ./target/wasm32-unknown-unknown/debug/bevy-rocket-lab.wasm
+    wasm-bindgen --out-dir ./out-dev-webgpu/ --target web ./target/wasm32-unknown-unknown/debug/bevy-rocket-lab.wasm
 
 # WebGL2 WASM builds
 release-wasm-webgl:
@@ -29,7 +29,7 @@ release-wasm-webgl:
 
 dev-wasm-webgl:
     cargo build --target wasm32-unknown-unknown --features web_webgl
-    wasm-bindgen --out-dir ./out-webgl/ --target web ./target/wasm32-unknown-unknown/debug/bevy-rocket-lab.wasm
+    wasm-bindgen --out-dir ./out-dev-webgl/ --target web ./target/wasm32-unknown-unknown/debug/bevy-rocket-lab.wasm
 
 # Backwards-compat aliases (default to webgpu)
 release-wasm: release-wasm-webgpu
@@ -43,13 +43,13 @@ dev-wasm-all: dev-wasm-webgpu dev-wasm-webgl
 
 # Serve targets
 serve-dev-wasm: dev-wasm-all
-    python3 -m http.server 8080
+    npx serve -l 8080 --no-clipboard
 
 serve-dev-wasm-webgl: dev-wasm-webgl
-    python3 -m http.server 8080
+    npx serve -l 8080 --no-clipboard
 
 serve-wasm: release-wasm-all
-    python3 -m http.server 8080
+    npx serve -l 8080 --no-clipboard
 
 alias serve := serve-wasm
 
@@ -58,7 +58,7 @@ opt-wasm: release-wasm-all
     wasm-opt -Oz --all-features -o out-webgl/bevy-rocket-lab_bg.wasm out-webgl/bevy-rocket-lab_bg.wasm
 
 serve-opt-wasm: opt-wasm
-    python3 -m http.server 8080
+    npx serve -l 8080 --no-clipboard
 
 check:
     cargo check
