@@ -6,7 +6,7 @@
 
 A model rocketry simulator/game built with [Bevy](https://bevyengine.org/) 0.18. Early stage — currently a sandbox/tech demo.
 
-[**Play in Browser**](https://mparrett.github.io/bevy_egui_rocket_lab) (requires WebGPU — Chrome/Edge desktop; not yet supported on mobile browsers)
+[**Play in Browser (WebGPU)**](https://mparrett.github.io/bevy_egui_rocket_lab) (Chrome/Edge desktop) | [**WebGL2 Version**](https://mparrett.github.io/bevy_egui_rocket_lab?backend=webgl) (broader compatibility)
 
 Why? I recently revisited model rocketry with my children and found myself writing a python script to discern where our first launch might have landed. After that, I thought it might be fun to explore the idea a bit more.
 
