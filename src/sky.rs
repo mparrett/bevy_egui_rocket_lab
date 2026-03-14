@@ -573,7 +573,7 @@ pub fn effective_skybox_brightness(base: f32, time_of_day: f32) -> f32 {
         1.0
     } else if t > 18.0 && t < 20.0 {
         1.0 - (t - 18.0) / 2.0
-    } else if t >= 4.0 && t < 6.0 {
+    } else if (4.0..6.0).contains(&t) {
         (t - 4.0) / 2.0
     } else {
         0.0
