@@ -45,6 +45,23 @@ When `Atmosphere` is on the camera, Bevy adds extra bind group entries (bindings
 
 **Resolution:** Wait for bevy_firework to support atmosphere bind group layouts, or for Bevy to decouple atmosphere bindings from the mesh view bind group.
 
+## Particles invisible on WebGL2 — bevy_firework binding array incompatibility
+
+**Status:** Open
+**Severity:** Visual — major (no exhaust particles during flight on WebGL2)
+**Observed:** 2026-03-14
+
+bevy_firework 0.9 unconditionally uses `SetMeshViewBindingArrayBindGroup` and `view_layout.binding_array_layout` in its render pipeline descriptor (render.rs). WebGL2 does not support the `TEXTURE_BINDING_ARRAY` feature (confirmed by console warning: "Feature TEXTURE_BINDING_ARRAY is not supported on this device"). The particle render pipeline silently fails — particles are simulated on the CPU side but never rendered.
+
+**Impact:** No exhaust flames, no smoke trail during rocket flight on the WebGL2 build. The rocket launches and flies normally but with no visual particle effects. Native and WebGPU builds are unaffected.
+
+**Fix options:**
+1. **Upstream fix in bevy_firework** — add fallback to `view_layout.main_layout` when `TEXTURE_BINDING_ARRAY` is unavailable (preferred)
+2. **Fork bevy_firework** — patch render.rs to use non-binding-array layout on WebGL
+3. **Alternative particle system** — replace bevy_firework with a WebGL2-compatible particle renderer
+
+**Related:** The atmosphere bind group incompatibility bug (above) is also a bevy_firework pipeline layout issue — both stem from bevy_firework's render pipeline being tightly coupled to a specific mesh view bind group layout.
+
 ## Multi-camera viewport rendering broken on WebGL2 (glow backend)
 
 **Status:** Upstream limitation — documented
