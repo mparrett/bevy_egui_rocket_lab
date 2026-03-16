@@ -263,6 +263,7 @@ fn main() {
         .init_resource::<RocketState>()
         .init_resource::<AudioSettings>()
         .init_resource::<save::SaveState>()
+        .init_resource::<save::RocketCollection>()
         .init_resource::<save::PlayerBalance>()
         .init_resource::<save::GameMode>()
         .init_resource::<save::OwnedMaterials>()
@@ -289,6 +290,7 @@ fn main() {
                 setup_loading_overlay,
                 spawn_sun_disc_system,
                 disable_physics_debug,
+                init_rocket_collection,
             ),
         )
         .add_systems(
@@ -328,7 +330,7 @@ fn main() {
         )
         .add_systems(
             Update,
-            (update_rocket_dimensions_system, on_reset_event.after(parachute::cleanup_parachute_system), sync_equipped_loadout).run_if(in_gameplay),
+            (update_rocket_dimensions_system, on_reset_event.after(parachute::cleanup_parachute_system), sync_equipped_loadout, sync_collection_back).run_if(in_gameplay),
         )
         .add_systems(
             Update,
@@ -1061,6 +1063,7 @@ fn update_wind_hud_system(
 #[derive(SystemParam)]
 struct SaveUiParams<'w> {
     save_state: ResMut<'w, save::SaveState>,
+    collection: ResMut<'w, save::RocketCollection>,
     balance: ResMut<'w, save::PlayerBalance>,
     game_mode: ResMut<'w, save::GameMode>,
     owned_materials: ResMut<'w, save::OwnedMaterials>,
@@ -1096,6 +1099,7 @@ fn ui_system(
     app_state: Res<State<AppState>>,
 ) -> Result {
     let save_state = &mut save_params.save_state;
+    let collection = &mut save_params.collection;
     let balance = &mut save_params.balance;
     let game_mode = &mut save_params.game_mode;
     let owned_materials = &mut save_params.owned_materials;
@@ -1485,84 +1489,107 @@ fn ui_system(
                         });
                 }
 
-                #[cfg(not(target_arch = "wasm32"))]
                 {
                     ui.add_space(6.0);
-                    egui::CollapsingHeader::new("Rocket Saves")
-                        .default_open(false)
+                    egui::CollapsingHeader::new("Rocket")
+                        .default_open(true)
                         .show(ui, |ui| {
-                            ui.label(format!("Player: {}", save_state.player_name));
-                            ui.separator();
-
-                            {
-                                let player = save_state.player_name.clone();
-                                ui.horizontal(|ui| {
-                                    ui.text_edit_singleline(&mut save_state.rocket_name_buf);
-                                    if ui.button("Save").clicked()
-                                        && !save_state.rocket_name_buf.trim().is_empty()
-                                    {
-                                        let rname = save_state.rocket_name_buf.trim().to_string();
-                                        match save::save_rocket(
-                                            &player,
-                                            &rname,
-                                            &rocket_dims,
-                                            &rocket_flight_parameters,
-                                        ) {
-                                            Ok(()) => {
-                                                save_state.rocket_saves =
-                                                    save::list_rockets(&player);
-                                                save_state.status_message =
-                                                    Some(format!("Saved '{rname}'"));
-                                            }
-                                            Err(e) => {
-                                                save_state.status_message = Some(e);
-                                            }
+                            let active_name = collection
+                                .active_rocket()
+                                .map(|r| r.name.clone())
+                                .unwrap_or_default();
+                            let mut new_active = collection.active;
+                            ui.horizontal(|ui| {
+                                egui::ComboBox::from_label("")
+                                    .selected_text(if active_name.is_empty() {
+                                        "(none)"
+                                    } else {
+                                        &active_name
+                                    })
+                                    .show_ui(ui, |ui| {
+                                        for (i, rocket) in collection.rockets.iter().enumerate() {
+                                            ui.selectable_value(
+                                                &mut new_active,
+                                                Some(i),
+                                                &rocket.name,
+                                            );
                                         }
+                                    });
+                                if ui.button("New").clicked() {
+                                    let n = collection.rockets.len() + 1;
+                                    let new_rocket = save::RocketSave {
+                                        name: format!("Rocket {n}"),
+                                        dimensions: RocketDimensions::default(),
+                                        flight_params: RocketFlightParameters::default(),
+                                        equipped: inventory::EquippedLoadout::default(),
+                                    };
+                                    let idx = collection.add_rocket(new_rocket);
+                                    new_active = Some(idx);
+                                }
+                                if collection.active.is_some() && ui.button("Delete").clicked() {
+                                    let del_idx = collection.active.unwrap();
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    {
+                                        let player = save_state.player_name.clone();
+                                        let del_name = collection.rockets[del_idx].name.clone();
+                                        let _ = save::delete_rocket(&player, &del_name);
+                                    }
+                                    collection.remove_rocket(del_idx);
+                                    new_active = collection.active;
+                                }
+                            });
+
+                            if new_active != collection.active {
+                                collection.active = new_active;
+                                if let Some(rocket) = collection.active_rocket() {
+                                    *rocket_dims = rocket.dimensions.clone();
+                                    rocket_dims.flag_changed = true;
+                                    *rocket_flight_parameters = rocket.flight_params.clone();
+                                    **equipped = rocket.equipped.clone();
+                                    save_state.rocket_name_buf = rocket.name.clone();
+                                }
+                            }
+
+                            if collection.active.is_some() {
+                                ui.separator();
+                                ui.horizontal(|ui| {
+                                    ui.label("Name:");
+                                    if ui
+                                        .text_edit_singleline(&mut save_state.rocket_name_buf)
+                                        .changed()
+                                        && let Some(rocket) = collection.active_rocket_mut()
+                                    {
+                                        rocket.name =
+                                            save_state.rocket_name_buf.trim().to_string();
                                     }
                                 });
 
-                                ui.separator();
-                                let mut action: Option<(String, bool)> = None;
-                                for rocket_name in &save_state.rocket_saves {
-                                    ui.horizontal(|ui| {
-                                        ui.label(rocket_name);
-                                        if ui.small_button("Load").clicked() {
-                                            action = Some((rocket_name.clone(), false));
+                                #[cfg(not(target_arch = "wasm32"))]
+                                {
+                                    let player = save_state.player_name.clone();
+                                    if ui.button("Save to disk").clicked() {
+                                        if let Some(rocket) = collection.active_rocket_mut() {
+                                            rocket.dimensions = rocket_dims.clone();
+                                            rocket.flight_params =
+                                                rocket_flight_parameters.clone();
+                                            rocket.equipped = (**equipped).clone();
                                         }
-                                        if ui.small_button("Del").clicked() {
-                                            action = Some((rocket_name.clone(), true));
-                                        }
-                                    });
-                                }
-                                if let Some((rname, is_delete)) = action {
-                                    if is_delete {
-                                        match save::delete_rocket(&player, &rname) {
-                                            Ok(()) => {
-                                                save_state.rocket_saves =
-                                                    save::list_rockets(&player);
-                                                save_state.status_message =
-                                                    Some(format!("Deleted '{rname}'"));
-                                            }
-                                            Err(e) => {
-                                                save_state.status_message = Some(e);
-                                            }
-                                        }
-                                    } else {
-                                        match save::load_rocket(&player, &rname) {
-                                            Ok(data) => {
-                                                *rocket_dims = data.dimensions;
-                                                rocket_dims.flag_changed = true;
-                                                *rocket_flight_parameters = data.flight_params;
-                                                save_state.rocket_name_buf = rname.clone();
-                                                save_state.status_message =
-                                                    Some(format!("Loaded '{rname}'"));
-                                            }
-                                            Err(e) => {
-                                                save_state.status_message = Some(e);
+                                        if let Some(rocket) = collection.active_rocket() {
+                                            match save::save_rocket(&player, rocket) {
+                                                Ok(()) => {
+                                                    save_state.status_message =
+                                                        Some(format!("Saved '{}'", rocket.name));
+                                                }
+                                                Err(e) => {
+                                                    save_state.status_message = Some(e);
+                                                }
                                             }
                                         }
                                     }
                                 }
+                            } else {
+                                ui.separator();
+                                ui.label("No rocket — create new or visit Store.");
                             }
 
                             if let Some(msg) = &save_state.status_message {
@@ -1803,35 +1830,47 @@ fn ui_system(
                         };
 
                         // Starter rocket purchase
-                        let owns_starter = save_state.rocket_saves.contains(&"Starter".to_string());
+                        let owns_starter = collection.rockets.iter().any(|r| r.name == "Starter");
                         if owns_starter {
                             ui.label("Starter Rocket — Purchased!");
                         } else {
                             let can_afford = balance.0 >= 10.0;
                             let btn = egui::Button::new("Buy Starter Rocket — $10");
                             if ui.add_enabled(can_afford, btn).clicked() {
-                                let starter_dims = RocketDimensions {
-                                    radius: 0.02,
-                                    length: 0.35,
-                                    cone_length: 0.08,
-                                    num_fins: 3.0,
-                                    fin_height: 0.15,
-                                    fin_length: 0.08,
-                                    body_color: ColorPreset::White,
-                                    cone_color: ColorPreset::White,
-                                    fin_color: ColorPreset::White,
-                                    material: RocketMaterial::Light,
-                                    flag_changed: false,
+                                let starter_rocket = save::RocketSave {
+                                    name: "Starter".to_string(),
+                                    dimensions: RocketDimensions {
+                                        radius: 0.02,
+                                        length: 0.35,
+                                        cone_length: 0.08,
+                                        num_fins: 3.0,
+                                        fin_height: 0.15,
+                                        fin_length: 0.08,
+                                        body_color: ColorPreset::White,
+                                        cone_color: ColorPreset::White,
+                                        fin_color: ColorPreset::White,
+                                        material: RocketMaterial::Light,
+                                        flag_changed: false,
+                                    },
+                                    flight_params: RocketFlightParameters::default(),
+                                    equipped: inventory::EquippedLoadout::default(),
                                 };
-                                let default_params = RocketFlightParameters::default();
-                                if let Err(e) = save::save_rocket(&player, "Starter", &starter_dims, &default_params) {
+                                #[cfg(not(target_arch = "wasm32"))]
+                                if let Err(e) = save::save_rocket(&player, &starter_rocket) {
                                     save_state.status_message = Some(format!("Error: {e}"));
-                                } else {
-                                    balance.0 -= 10.0;
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
-                                    save_state.rocket_saves = save::list_rockets(&player);
-                                    save_state.status_message = Some("Purchased Starter Rocket!".to_string());
                                 }
+                                let idx = collection.add_rocket(starter_rocket);
+                                collection.set_active(idx);
+                                if let Some(rocket) = collection.active_rocket() {
+                                    *rocket_dims = rocket.dimensions.clone();
+                                    rocket_dims.flag_changed = true;
+                                    *rocket_flight_parameters = rocket.flight_params.clone();
+                                    **equipped = rocket.equipped.clone();
+                                    save_state.rocket_name_buf = rocket.name.clone();
+                                }
+                                balance.0 -= 10.0;
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                save_state.status_message = Some("Purchased Starter Rocket!".to_string());
                             }
                             if !can_afford {
                                 ui.label("Not enough funds.");
@@ -2122,6 +2161,38 @@ fn sync_equipped_loadout(
         return;
     }
     parachute_config.diameter = equipped.parachute.diameter();
+}
+
+fn init_rocket_collection(
+    mut collection: ResMut<save::RocketCollection>,
+    rocket_dims: Res<RocketDimensions>,
+    rocket_flight_parameters: Res<RocketFlightParameters>,
+    equipped: Res<inventory::EquippedLoadout>,
+) {
+    let default_rocket = save::RocketSave {
+        name: "Default Rocket".to_string(),
+        dimensions: rocket_dims.clone(),
+        flight_params: rocket_flight_parameters.clone(),
+        equipped: equipped.clone(),
+    };
+    let idx = collection.add_rocket(default_rocket);
+    collection.set_active(idx);
+}
+
+fn sync_collection_back(
+    rocket_dims: Res<RocketDimensions>,
+    rocket_flight_parameters: Res<RocketFlightParameters>,
+    equipped: Res<inventory::EquippedLoadout>,
+    mut collection: ResMut<save::RocketCollection>,
+) {
+    if !rocket_dims.flag_changed {
+        return;
+    }
+    if let Some(rocket) = collection.active_rocket_mut() {
+        rocket.dimensions = rocket_dims.clone();
+        rocket.flight_params = rocket_flight_parameters.clone();
+        rocket.equipped = equipped.clone();
+    }
 }
 
 fn update_rocket_dimensions_system(
@@ -3152,6 +3223,7 @@ mod tests {
         app.insert_resource(inventory::EquippedLoadout::default());
         app.insert_resource(save::GameMode::default());
         app.insert_resource(save::SaveState::default());
+        app.insert_resource(save::RocketCollection::default());
         app.insert_resource(save::PlayerBalance::default());
         app.insert_resource(save::OwnedMaterials::default());
         app.insert_resource(save::RocketCamOwned::default());

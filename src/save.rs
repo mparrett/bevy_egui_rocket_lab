@@ -2,8 +2,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::inventory::{
-    Inventory, MotorSize, NoseconeType, OwnedMotorSizes, OwnedNoseconeTypes, OwnedTubeTypes,
-    TubeType,
+    EquippedLoadout, Inventory, MotorSize, NoseconeType, OwnedMotorSizes, OwnedNoseconeTypes,
+    OwnedTubeTypes, TubeType,
 };
 use crate::rocket::{RocketDimensions, RocketFlightParameters, RocketMaterial};
 
@@ -33,6 +33,56 @@ pub struct RocketSave {
     pub name: String,
     pub dimensions: RocketDimensions,
     pub flight_params: RocketFlightParameters,
+    #[serde(default)]
+    pub equipped: EquippedLoadout,
+}
+
+#[derive(Resource, Default)]
+pub struct RocketCollection {
+    pub rockets: Vec<RocketSave>,
+    pub active: Option<usize>,
+}
+
+impl RocketCollection {
+    pub fn active_rocket(&self) -> Option<&RocketSave> {
+        self.active.and_then(|i| self.rockets.get(i))
+    }
+
+    pub fn active_rocket_mut(&mut self) -> Option<&mut RocketSave> {
+        self.active.and_then(|i| self.rockets.get_mut(i))
+    }
+
+    pub fn add_rocket(&mut self, save: RocketSave) -> usize {
+        let idx = self.rockets.len();
+        self.rockets.push(save);
+        idx
+    }
+
+    pub fn set_active(&mut self, idx: usize) {
+        if idx < self.rockets.len() {
+            self.active = Some(idx);
+        }
+    }
+
+    pub fn remove_rocket(&mut self, idx: usize) {
+        if idx >= self.rockets.len() {
+            return;
+        }
+        self.rockets.remove(idx);
+        match self.active {
+            Some(a) if a == idx => {
+                self.active = if self.rockets.is_empty() {
+                    None
+                } else {
+                    Some(a.min(self.rockets.len() - 1))
+                };
+            }
+            Some(a) if a > idx => {
+                self.active = Some(a - 1);
+            }
+            _ => {}
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -109,7 +159,6 @@ pub const DEFAULT_PLAYER_NAME: &str = "Player";
 #[derive(Resource)]
 pub struct SaveState {
     pub player_name: String,
-    pub rocket_saves: Vec<String>,
     pub rocket_name_buf: String,
     pub status_message: Option<String>,
 }
@@ -118,7 +167,6 @@ impl Default for SaveState {
     fn default() -> Self {
         Self {
             player_name: DEFAULT_PLAYER_NAME.to_string(),
-            rocket_saves: Vec::new(),
             rocket_name_buf: String::new(),
             status_message: None,
         }
@@ -243,30 +291,20 @@ mod io {
         fs::write(&path, json).map_err(|e| format!("Failed to write player.json: {e}"))
     }
 
-    pub fn save_rocket(
-        player: &str,
-        rocket_name: &str,
-        dims: &RocketDimensions,
-        params: &RocketFlightParameters,
-    ) -> Result<(), String> {
+    pub fn save_rocket(player: &str, rocket: &RocketSave) -> Result<(), String> {
         ensure_player_dir(player)?;
-        let path = player_dir(player).join(rocket_filename(rocket_name));
+        let path = player_dir(player).join(rocket_filename(&rocket.name));
         if path.exists()
             && let Ok(existing_json) = fs::read_to_string(&path)
             && let Ok(existing) = serde_json::from_str::<RocketSave>(&existing_json)
-            && existing.name != rocket_name
+            && existing.name != rocket.name
         {
             return Err(format!(
                 "Name conflicts with existing rocket \"{}\"",
                 existing.name
             ));
         }
-        let save = RocketSave {
-            name: rocket_name.to_string(),
-            dimensions: dims.clone(),
-            flight_params: params.clone(),
-        };
-        let json = serde_json::to_string_pretty(&save)
+        let json = serde_json::to_string_pretty(rocket)
             .map_err(|e| format!("Failed to serialize rocket: {e}"))?;
         fs::write(&path, json).map_err(|e| format!("Failed to write rocket file: {e}"))?;
         Ok(())

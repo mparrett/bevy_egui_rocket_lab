@@ -1,3 +1,4 @@
+use bevy::ecs::system::SystemParam;
 use bevy::prelude::*;
 
 use crate::{AppState, AudioSettings, save::SaveState};
@@ -292,6 +293,23 @@ fn sync_settings_labels(
     }
 }
 
+#[derive(SystemParam)]
+struct MenuLoadParams<'w> {
+    save_state: ResMut<'w, SaveState>,
+    collection: ResMut<'w, crate::save::RocketCollection>,
+    player_balance: ResMut<'w, crate::save::PlayerBalance>,
+    owned_materials: ResMut<'w, crate::save::OwnedMaterials>,
+    rocket_cam_owned: ResMut<'w, crate::save::RocketCamOwned>,
+    rocket_dims: ResMut<'w, crate::rocket::RocketDimensions>,
+    flight_params: ResMut<'w, crate::rocket::RocketFlightParameters>,
+    equipped: ResMut<'w, crate::inventory::EquippedLoadout>,
+    inventory: ResMut<'w, crate::inventory::Inventory>,
+    owned_motor_sizes: ResMut<'w, crate::inventory::OwnedMotorSizes>,
+    owned_tube_types: ResMut<'w, crate::inventory::OwnedTubeTypes>,
+    owned_nosecone_types: ResMut<'w, crate::inventory::OwnedNoseconeTypes>,
+    experience: ResMut<'w, crate::inventory::PlayerExperience>,
+}
+
 fn menu_action(
     interaction_query: Query<
         (&Interaction, &MenuButtonAction),
@@ -300,18 +318,8 @@ fn menu_action(
     mut app_state: ResMut<NextState<AppState>>,
     mut menu_state: ResMut<NextState<MenuState>>,
     mut audio_settings: ResMut<AudioSettings>,
-    mut save_state: ResMut<SaveState>,
-    mut player_balance: ResMut<crate::save::PlayerBalance>,
-    mut owned_materials: ResMut<crate::save::OwnedMaterials>,
-    mut rocket_cam_owned: ResMut<crate::save::RocketCamOwned>,
-    mut rocket_dims: ResMut<crate::rocket::RocketDimensions>,
-    mut flight_params: ResMut<crate::rocket::RocketFlightParameters>,
+    mut load_params: MenuLoadParams,
     mut app_exit: MessageWriter<AppExit>,
-    mut inventory: ResMut<crate::inventory::Inventory>,
-    mut owned_motor_sizes: ResMut<crate::inventory::OwnedMotorSizes>,
-    mut owned_tube_types: ResMut<crate::inventory::OwnedTubeTypes>,
-    mut owned_nosecone_types: ResMut<crate::inventory::OwnedNoseconeTypes>,
-    mut experience: ResMut<crate::inventory::PlayerExperience>,
 ) {
     for (interaction, action) in &interaction_query {
         if *interaction != Interaction::Pressed {
@@ -330,25 +338,33 @@ fn menu_action(
             }
             #[cfg(not(target_arch = "wasm32"))]
             MenuButtonAction::SelectPlayer(name) => {
-                save_state.player_name = name.clone();
-                save_state.rocket_saves = crate::save::list_rockets(name);
+                load_params.save_state.player_name = name.clone();
                 if let Ok(meta) = crate::save::load_player_meta(name) {
-                    player_balance.0 = meta.balance;
-                    owned_materials.0 = meta.owned_materials;
-                    rocket_cam_owned.0 = meta.rocket_cam_owned;
-                    *inventory = meta.inventory;
-                    owned_motor_sizes.0 = meta.owned_motor_sizes;
-                    owned_tube_types.0 = meta.owned_tube_types;
-                    owned_nosecone_types.0 = meta.owned_nosecone_types;
-                    experience.0 = meta.experience;
+                    load_params.player_balance.0 = meta.balance;
+                    load_params.owned_materials.0 = meta.owned_materials;
+                    load_params.rocket_cam_owned.0 = meta.rocket_cam_owned;
+                    *load_params.inventory = meta.inventory;
+                    load_params.owned_motor_sizes.0 = meta.owned_motor_sizes;
+                    load_params.owned_tube_types.0 = meta.owned_tube_types;
+                    load_params.owned_nosecone_types.0 = meta.owned_nosecone_types;
+                    load_params.experience.0 = meta.experience;
                 }
-                if let Some(first) = save_state.rocket_saves.first()
-                    && let Ok(data) = crate::save::load_rocket(name, first)
-                {
-                    *rocket_dims = data.dimensions;
-                    rocket_dims.flag_changed = true;
-                    *flight_params = data.flight_params;
-                    save_state.rocket_name_buf = first.clone();
+                load_params.collection.rockets.clear();
+                load_params.collection.active = None;
+                let rocket_names = crate::save::list_rockets(name);
+                for rname in &rocket_names {
+                    if let Ok(data) = crate::save::load_rocket(name, rname) {
+                        load_params.collection.rockets.push(data);
+                    }
+                }
+                if !load_params.collection.rockets.is_empty() {
+                    load_params.collection.active = Some(0);
+                    let rocket = &load_params.collection.rockets[0];
+                    *load_params.rocket_dims = rocket.dimensions.clone();
+                    load_params.rocket_dims.flag_changed = true;
+                    *load_params.flight_params = rocket.flight_params.clone();
+                    *load_params.equipped = rocket.equipped.clone();
+                    load_params.save_state.rocket_name_buf = rocket.name.clone();
                 }
                 app_state.set(AppState::Lab);
                 menu_state.set(MenuState::Disabled);

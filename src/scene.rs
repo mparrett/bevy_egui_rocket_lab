@@ -5,6 +5,7 @@ use crate::{
     camera::{CameraProperties, MainCamMarker, SceneCameraState},
     physics::lock_all_axes,
     rocket::{RocketDimensions, RocketMarker, RocketState, RocketStateEnum},
+    save::RocketCollection,
     sky::{SkyProperties, SkyRenderMode},
     AppState,
 };
@@ -642,7 +643,9 @@ fn enter_lab(
     mut commands: Commands,
     mut sky_props: ResMut<SkyProperties>,
     scene_camera: Res<SceneCameraState>,
+    collection: Res<RocketCollection>,
 ) {
+    let show_rocket = collection.active.is_some();
     enter_indoor(
         &mut outdoor_query,
         &mut rocket_query,
@@ -650,7 +653,7 @@ fn enter_lab(
         &rocket_dims,
         &mut camera_query,
         &mut commands,
-        true,
+        show_rocket,
     );
     if let Some(snap) = scene_camera.get(&AppState::Lab) {
         camera_properties.restore_snapshot(snap);
@@ -725,6 +728,7 @@ fn enter_launch(
     mut sky_props: ResMut<SkyProperties>,
     mut commands: Commands,
     scene_camera: Res<SceneCameraState>,
+    collection: Res<RocketCollection>,
 ) {
     for mut vis in &mut outdoor_query {
         *vis = Visibility::Visible;
@@ -739,11 +743,17 @@ fn enter_launch(
     rocket_state.max_height = 0.0;
     rocket_state.max_velocity = 0.0;
 
+    let has_rocket = collection.active.is_some();
     let rocket_pos = Vec3::new(0.0, rocket_dims.length * 0.5, 0.0);
     if let Ok((rocket_ent, mut transform, mut position, mut rotation, mut lin_vel, mut ang_vel, mut locked)) =
         rocket_query.single_mut()
     {
-        commands.entity(rocket_ent).insert(Visibility::Inherited);
+        let vis = if has_rocket {
+            Visibility::Inherited
+        } else {
+            Visibility::Hidden
+        };
+        commands.entity(rocket_ent).insert(vis);
         transform.translation = rocket_pos;
         transform.rotation = Quat::IDENTITY;
         *position = Position(rocket_pos);
