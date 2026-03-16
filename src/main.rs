@@ -30,10 +30,11 @@ use sky::{SkyProperties, SkyRenderMode, SunDiscSettings};
 
 use crate::{
     camera::{
-        CameraProperties, CameraViewpoint, DroneCamMarker, DRONE_CAM_FOV_DEGREES,
-        DRONE_CAM_POSITION, DroneDistance, DroneWaypoint, INITIAL_CAMERA_POS,
-        MainCamMarker, RocketCamMarker, SceneCameraState, ZOOM_LEVELS, mouse_orbit_system,
-        spring_to_target, update_camera_transform_system, update_camera_zoom_perspective_system,
+        CameraPreset, CameraProperties, DroneCamMarker, DRONE_CAM_FOV_DEGREES,
+        DRONE_CAM_POSITION, DroneDistance, DroneWaypoint, INITIAL_CAMERA_POS, LookMode,
+        MainCamMarker, PipPreset, PositionMode, RocketCamMarker, SceneCameraState, ZOOM_LEVELS,
+        mouse_orbit_system, spring_to_target, update_camera_transform_system,
+        update_camera_zoom_perspective_system,
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
@@ -557,7 +558,7 @@ fn init_egui_ui_input_system(
         return Ok(());
     }
 
-    if ctx.input(|i| i.key_pressed(Key::Q)) {
+    if ctx.input(|i| i.key_pressed(Key::X)) {
         app_exit.write(AppExit::Success);
     }
 
@@ -590,8 +591,18 @@ fn do_launch_system(
     let arrow_up = ctx.input(|i| i.key_down(Key::ArrowUp));
     let arrow_down = ctx.input(|i| i.key_down(Key::ArrowDown));
 
-    if ctx.input(|i| i.key_pressed(Key::Z)) {
+    let plus_pressed = ctx.input(|i| i.key_pressed(Key::Plus) || i.key_pressed(Key::Equals));
+    let minus_pressed = ctx.input(|i| i.key_pressed(Key::Minus));
+
+    if plus_pressed {
         camera_properties.zoom_index = (camera_properties.zoom_index + 1) % ZOOM_LEVELS.len();
+        camera_properties.zoom = ZOOM_LEVELS[camera_properties.zoom_index];
+    } else if minus_pressed {
+        camera_properties.zoom_index = if camera_properties.zoom_index == 0 {
+            ZOOM_LEVELS.len() - 1
+        } else {
+            camera_properties.zoom_index - 1
+        };
         camera_properties.zoom = ZOOM_LEVELS[camera_properties.zoom_index];
     }
 
@@ -607,13 +618,33 @@ fn do_launch_system(
         }
     }
 
-    let plus_held = ctx.input(|i| i.key_down(Key::Plus) || i.key_down(Key::Equals));
-    let minus_held = ctx.input(|i| i.key_down(Key::Minus));
+    if ctx.input(|i| i.key_down(Key::Q)) {
+        match camera_properties.position_mode {
+            PositionMode::ChaseSide | PositionMode::ChaseAbove | PositionMode::Attached => {
+                camera_properties.target_y_offset += 0.1;
+            }
+            _ => camera_properties.desired_translation.y += 0.1,
+        }
+    } else if ctx.input(|i| i.key_down(Key::Z)) {
+        match camera_properties.position_mode {
+            PositionMode::ChaseSide | PositionMode::ChaseAbove | PositionMode::Attached => {
+                camera_properties.target_y_offset -= 0.1;
+            }
+            _ => camera_properties.desired_translation.y -= 0.1,
+        }
+    }
 
-    if plus_held {
-        camera_properties.desired_translation.y += 0.1;
-    } else if minus_held {
-        camera_properties.desired_translation.y -= 0.1;
+    if matches!(
+        camera_properties.position_mode,
+        PositionMode::ChaseSide | PositionMode::ChaseAbove | PositionMode::Orbit
+    ) {
+        if ctx.input(|i| i.key_down(Key::W)) {
+            camera_properties.fixed_distance =
+                (camera_properties.fixed_distance - 0.1).clamp(0.5, 50.0);
+        } else if ctx.input(|i| i.key_down(Key::S)) {
+            camera_properties.fixed_distance =
+                (camera_properties.fixed_distance + 0.1).clamp(0.5, 50.0);
+        }
     }
 
     if arrow_up {
@@ -705,10 +736,7 @@ fn rocket_position_system(
         return;
     };
     if *app_state.get() == AppState::Launch
-        && !matches!(
-            camera_properties.viewpoint,
-            CameraViewpoint::FreeLook | CameraViewpoint::RocketCam
-        )
+        && camera_properties.look_mode == LookMode::Track
     {
         camera_properties.target = transform.translation;
     }
@@ -1141,62 +1169,44 @@ fn ui_system(
                             .text("look Y offset"),
                     );
 
+                    let prev_preset = camera_properties.preset;
                     egui::ComboBox::from_label("mode")
-                        .selected_text(camera_properties.viewpoint.label())
+                        .selected_text(camera_properties.preset.label())
                         .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut camera_properties.viewpoint,
-                                CameraViewpoint::FixedGround,
-                                "Ground",
-                            );
-                            ui.selectable_value(
-                                &mut camera_properties.viewpoint,
-                                CameraViewpoint::FollowSide,
-                                "Side",
-                            );
-                            ui.selectable_value(
-                                &mut camera_properties.viewpoint,
-                                CameraViewpoint::FollowAbove,
-                                "Above",
-                            );
-                            ui.selectable_value(
-                                &mut camera_properties.viewpoint,
-                                CameraViewpoint::DroneCam,
-                                "Drone",
-                            );
-                            ui.selectable_value(
-                                &mut camera_properties.viewpoint,
-                                CameraViewpoint::RocketCam,
-                                "Rocket",
-                            );
-                            ui.selectable_value(
-                                &mut camera_properties.viewpoint,
-                                CameraViewpoint::FreeLook,
-                                "Free Look",
-                            );
+                            for &p in CameraPreset::ALL {
+                                ui.selectable_value(
+                                    &mut camera_properties.preset,
+                                    p,
+                                    p.label(),
+                                );
+                            }
                         });
+                    if camera_properties.preset != prev_preset {
+                        camera_properties.position_mode = camera_properties.preset.position();
+                        camera_properties.look_mode = camera_properties.preset.look();
+                    }
 
                     if is_launch {
-                        let prev_kind = camera_properties.pip_viewpoint;
+                        let prev_pip = camera_properties.pip_preset;
                         egui::ComboBox::from_label("pip cam")
-                            .selected_text(camera_properties.pip_viewpoint.label())
+                            .selected_text(camera_properties.pip_preset.label())
                             .show_ui(ui, |ui| {
                                 ui.selectable_value(
-                                    &mut camera_properties.pip_viewpoint,
-                                    CameraViewpoint::RocketCam,
+                                    &mut camera_properties.pip_preset,
+                                    PipPreset::Rocket,
                                     "Rocket Cam",
                                 );
                                 ui.selectable_value(
-                                    &mut camera_properties.pip_viewpoint,
-                                    CameraViewpoint::DroneCam,
+                                    &mut camera_properties.pip_preset,
+                                    PipPreset::Drone,
                                     "Drone Cam",
                                 );
                             });
-                        if camera_properties.pip_viewpoint != prev_kind {
+                        if camera_properties.pip_preset != prev_pip {
                             camera_properties.pip_swapped = false;
                         }
-                        if camera_properties.pip_viewpoint == CameraViewpoint::DroneCam
-                            || camera_properties.viewpoint == CameraViewpoint::DroneCam
+                        if camera_properties.pip_preset == PipPreset::Drone
+                            || camera_properties.position_mode == PositionMode::Stationed
                         {
                             ui.add(
                                 egui::Slider::new(&mut camera_properties.drone_sway, 0.0..=0.3)
@@ -2015,10 +2025,12 @@ fn ui_system(
                     ui.spacing_mut().item_spacing.y = 2.0;
                     for line in [
                         "Tab: cycle Lab/Launch/Store",
-                        "WASD: move (FreeLook)",
+                        "WASD/QZ: move/elevate (Free/Drone)",
+                        "+/-: cycle zoom",
                         "Hold `/~: slow motion",
                         "Arrows: orbit / distance",
                         "Shift+Up/Down: truck cam",
+                        "X: quit",
                         "Esc: world inspector",
                         "F10: collider gizmos",
                         "F11: profiling HUD",
@@ -2061,7 +2073,7 @@ fn camera_debug_system(
         .resizable(false)
         .show(ctx, |ui| {
             let fmt_v3 = |v: Vec3| format!("({:6.2}, {:6.2}, {:6.2})", v.x, v.y, v.z);
-            let mode_str = camera_properties.viewpoint.label();
+            let mode_str = camera_properties.preset.label();
 
             ui.label(egui::RichText::new("Main Camera").strong());
             if let Ok(tf) = main_cam_query.single() {
@@ -2388,19 +2400,18 @@ fn drone_cam_track_rocket_system(
 
 fn sync_pip_viewpoint_system(
     camera_properties: Res<CameraProperties>,
-    mut prev_kind: Local<CameraViewpoint>,
+    mut prev_kind: Local<Option<PipPreset>>,
     mut rocket_cam_query: Query<&mut Camera, (With<RocketCamMarker>, Without<DroneCamMarker>)>,
     mut drone_cam_query: Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>,
 ) {
-    if camera_properties.pip_viewpoint == *prev_kind {
+    if prev_kind.is_some_and(|prev| camera_properties.pip_preset == prev) {
         return;
     }
-    *prev_kind = camera_properties.pip_viewpoint;
+    *prev_kind = Some(camera_properties.pip_preset);
 
-    let (activate_rq, activate_dq) = match camera_properties.pip_viewpoint {
-        CameraViewpoint::RocketCam => (true, false),
-        CameraViewpoint::DroneCam => (false, true),
-        _ => (false, false),
+    let (activate_rq, activate_dq) = match camera_properties.pip_preset {
+        PipPreset::Rocket => (true, false),
+        PipPreset::Drone => (false, true),
     };
 
     if camera_properties.pip_enabled {
@@ -2559,10 +2570,9 @@ fn aux_cam_viewport_resize_system(
         ..default()
     });
 
-    let active_aux_cam = match camera_properties.pip_viewpoint {
-        CameraViewpoint::RocketCam => rocket_cam_query.single_mut().ok(),
-        CameraViewpoint::DroneCam => drone_cam_query.single_mut().ok(),
-        _ => None,
+    let active_aux_cam = match camera_properties.pip_preset {
+        PipPreset::Rocket => rocket_cam_query.single_mut().ok(),
+        PipPreset::Drone => drone_cam_query.single_mut().ok(),
     };
 
     if let Some(mut aux_cam) = active_aux_cam {
@@ -2606,37 +2616,36 @@ fn toggle_aux_cam_system(
         return Ok(());
     }
     info!(
-        "V pressed: pip_viewpoint={:?} pip_enabled={} drone_cam_exists={} rocket_cam_exists={}",
-        camera_properties.pip_viewpoint,
+        "V pressed: pip_preset={:?} pip_enabled={} drone_cam_exists={} rocket_cam_exists={}",
+        camera_properties.pip_preset,
         camera_properties.pip_enabled,
         drone_cam_query.single().is_ok(),
         rocket_cam_query.single().is_ok(),
     );
 
     // RocketCam requires ownership (or sandbox); DroneCam is always available
-    if camera_properties.pip_viewpoint == CameraViewpoint::RocketCam
+    if camera_properties.pip_preset == PipPreset::Rocket
         && !rocket_cam_owned.0
         && *game_mode != save::GameMode::Sandbox
     {
         return Ok(());
     }
 
-    let set_active = |vp: CameraViewpoint,
+    let set_active = |pip: PipPreset,
                       active: bool,
                       rq: &mut Query<&mut Camera, (With<RocketCamMarker>, Without<DroneCamMarker>)>,
                       dq: &mut Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>| {
-        match vp {
-            CameraViewpoint::RocketCam => {
+        match pip {
+            PipPreset::Rocket => {
                 if let Ok(mut cam) = rq.single_mut() {
                     cam.is_active = active;
                 }
             }
-            CameraViewpoint::DroneCam => {
+            PipPreset::Drone => {
                 if let Ok(mut cam) = dq.single_mut() {
                     cam.is_active = active;
                 }
             }
-            _ => {}
         }
     };
 
@@ -2644,7 +2653,7 @@ fn toggle_aux_cam_system(
         if !camera_properties.pip_enabled {
             camera_properties.pip_enabled = true;
             set_active(
-                camera_properties.pip_viewpoint,
+                camera_properties.pip_preset,
                 true,
                 &mut rocket_cam_query,
                 &mut drone_cam_query,
@@ -2655,7 +2664,7 @@ fn toggle_aux_cam_system(
         camera_properties.pip_enabled = !camera_properties.pip_enabled;
         camera_properties.pip_swapped = false;
         set_active(
-            camera_properties.pip_viewpoint,
+            camera_properties.pip_preset,
             camera_properties.pip_enabled,
             &mut rocket_cam_query,
             &mut drone_cam_query,
@@ -2704,7 +2713,8 @@ fn camera_mode_button_system(
 ) {
     for (interaction, _) in &query {
         if *interaction == Interaction::Pressed {
-            camera_properties.viewpoint = camera_properties.viewpoint.next();
+            let next = camera_properties.preset.next();
+            camera_properties.set_preset(next);
         }
     }
 }
@@ -2720,18 +2730,17 @@ fn pip_toggle_button_system(
             camera_properties.pip_enabled = !camera_properties.pip_enabled;
             camera_properties.pip_swapped = false;
             let active = camera_properties.pip_enabled;
-            match camera_properties.pip_viewpoint {
-                CameraViewpoint::RocketCam => {
+            match camera_properties.pip_preset {
+                PipPreset::Rocket => {
                     if let Ok(mut cam) = rocket_cam_query.single_mut() {
                         cam.is_active = active;
                     }
                 }
-                CameraViewpoint::DroneCam => {
+                PipPreset::Drone => {
                     if let Ok(mut cam) = drone_cam_query.single_mut() {
                         cam.is_active = active;
                     }
                 }
-                _ => {}
             }
             info!("PiP toggled: enabled={}", camera_properties.pip_enabled);
         }
@@ -2763,24 +2772,20 @@ fn update_camera_mode_label(
         return;
     }
     for mut text in &mut query {
-        **text = format!("{} ", camera_properties.viewpoint.label());
+        **text = format!("{} ", camera_properties.preset.label());
     }
 }
 
 fn update_panel_offsets_system(
     camera_properties: Res<CameraProperties>,
-    mut offset_query: Query<(&mut Node, Has<CountdownOverlay>), With<PanelOffsetNode>>,
+    mut offset_query: Query<&mut Node, With<PanelOffsetNode>>,
 ) {
     if !camera_properties.is_changed() {
         return;
     }
     let open = camera_properties.panel_open;
-    for (mut node, is_countdown) in &mut offset_query {
-        if is_countdown {
-            node.padding.left = Val::Px(if open { 200.0 } else { 0.0 });
-        } else {
-            node.left = Val::Px(if open { 296.0 } else { 8.0 });
-        }
+    for mut node in &mut offset_query {
+        node.left = Val::Px(if open { 296.0 } else { 8.0 });
     }
 }
 
@@ -2800,7 +2805,7 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         ))
         .with_child((
-            Text::new("Enter/Space: launch\nR: reset  Z: zoom\nTab: lab  Q: quit"),
+            Text::new("Enter/Space: launch\nR: reset  +/-: zoom\nTab: lab  X: quit"),
             TextFont {
                 font_size: 13.,
                 ..default()
@@ -2992,13 +2997,11 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands.spawn((
         DespawnOnExit(AppState::Launch),
-        PanelOffsetNode,
         Node {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
             position_type: PositionType::Absolute,
             padding: UiRect {
-                left: Val::Px(0.0),
                 bottom: Val::Px(75.0),
                 ..default()
             },
@@ -3036,7 +3039,7 @@ fn setup_lab_hud(mut commands: Commands) {
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.5)),
         ))
         .with_child((
-            Text::new("Lab: tweak your rocket\nTab: launch pad  Q: quit"),
+            Text::new("Lab: tweak your rocket\nTab: launch pad  X: quit"),
             TextFont {
                 font_size: 13.,
                 ..default()
@@ -3083,7 +3086,7 @@ fn setup_store_hud(mut commands: Commands, balance: Res<save::PlayerBalance>) {
         .with_child((
             StoreBalanceText,
             Text::new(format!(
-                "Store  ${:.2}\nTab: lab  Q: quit",
+                "Store  ${:.2}\nTab: lab  X: quit",
                 balance.0
             )),
             TextFont {
@@ -3118,7 +3121,7 @@ fn update_store_balance_text(
         return;
     }
     for mut text in &mut query {
-        **text = format!("Store  ${:.2}\nTab: lab  Q: quit", balance.0);
+        **text = format!("Store  ${:.2}\nTab: lab  X: quit", balance.0);
     }
 }
 
@@ -3385,7 +3388,7 @@ mod tests {
         }
         app.world_mut()
             .resource_mut::<CameraProperties>()
-            .viewpoint = CameraViewpoint::FollowSide;
+            .set_preset(CameraPreset::ChaseSide);
 
         app.update();
 

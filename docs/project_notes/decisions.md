@@ -56,10 +56,18 @@
 **WebGL2 differences**: No Bloom, no volumetric fog, Reinhard tonemapping instead of TonyMcMapface, emissive values clamped to 1.0, skybox brightness 1.0 instead of 1000.0.
 **Consequences**: CI builds take ~2x longer. Two output directories (`out-webgpu/`, `out-webgl/`). Deploy artifact is larger. Native builds are unaffected (no web features enabled).
 
-## ADR-008: Unified CameraViewpoint architecture (2026-03)
+## ADR-008: Unified CameraViewpoint architecture (2026-03) [superseded]
 
 **Context**: The camera system had two incompatible abstractions for "camera view": `FollowMode` (5 variants for the main camera) and `AuxCamKind` (2 variants for PiP cameras). This caused duplicated drone positioning logic, prevented RocketCam from being shown on the main camera, and forced an unwieldy triple-`Without` query filter (`Without<RocketCamMarker>, Without<DroneCamMarker>, Without<EguiOverlayCam>`) repeated in ~11 places.
 **Decision**: Replace both enums with a single `CameraViewpoint` enum (6 variants: FixedGround, FollowSide, FollowAbove, DroneCam, RocketCam, FreeLook). The main camera uses `CameraProperties.viewpoint` and PiP uses `CameraProperties.pip_viewpoint`. A `MainCamMarker` component replaces the triple-Without filter.
 **Rationale**: One enum eliminates the abstraction mismatch and allows any viewpoint to be shown on any camera. `MainCamMarker` makes query filters readable and change-resistant.
-**Field renames**: `follow_mode` → `viewpoint`, `aux_cam_kind` → `pip_viewpoint`, `aux_cam_enabled` → `pip_enabled`, `camera_swapped` → `pip_swapped`.
-**Consequences**: RocketCam is now available as a main camera viewpoint (cycling Ground → Side → Above → Drone → Rocket → Free). Drone positioning logic is shared via `drone_viewpoint_position()`.
+**Superseded**: By ADR-009 (compositional camera modes).
+
+## ADR-009: Compositional camera modes — PositionMode + LookMode (2026-03)
+
+**Context**: `CameraViewpoint` (6 flat variants) coupled position and look behavior. FreeLook moved the camera target with the camera (orbiting target around camera at fixed distance), making it impossible to free-roam while tracking the rocket, or to park at a location with free mouselook.
+**Decision**: Replace `CameraViewpoint` with two independent enums: `PositionMode` (FreeRoam, Orbit, ChaseSide, ChaseAbove, Stationed, Attached) and `LookMode` (Free, Track, Forward). A `CameraPreset` enum (7 variants) provides curated combinations for UI cycling. PiP uses a separate `PipPreset` enum (Drone, Rocket).
+**New fields**: `look_yaw`/`look_pitch` (radians) store accumulated mouse rotation for `LookMode::Free`. Initialized from current look direction on mode switch.
+**Presets**: Free (FreeRoam+Free), Free Track (FreeRoam+Track), Orbit (Orbit+Track), Side (ChaseSide+Track), Above (ChaseAbove+Track), Drone (Stationed+Free), Rocket (Attached+Forward).
+**Architecture**: `update_camera_transform_system` split into Phase 1 (position by PositionMode) and Phase 2 (look by LookMode). `mouse_orbit_system` dispatches on both modes.
+**Consequences**: True FPS-style free roam with decoupled mouselook. Can walk around while auto-tracking rocket. Drone cam now supports free mouselook. Advanced users can manually override position/look independently via egui.
