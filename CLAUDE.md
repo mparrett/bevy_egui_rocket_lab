@@ -16,16 +16,22 @@ just release          # cargo build --release
 just check            # cargo check
 just test             # cargo test (ECS regression tests in src/main.rs)
 just clippy           # cargo clippy
-just dev-wasm         # fast WASM build (dev profile, no LTO)
-just serve-dev-wasm   # dev-wasm + serve on :8080
-just release-wasm     # wasm32 + wasm-bindgen using the wasm-release profile
-just serve-wasm       # release-wasm + serve on :8080
-just serve-opt-wasm   # release-wasm + wasm-opt -Oz + serve on :8080
+just dev-wasm          # fast WASM build — both WebGPU + WebGL2 backends
+just serve-dev-wasm    # dev-wasm + serve on :8080 (JS loader auto-selects backend)
+just dev-wasm-webgl    # WebGL2-only dev build
+just serve-dev-wasm-webgl # WebGL2-only dev build + serve on :8080
+just release-wasm      # wasm-release profile — both backends
+just serve-wasm        # release-wasm + serve on :8080
+just serve-opt-wasm    # release-wasm + wasm-opt -Oz + serve on :8080
 just watch            # cargo watch -s 'just run' (live reload, requires cargo-watch)
 just deps             # cargo tree
 ```
 
-Tests exist (`just test`) for launch/reset/landing core-loop behavior. Use `just serve-dev-wasm` + the webapp-testing skill to verify WASM builds in a browser before pushing. Use `just serve-wasm` (wasm-release profile) for final size-optimized web builds.
+Tests exist (`just test`) for launch/reset/landing core-loop behavior. WASM builds produce dual backends (WebGPU + WebGL2); the `index.html` JS loader auto-selects based on browser support. Use `?backend=webgl` or `?backend=webgpu` query params to force a specific backend. Use `just serve-dev-wasm` for quick iteration or `just serve-wasm` (wasm-release profile) for final size-optimized web builds. See `docs/project_notes/browser_testing.md` for Playwright-based testing notes.
+
+## Tickets
+
+When asked to write a ticket, create it locally in `docs/project_notes/incoming/` as a markdown file. Only open a GitHub issue if explicitly requested.
 
 ## Workflow
 
@@ -37,7 +43,7 @@ Tests exist (`just test`) for launch/reset/landing core-loop behavior. Use `just
 
 ## Architecture
 
-**State & Messages:** `LaunchEvent`, `DownedEvent`, `ResetEvent` messages for rocket lifecycle. `RocketStateEnum` tracks `Initial → Launched → Grounded`.
+**State & Messages:** `LaunchEvent`, `DownedEvent`, `ResetEvent`, `RocketGeometryChangedEvent` messages for rocket lifecycle. `RocketStateEnum` tracks `Initial → Launched → Descending → Grounded`.
 
 **Resources as config:** `RocketDimensions`, `RocketFlightParameters`, `CameraProperties`, `SkyProperties` are Bevy resources modified via the egui panel and read by systems.
 
