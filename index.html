@@ -144,8 +144,8 @@
     document.getElementById('link-webgpu').href = buildUrl('backend', 'webgpu');
     document.getElementById('link-webgl').href = buildUrl('backend', 'webgl');
 
-    const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    if (!isLocal) {
+    const isDeployed = location.hostname.endsWith('.github.io');
+    if (isDeployed) {
       document.getElementById('profile-links').style.display = 'none';
     }
 
@@ -156,7 +156,7 @@
       : forceBackend === "webgpu" ? true
       : hasWebGPU && !isIOS;
 
-    const profile = isLocal && params.get("profile") === "dev" ? "dev" : "release";
+    const profile = !isDeployed && params.get("profile") === "dev" ? "dev" : "release";
     const variant = useWebGPU ? "webgpu" : "webgl";
     const dir = profile === "dev" ? `out-dev-${variant}` : `out-${variant}`;
 
@@ -164,11 +164,11 @@
     document.getElementById(`link-${variant}`).classList.add('active');
 
     const label = document.querySelector("#loading .label");
-    label.textContent = isLocal ? `${variant}, ${profile}` : variant;
+    label.textContent = !isDeployed ? `${variant}, ${profile}` : variant;
 
     async function launch() {
       document.getElementById('play-btn').style.display = 'none';
-      label.textContent = isLocal ? `Loading (${variant}, ${profile})…` : `Loading (${variant})…`;
+      label.textContent = !isDeployed ? `Loading (${variant}, ${profile})…` : `Loading (${variant})…`;
       document.querySelector("#loading .spinner").style.display = 'block';
 
       const showAt = Date.now();
