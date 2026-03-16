@@ -310,6 +310,7 @@ struct MenuLoadParams<'w> {
     experience: ResMut<'w, crate::inventory::PlayerExperience>,
 }
 
+#[allow(unused_variables)]
 fn menu_action(
     interaction_query: Query<
         (&Interaction, &MenuButtonAction),
