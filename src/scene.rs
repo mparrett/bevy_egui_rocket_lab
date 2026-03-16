@@ -547,6 +547,69 @@ fn spawn_store_room(
             Transform::from_xyz(x, ROOM_HEIGHT - 0.02, z),
         ));
     }
+
+    // Exterior door (opens outward, nearly fully open)
+    let door_thickness = 0.05;
+    let door_w = 1.0_f32;
+    let door_h = 2.4_f32;
+    let door_center_z = 1.0_f32;
+    let wall_x = -ROOM_WIDTH / 2.0;
+    let door_mat = materials.add(StandardMaterial {
+        base_color: Color::srgb(0.35, 0.22, 0.12),
+        perceptual_roughness: 0.7,
+        ..default()
+    });
+    // Hinge on +Z edge of doorway (right side from outside), door swings 165° open
+    let hinge_z = door_center_z + door_w / 2.0;
+    let open_angle = 165_f32.to_radians();
+    let door_half = door_w / 2.0;
+    // Door center offset from hinge: initially at (0, -door_half) in XZ, rotated by open_angle
+    let offset_x = -door_half * open_angle.sin();
+    let offset_z = -door_half * open_angle.cos();
+    commands.spawn((
+        IndoorRoom,
+        despawn.clone(),
+        Mesh3d(meshes.add(Cuboid::new(door_thickness, door_h, door_w))),
+        MeshMaterial3d(door_mat),
+        Transform {
+            translation: Vec3::new(
+                wall_x + offset_x - WALL_THICKNESS,
+                door_h / 2.0,
+                hinge_z + offset_z,
+            ),
+            rotation: Quat::from_rotation_y(open_angle),
+            ..default()
+        },
+    ));
+
+    // "Rocket Shop Open" sign on exterior wall, left of door (from outside)
+    let sign_h = 1.2_f32;
+    let sign_w = sign_h * (1024.0 / 1418.0);
+    let sign_thickness = 0.005;
+    let sign_mat = materials.add(StandardMaterial {
+        base_color_texture: Some(asset_server.load("textures/poster_shop_open.png")),
+        perceptual_roughness: 0.9,
+        reflectance: 0.02,
+        unlit: true,
+        ..default()
+    });
+    // On exterior side of left wall (facing -X), to the left of door (lower Z from outside)
+    // Cuboid UV maps texture width→Z, height→Y; rotate 90° around X to fix orientation
+    commands.spawn((
+        IndoorRoom,
+        despawn,
+        Mesh3d(meshes.add(Cuboid::new(sign_thickness, sign_w, sign_h))),
+        MeshMaterial3d(sign_mat),
+        Transform {
+            translation: Vec3::new(
+                wall_x - 0.06,
+                1.5,
+                door_center_z - door_w / 2.0 - sign_w / 2.0 - 0.15,
+            ),
+            rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+            ..default()
+        },
+    ));
 }
 
 fn enter_indoor(
