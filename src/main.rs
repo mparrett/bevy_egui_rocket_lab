@@ -137,6 +137,9 @@ struct CountdownDisplayMarker;
 #[derive(Component)]
 struct CountdownOverlay;
 
+#[derive(Component)]
+struct PanelOffsetNode;
+
 #[derive(Resource)]
 struct CountdownTimer {
     timer: Timer,
@@ -306,6 +309,7 @@ fn main() {
                 pip_toggle_button_system.run_if(in_state(AppState::Launch)),
                 launch_button_system.run_if(in_state(AppState::Launch)),
                 update_camera_mode_label.run_if(in_state(AppState::Launch)),
+                update_panel_offsets_system,
             )
                 .run_if(in_gameplay),
         )
@@ -1080,6 +1084,24 @@ fn ui_system(
     let is_store = *app_state.get() == AppState::Store;
     let ctx = contexts.ctx_mut()?;
     camera_properties.egui_has_pointer = ctx.wants_pointer_input();
+
+    if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::F1)) {
+        camera_properties.panel_open = !camera_properties.panel_open;
+    }
+
+    if !camera_properties.panel_open {
+        egui::Area::new(egui::Id::new("panel_toggle"))
+            .fixed_pos(egui::pos2(4.0, 4.0))
+            .show(ctx, |ui| {
+                if ui.button("\u{2699} Settings").clicked() {
+                    camera_properties.panel_open = true;
+                }
+            });
+    }
+
+    if !camera_properties.panel_open {
+        return Ok(());
+    }
 
     egui::SidePanel::left("left_panel")
         .resizable(true)
@@ -2745,14 +2767,32 @@ fn update_camera_mode_label(
     }
 }
 
+fn update_panel_offsets_system(
+    camera_properties: Res<CameraProperties>,
+    mut offset_query: Query<(&mut Node, Has<CountdownOverlay>), With<PanelOffsetNode>>,
+) {
+    if !camera_properties.is_changed() {
+        return;
+    }
+    let open = camera_properties.panel_open;
+    for (mut node, is_countdown) in &mut offset_query {
+        if is_countdown {
+            node.padding.left = Val::Px(if open { 200.0 } else { 0.0 });
+        } else {
+            node.left = Val::Px(if open { 296.0 } else { 8.0 });
+        }
+    }
+}
+
 fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn((
             DespawnOnExit(AppState::Launch),
+            PanelOffsetNode,
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
-                left: Val::Px(296.0),
+                left: Val::Px(8.0),
                 padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
@@ -2771,10 +2811,11 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn((
             DespawnOnExit(AppState::Launch),
+            PanelOffsetNode,
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(80.0),
-                left: Val::Px(296.0),
+                left: Val::Px(8.0),
                 column_gap: Val::Px(6.0),
                 ..default()
             },
@@ -2951,12 +2992,13 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
 
     commands.spawn((
         DespawnOnExit(AppState::Launch),
+        PanelOffsetNode,
         Node {
             width: Val::Percent(100.0),
             height: Val::Percent(100.0),
             position_type: PositionType::Absolute,
             padding: UiRect {
-                left: Val::Px(200.0),
+                left: Val::Px(0.0),
                 bottom: Val::Px(75.0),
                 ..default()
             },
@@ -2982,10 +3024,11 @@ fn setup_lab_hud(mut commands: Commands) {
     commands
         .spawn((
             DespawnOnExit(AppState::Lab),
+            PanelOffsetNode,
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
-                left: Val::Px(296.0),
+                left: Val::Px(8.0),
                 padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
@@ -3004,10 +3047,11 @@ fn setup_lab_hud(mut commands: Commands) {
     commands
         .spawn((
             DespawnOnExit(AppState::Lab),
+            PanelOffsetNode,
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(56.0),
-                left: Val::Px(296.0),
+                left: Val::Px(8.0),
                 column_gap: Val::Px(6.0),
                 ..default()
             },
@@ -3025,10 +3069,11 @@ fn setup_store_hud(mut commands: Commands, balance: Res<save::PlayerBalance>) {
     commands
         .spawn((
             DespawnOnExit(AppState::Store),
+            PanelOffsetNode,
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
-                left: Val::Px(296.0),
+                left: Val::Px(8.0),
                 padding: UiRect::new(Val::Px(8.0), Val::Px(8.0), Val::Px(6.0), Val::Px(8.0)),
                 border_radius: BorderRadius::all(Val::Px(4.0)),
                 ..default()
@@ -3051,10 +3096,11 @@ fn setup_store_hud(mut commands: Commands, balance: Res<save::PlayerBalance>) {
     commands
         .spawn((
             DespawnOnExit(AppState::Store),
+            PanelOffsetNode,
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(56.0),
-                left: Val::Px(296.0),
+                left: Val::Px(8.0),
                 column_gap: Val::Px(6.0),
                 ..default()
             },

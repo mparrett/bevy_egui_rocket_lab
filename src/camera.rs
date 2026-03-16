@@ -139,6 +139,7 @@ pub struct CameraProperties {
     pub drone_sway: f32,
     pub drone_waypoint: DroneWaypoint,
     pub drone_distance: DroneDistance,
+    pub panel_open: bool,
 }
 impl Default for CameraProperties {
     fn default() -> Self {
@@ -163,6 +164,7 @@ impl Default for CameraProperties {
             drone_sway: 0.05,
             drone_waypoint: DroneWaypoint::default(),
             drone_distance: DroneDistance::default(),
+            panel_open: false,
         }
     }
 }
