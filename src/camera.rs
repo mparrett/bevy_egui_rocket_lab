@@ -839,7 +839,12 @@ pub fn mouse_orbit_system(
             movement -= right;
         }
         if movement.length_squared() > 0.0 {
-            let delta = movement.normalize() * FREELOOK_MOVE_SPEED * time.delta_secs();
+            let speed = if keyboard.pressed(KeyCode::ShiftLeft) || keyboard.pressed(KeyCode::ShiftRight) {
+                FREELOOK_MOVE_SPEED * 3.0
+            } else {
+                FREELOOK_MOVE_SPEED
+            };
+            let delta = movement.normalize() * speed * time.delta_secs();
             camera_properties.desired_translation += delta;
             camera_properties.lagged_translation += delta;
             // For Track mode, don't move the target — it follows the rocket
