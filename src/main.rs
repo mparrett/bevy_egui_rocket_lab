@@ -38,7 +38,7 @@ use crate::{
     },
     cone::Cone,
     fps::{fps_counter_showhide, fps_text_update_system, setup_fps_counter},
-    ground::setup_ground_system,
+    ground::{disable_tree_shadows, setup_ground_system},
     physics::{ForceTimer, get_timer_id, lock_all_axes, update_forces_system},
     rocket::{
         ColorPreset, FinMarker, RocketBody, RocketCone, RocketDimensions, RocketFlightParameters,
@@ -395,7 +395,7 @@ fn main() {
     );
 
     app.add_systems(Startup, spawn_regular_sky_map);
-    app.add_systems(Update, (cubemap_asset_loaded, check_loading_complete));
+    app.add_systems(Update, (cubemap_asset_loaded, check_loading_complete, disable_tree_shadows));
     app.add_systems(
         Update,
         (sync_sky_render_mode_system, animate_light_direction)
