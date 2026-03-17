@@ -15,7 +15,7 @@ pub fn hdr_emissive(val: f32) -> f32 {
 }
 
 pub fn light_scale() -> f32 {
-    0.45
+    0.2
 }
 
 pub fn skybox_brightness() -> f32 {

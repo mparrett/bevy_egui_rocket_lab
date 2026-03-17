@@ -240,7 +240,7 @@ pub fn setup_sky_system(mut commands: Commands) {
     let scale = crate::webcompat::light_scale();
     commands.insert_resource(GlobalAmbientLight {
         color: Color::srgb_u8(210, 220, 240),
-        brightness: 0.9 * scale,
+        brightness: 0.9,
         affects_lightmapped_meshes: true,
     });
 

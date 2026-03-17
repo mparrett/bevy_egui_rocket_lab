@@ -513,6 +513,32 @@ fn spawn_store_room(
         Transform::from_xyz(0.2, shelf_surface + cam_box_h / 2.0, shelf_z),
     ));
 
+    // Thunder motors poster on back wall, left of shelf
+    let poster_h = 1.2_f32;
+    let poster_w = poster_h * (916.0 / 1457.0);
+    let poster_thickness = 0.005;
+    let poster_mat = materials.add(StandardMaterial {
+        base_color_texture: Some(asset_server.load("textures/poster_thunder_motors.png")),
+        base_color: Color::WHITE,
+        reflectance: 0.05,
+        ..default()
+    });
+    commands.spawn((
+        IndoorRoom,
+        despawn.clone(),
+        Mesh3d(meshes.add(Cuboid::new(poster_h, poster_w, poster_thickness))),
+        MeshMaterial3d(poster_mat),
+        Transform {
+            translation: Vec3::new(
+                -2.2,
+                ROOM_HEIGHT / 2.0,
+                -half_z + WALL_THICKNESS + poster_thickness / 2.0 + 0.001,
+            ),
+            rotation: Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
+            ..default()
+        },
+    ));
+
     // Overhead light fixtures (4 in a grid)
     let fixture_mat = materials.add(StandardMaterial {
         base_color: Color::srgb(0.9, 0.9, 0.9),
