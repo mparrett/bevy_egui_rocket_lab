@@ -139,7 +139,9 @@ struct CountdownDisplayMarker;
 struct CountdownOverlay;
 
 #[derive(Component)]
-struct PanelOffsetNode;
+struct PanelOffsetNode {
+    base_top: f32,
+}
 
 #[derive(Resource)]
 struct CountdownTimer {
@@ -1143,6 +1145,11 @@ fn ui_system(
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut **game_mode, save::GameMode::Sandbox, "Sandbox");
                 ui.selectable_value(&mut **game_mode, save::GameMode::Gameplay, "Gameplay");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("\u{2715}").clicked() {
+                        camera_properties.panel_open = false;
+                    }
+                });
             });
             if **game_mode == save::GameMode::Gameplay
                 && !owned_materials.0.contains(&rocket_dims.material)
@@ -2847,16 +2854,19 @@ fn update_camera_mode_label(
     }
 }
 
+const SETTINGS_BUTTON_HEIGHT: f32 = 32.0;
+
 fn update_panel_offsets_system(
     camera_properties: Res<CameraProperties>,
-    mut offset_query: Query<&mut Node, With<PanelOffsetNode>>,
+    mut offset_query: Query<(&PanelOffsetNode, &mut Node)>,
 ) {
     if !camera_properties.is_changed() {
         return;
     }
     let open = camera_properties.panel_open;
-    for mut node in &mut offset_query {
+    for (offset, mut node) in &mut offset_query {
         node.left = Val::Px(if open { 296.0 } else { 8.0 });
+        node.top = Val::Px(if open { offset.base_top } else { offset.base_top + SETTINGS_BUTTON_HEIGHT });
     }
 }
 
@@ -2864,7 +2874,7 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn((
             DespawnOnExit(AppState::Launch),
-            PanelOffsetNode,
+            PanelOffsetNode { base_top: 8.0 },
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
@@ -2887,7 +2897,7 @@ fn setup_launch_hud(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn((
             DespawnOnExit(AppState::Launch),
-            PanelOffsetNode,
+            PanelOffsetNode { base_top: 80.0 },
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(80.0),
@@ -3098,7 +3108,7 @@ fn setup_lab_hud(mut commands: Commands) {
     commands
         .spawn((
             DespawnOnExit(AppState::Lab),
-            PanelOffsetNode,
+            PanelOffsetNode { base_top: 8.0 },
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
@@ -3121,7 +3131,7 @@ fn setup_lab_hud(mut commands: Commands) {
     commands
         .spawn((
             DespawnOnExit(AppState::Lab),
-            PanelOffsetNode,
+            PanelOffsetNode { base_top: 56.0 },
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(56.0),
@@ -3143,7 +3153,7 @@ fn setup_store_hud(mut commands: Commands, balance: Res<save::PlayerBalance>) {
     commands
         .spawn((
             DespawnOnExit(AppState::Store),
-            PanelOffsetNode,
+            PanelOffsetNode { base_top: 8.0 },
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(8.0),
@@ -3170,7 +3180,7 @@ fn setup_store_hud(mut commands: Commands, balance: Res<save::PlayerBalance>) {
     commands
         .spawn((
             DespawnOnExit(AppState::Store),
-            PanelOffsetNode,
+            PanelOffsetNode { base_top: 56.0 },
             Node {
                 position_type: PositionType::Absolute,
                 top: Val::Px(56.0),
