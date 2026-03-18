@@ -231,8 +231,10 @@ pub struct RocketState {
     pub max_height: f32,
     pub max_velocity: f32,
     pub launch_origin_y: f32,
+    pub launch_origin_xz: Vec2,
     pub landing_speed: f32,
     pub state: RocketStateEnum,
+    pub launch_wall_time: Option<f64>,
 }
 
 impl RocketState {
@@ -247,8 +249,10 @@ impl Default for RocketState {
             max_height: 0.0,
             max_velocity: 0.0,
             launch_origin_y: 0.0,
+            launch_origin_xz: Vec2::ZERO,
             landing_speed: 0.0,
             state: RocketStateEnum::Initial,
+            launch_wall_time: None,
         }
     }
 }

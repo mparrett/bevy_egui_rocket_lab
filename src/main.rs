@@ -108,6 +108,13 @@ struct ResetEvent;
 #[derive(Message, Default)]
 struct RocketGeometryChangedEvent;
 
+fn wall_clock_now() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs_f64())
+        .unwrap_or(0.0)
+}
+
 #[derive(Component, Default)]
 struct ScoreMarker;
 
@@ -280,6 +287,7 @@ fn main() {
         .init_resource::<parachute::ParachuteConfig>()
         .init_resource::<ParticleProperties>()
         .init_resource::<SceneCameraState>()
+        .init_resource::<save::LaunchHistory>()
         .add_systems(
             Startup,
             (
@@ -313,6 +321,7 @@ fn main() {
                 camera_mode_button_system.run_if(in_state(AppState::Launch)),
                 pip_toggle_button_system.run_if(in_state(AppState::Launch)),
                 launch_button_system.run_if(in_state(AppState::Launch)),
+                update_launch_button_label.run_if(in_state(AppState::Launch)),
                 update_camera_mode_label.run_if(in_state(AppState::Launch)),
                 update_panel_offsets_system,
             )
@@ -341,6 +350,7 @@ fn main() {
                 on_launch_event,
                 on_launch_audio_event,
                 detect_landing_from_collision_system,
+                record_flight_on_landing.after(detect_landing_from_collision_system),
                 on_crash_event,
                 update_stats_system,
                 update_wind_hud_system,
@@ -806,6 +816,7 @@ fn on_launch_event(
     game_mode: Res<save::GameMode>,
     mut mass_model: ResMut<RocketMassModel>,
     lsp: LaunchSaveParams,
+    history: Res<save::LaunchHistory>,
 ) {
     for _ in launch_events.read() {
         info!("Launch event");
@@ -840,6 +851,7 @@ fn on_launch_event(
                     &lsp.owned_tube_types.0,
                     &lsp.owned_nosecone_types.0,
                     lsp.experience.0,
+                    &history,
                 );
                 let _ = save::save_player_meta(&meta);
             }
@@ -859,6 +871,8 @@ fn on_launch_event(
         rocket_state.max_velocity = 0.0;
         rocket_state.landing_speed = 0.0;
         rocket_state.launch_origin_y = transform.translation.y;
+        rocket_state.launch_origin_xz = Vec2::new(transform.translation.x, transform.translation.z);
+        rocket_state.launch_wall_time = Some(wall_clock_now());
 
         let force_timer = ForceTimer {
             id: get_timer_id(),
@@ -920,10 +934,40 @@ fn on_reset_event(
     mut drone_cam_query: Query<&mut Camera, (With<DroneCamMarker>, Without<RocketCamMarker>)>,
     cone_query: Query<Entity, With<RocketCone>>,
     mut scene_camera: ResMut<SceneCameraState>,
+    mut history: ResMut<save::LaunchHistory>,
 ) {
     if reset_events.read().next().is_none() {
         return;
     }
+
+    if matches!(
+        rocket_state.state,
+        RocketStateEnum::Launched | RocketStateEnum::Descending
+    ) {
+        let landing_distance = rocket_query
+            .single()
+            .map(|(_, t, ..)| {
+                let xz = Vec2::new(t.translation.x, t.translation.z);
+                xz.distance(rocket_state.launch_origin_xz)
+            })
+            .unwrap_or(0.0);
+        let now = wall_clock_now();
+        let duration = rocket_state
+            .launch_wall_time
+            .map(|t| (now - t) as f32)
+            .unwrap_or(0.0);
+        let record = save::FlightRecord {
+            timestamp: now as u64,
+            max_altitude: rocket_state.max_height,
+            max_velocity: rocket_state.max_velocity,
+            flight_duration_secs: duration,
+            landing_outcome: save::LandingOutcome::Reset,
+            landing_speed: 0.0,
+            landing_distance,
+        };
+        history.push(record);
+    }
+    rocket_state.launch_wall_time = None;
 
     if let Ok((cam_entity, mut cam)) = rocket_cam_query.single_mut() {
         cam.is_active = false;
@@ -1003,6 +1047,63 @@ fn detect_landing_from_collision_system(
         rocket_state.landing_speed = speed;
         rocket_state.state = RocketStateEnum::Grounded;
         crash_events.write(DownedEvent);
+    }
+}
+
+#[allow(unused_variables)]
+fn record_flight_on_landing(
+    mut downed_events: MessageReader<DownedEvent>,
+    mut rocket_state: ResMut<RocketState>,
+    mut history: ResMut<save::LaunchHistory>,
+    inv: Res<inventory::Inventory>,
+    lsp: LaunchSaveParams,
+    rocket_query: Query<&Transform, (With<RocketMarker>, Without<Camera>)>,
+) {
+    if downed_events.read().next().is_none() {
+        return;
+    }
+    let outcome = if rocket_state.soft_landing() {
+        save::LandingOutcome::Soft
+    } else {
+        save::LandingOutcome::Hard
+    };
+    let landing_xz = rocket_query
+        .single()
+        .map(|t| Vec2::new(t.translation.x, t.translation.z))
+        .unwrap_or(rocket_state.launch_origin_xz);
+    let landing_distance = landing_xz.distance(rocket_state.launch_origin_xz);
+    let now = wall_clock_now();
+    let duration = rocket_state
+        .launch_wall_time
+        .map(|t| (now - t) as f32)
+        .unwrap_or(0.0);
+    let record = save::FlightRecord {
+        timestamp: now as u64,
+        max_altitude: rocket_state.max_height,
+        max_velocity: rocket_state.max_velocity,
+        flight_duration_secs: duration,
+        landing_outcome: outcome,
+        landing_speed: rocket_state.landing_speed,
+        landing_distance,
+    };
+    history.push(record);
+    rocket_state.launch_wall_time = None;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let meta = save::build_player_meta(
+            &lsp.save_state.player_name,
+            lsp.balance.0,
+            &lsp.owned_materials.0,
+            lsp.rocket_cam_owned.0,
+            &inv,
+            &lsp.owned_motor_sizes.0,
+            &lsp.owned_tube_types.0,
+            &lsp.owned_nosecone_types.0,
+            lsp.experience.0,
+            &history,
+        );
+        let _ = save::save_player_meta(&meta);
     }
 }
 
@@ -1094,6 +1195,7 @@ struct SaveUiParams<'w> {
     owned_nosecone_types: ResMut<'w, inventory::OwnedNoseconeTypes>,
     equipped: ResMut<'w, inventory::EquippedLoadout>,
     experience: ResMut<'w, inventory::PlayerExperience>,
+    launch_history: ResMut<'w, save::LaunchHistory>,
 }
 
 fn ui_system(
@@ -1130,6 +1232,7 @@ fn ui_system(
     let owned_nosecone_types = &mut save_params.owned_nosecone_types;
     let equipped = &mut save_params.equipped;
     let experience = &mut save_params.experience;
+    let launch_history = &mut save_params.launch_history;
     let is_lab = *app_state.get() == AppState::Lab;
     let is_launch = *app_state.get() == AppState::Launch;
     let is_store = *app_state.get() == AppState::Store;
@@ -1813,6 +1916,55 @@ fn ui_system(
                     });
             }
 
+            if is_launch && !launch_history.flights.is_empty() {
+                ui.add_space(6.0);
+                egui::CollapsingHeader::new("Flight Log")
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        let mut bests = Vec::new();
+                        if let Some(alt) = launch_history.best_altitude() {
+                            bests.push(format!("{alt:.1} m"));
+                        }
+                        if let Some(vel) = launch_history.best_velocity() {
+                            bests.push(format!("{vel:.1} m/s"));
+                        }
+                        if let Some(dur) = launch_history.best_duration() {
+                            bests.push(format!("{dur:.1} s"));
+                        }
+                        if !bests.is_empty() {
+                            ui.label(format!("Bests: {}", bests.join(" | ")));
+                            ui.separator();
+                        }
+
+                        egui::Grid::new("flight_log_grid")
+                            .striped(true)
+                            .show(ui, |ui| {
+                                ui.label("#");
+                                ui.label("Alt");
+                                ui.label("Vel");
+                                ui.label("Time");
+                                ui.label("Dist");
+                                ui.label("Result");
+                                ui.end_row();
+
+                                for (i, flight) in launch_history.flights.iter().enumerate().rev() {
+                                    ui.label(format!("{}", i + 1));
+                                    ui.label(format!("{:.1} m", flight.max_altitude));
+                                    ui.label(format!("{:.1}", flight.max_velocity));
+                                    ui.label(format!("{:.1} s", flight.flight_duration_secs));
+                                    ui.label(format!("{:.1} m", flight.landing_distance));
+                                    let (label, color) = match flight.landing_outcome {
+                                        save::LandingOutcome::Soft => ("Soft", egui::Color32::from_rgb(100, 200, 100)),
+                                        save::LandingOutcome::Hard => ("Hard", egui::Color32::from_rgb(200, 80, 80)),
+                                        save::LandingOutcome::Reset => ("Reset", egui::Color32::from_rgb(200, 200, 80)),
+                                    };
+                                    ui.colored_label(color, label);
+                                    ui.end_row();
+                                }
+                            });
+                    });
+            }
+
             #[cfg(not(target_arch = "wasm32"))]
             if is_store {
                 ui.add_space(6.0);
@@ -1838,7 +1990,8 @@ fn ui_system(
                                          owned_tube_types: &inventory::OwnedTubeTypes,
                                          owned_nosecone_types: &inventory::OwnedNoseconeTypes,
                                          experience: &inventory::PlayerExperience,
-                                         player: &str| {
+                                         player: &str,
+                                         launch_history: &save::LaunchHistory| {
                             let meta = save::build_player_meta(
                                 player,
                                 balance.0,
@@ -1849,6 +2002,7 @@ fn ui_system(
                                 &owned_tube_types.0,
                                 &owned_nosecone_types.0,
                                 experience.0,
+                                launch_history,
                             );
                             let _ = save::save_player_meta(&meta);
                         };
@@ -1893,7 +2047,7 @@ fn ui_system(
                                     save_state.rocket_name_buf = rocket.name.clone();
                                 }
                                 balance.0 -= 10.0;
-                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
                                 save_state.status_message = Some("Purchased Starter Rocket!".to_string());
                             }
                             if !can_afford {
@@ -1916,7 +2070,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= price;
                                     owned_materials.0.push(mat);
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
                                     save_state.status_message = Some(format!("Purchased {}!", mat.label()));
                                 }
                                 if !can_afford {
@@ -1936,7 +2090,7 @@ fn ui_system(
                             if ui.add_enabled(can_afford, btn).clicked() {
                                 balance.0 -= price;
                                 rocket_cam_owned.0 = true;
-                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
                                 save_state.status_message = Some("Purchased Rocket Cam!".to_string());
                             }
                             if !can_afford {
@@ -1962,7 +2116,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= unlock_price;
                                     owned_motor_sizes.0.push(size);
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
                                     save_state.status_message =
                                         Some(format!("Unlocked {} Motors!", size.label()));
                                 }
@@ -1988,7 +2142,7 @@ fn ui_system(
                             if ui.add_enabled(can_afford, btn).clicked() {
                                 balance.0 -= pack_price;
                                 inv.add_motors(size, 3);
-                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
                                 save_state.status_message =
                                     Some(format!("Purchased 3x {} Motors!", size.label()));
                             }
@@ -2013,7 +2167,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= price;
                                     *inv.parachutes.entry(size).or_insert(0) += 1;
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
                                     save_state.status_message =
                                         Some(format!("Purchased {} Parachute!", size.label()));
                                 }
@@ -2041,7 +2195,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= price;
                                     owned_tube_types.0.push(tt);
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
                                     save_state.status_message =
                                         Some(format!("Purchased {} Tube!", tt.label()));
                                 }
@@ -2069,7 +2223,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= price;
                                     owned_nosecone_types.0.push(nt);
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
                                     save_state.status_message =
                                         Some(format!("Purchased {} Nosecone!", nt.label()));
                                 }
@@ -2847,14 +3001,42 @@ fn launch_button_system(
     mut commands: Commands,
     rocket_state: Res<RocketState>,
     countdown: Option<Res<CountdownTimer>>,
+    mut reset: MessageWriter<ResetEvent>,
 ) {
     for interaction in &query {
-        if *interaction == Interaction::Pressed
-            && rocket_state.state == RocketStateEnum::Initial
-            && countdown.is_none()
-        {
-            info!("Begin countdown!");
-            commands.insert_resource(CountdownTimer::new());
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        match rocket_state.state {
+            RocketStateEnum::Initial if countdown.is_none() => {
+                info!("Begin countdown!");
+                commands.insert_resource(CountdownTimer::new());
+            }
+            RocketStateEnum::Grounded => {
+                reset.write(ResetEvent);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn update_launch_button_label(
+    rocket_state: Res<RocketState>,
+    button_query: Query<&Children, With<LaunchButton>>,
+    mut text_query: Query<&mut Text>,
+) {
+    if !rocket_state.is_changed() {
+        return;
+    }
+    let label = match rocket_state.state {
+        RocketStateEnum::Grounded => "Reset",
+        _ => "Launch",
+    };
+    for children in &button_query {
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                **text = label.to_string();
+            }
         }
     }
 }
@@ -3259,6 +3441,7 @@ mod tests {
         app.insert_resource(inventory::OwnedNoseconeTypes::default());
         app.insert_resource(inventory::PlayerExperience::default());
         app.insert_resource(SceneCameraState::default());
+        app.insert_resource(save::LaunchHistory::default());
         app
     }
 
@@ -3506,5 +3689,151 @@ mod tests {
 
         let state = app.world().resource::<RocketState>();
         assert!(matches!(state.state, RocketStateEnum::Initial));
+    }
+
+    #[test]
+    fn launch_history_ring_buffer_caps_at_ten() {
+        let mut history = save::LaunchHistory::default();
+        for i in 0..15 {
+            history.push(save::FlightRecord {
+                timestamp: i as u64,
+                max_altitude: i as f32 * 10.0,
+                max_velocity: i as f32,
+                flight_duration_secs: 1.0,
+                landing_outcome: save::LandingOutcome::Soft,
+                landing_speed: 0.5,
+                landing_distance: 0.0,
+            });
+        }
+        assert_eq!(history.flights.len(), 10);
+        assert_eq!(history.flights.front().unwrap().timestamp, 5);
+        assert_eq!(history.flights.back().unwrap().timestamp, 14);
+    }
+
+    #[test]
+    fn launch_history_best_helpers() {
+        let mut history = save::LaunchHistory::default();
+        history.push(save::FlightRecord {
+            timestamp: 1,
+            max_altitude: 50.0,
+            max_velocity: 20.0,
+            flight_duration_secs: 3.0,
+            landing_outcome: save::LandingOutcome::Hard,
+            landing_speed: 5.0,
+            landing_distance: 3.0,
+        });
+        history.push(save::FlightRecord {
+            timestamp: 2,
+            max_altitude: 100.0,
+            max_velocity: 10.0,
+            flight_duration_secs: 5.0,
+            landing_outcome: save::LandingOutcome::Soft,
+            landing_speed: 1.0,
+            landing_distance: 7.0,
+        });
+        assert_eq!(history.best_altitude(), Some(100.0));
+        assert_eq!(history.best_velocity(), Some(20.0));
+        assert_eq!(history.best_duration(), Some(5.0));
+    }
+
+    #[test]
+    fn launch_history_serde_roundtrip() {
+        let mut history = save::LaunchHistory::default();
+        history.push(save::FlightRecord {
+            timestamp: 1234567890,
+            max_altitude: 42.5,
+            max_velocity: 15.3,
+            flight_duration_secs: 7.2,
+            landing_outcome: save::LandingOutcome::Reset,
+            landing_speed: 0.0,
+            landing_distance: 12.5,
+        });
+        let json = serde_json::to_string(&history).unwrap();
+        let restored: save::LaunchHistory = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.flights.len(), 1);
+        let f = &restored.flights[0];
+        assert_eq!(f.timestamp, 1234567890);
+        assert_eq!(f.landing_outcome, save::LandingOutcome::Reset);
+    }
+
+    #[test]
+    fn record_flight_on_landing_pushes_to_history() {
+        let mut app = setup_core_app();
+        app.add_systems(
+            Update,
+            (
+                detect_landing_from_collision_system,
+                record_flight_on_landing.after(detect_landing_from_collision_system),
+            ),
+        );
+        let rocket = spawn_test_rocket(app.world_mut(), 2.0);
+        let other = app.world_mut().spawn_empty().id();
+
+        app.world_mut()
+            .entity_mut(rocket)
+            .insert(LinearVelocity(Vec3::new(0.0, -1.5, 0.0)));
+        {
+            let mut state = app.world_mut().resource_mut::<RocketState>();
+            state.state = RocketStateEnum::Launched;
+            state.max_height = 25.0;
+            state.max_velocity = 12.0;
+            state.launch_wall_time = Some(wall_clock_now() - 5.0);
+        }
+
+        write_message(
+            &mut app,
+            CollisionStart {
+                collider1: rocket,
+                collider2: other,
+                body1: Some(rocket),
+                body2: None,
+            },
+        );
+        app.update();
+
+        let history = app.world().resource::<save::LaunchHistory>();
+        assert_eq!(history.flights.len(), 1);
+        let flight = &history.flights[0];
+        assert_eq!(flight.landing_outcome, save::LandingOutcome::Soft);
+        assert!(flight.max_altitude > 24.0);
+        assert!(flight.flight_duration_secs > 4.0);
+    }
+
+    #[test]
+    fn reset_mid_flight_records_reset_outcome() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, on_reset_event);
+        let _rocket = spawn_test_rocket(app.world_mut(), 0.75);
+
+        {
+            let mut state = app.world_mut().resource_mut::<RocketState>();
+            state.state = RocketStateEnum::Launched;
+            state.max_height = 30.0;
+            state.max_velocity = 8.0;
+            state.launch_wall_time = Some(wall_clock_now() - 2.0);
+        }
+
+        write_message(&mut app, ResetEvent);
+        app.update();
+
+        let history = app.world().resource::<save::LaunchHistory>();
+        assert_eq!(history.flights.len(), 1);
+        assert_eq!(
+            history.flights[0].landing_outcome,
+            save::LandingOutcome::Reset
+        );
+    }
+
+    #[test]
+    fn reset_from_initial_does_not_record() {
+        let mut app = setup_core_app();
+        app.add_systems(Update, on_reset_event);
+        let _rocket = spawn_test_rocket(app.world_mut(), 0.75);
+
+        write_message(&mut app, ResetEvent);
+        app.update();
+
+        let history = app.world().resource::<save::LaunchHistory>();
+        assert_eq!(history.flights.len(), 0);
     }
 }

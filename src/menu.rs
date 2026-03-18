@@ -308,6 +308,7 @@ struct MenuLoadParams<'w> {
     owned_tube_types: ResMut<'w, crate::inventory::OwnedTubeTypes>,
     owned_nosecone_types: ResMut<'w, crate::inventory::OwnedNoseconeTypes>,
     experience: ResMut<'w, crate::inventory::PlayerExperience>,
+    launch_history: ResMut<'w, crate::save::LaunchHistory>,
 }
 
 #[allow(unused_variables)]
@@ -349,6 +350,7 @@ fn menu_action(
                     load_params.owned_tube_types.0 = meta.owned_tube_types;
                     load_params.owned_nosecone_types.0 = meta.owned_nosecone_types;
                     load_params.experience.0 = meta.experience;
+                    *load_params.launch_history = meta.launch_history;
                 }
                 load_params.collection.rockets.clear();
                 load_params.collection.active = None;

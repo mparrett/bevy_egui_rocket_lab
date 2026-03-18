@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +10,56 @@ use crate::inventory::{
 use crate::rocket::{RocketDimensions, RocketFlightParameters, RocketMaterial};
 
 pub const STARTING_BALANCE: f64 = 50.0;
+
+const MAX_FLIGHT_HISTORY: usize = 10;
+
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+pub enum LandingOutcome {
+    Soft,
+    Hard,
+    Reset,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct FlightRecord {
+    pub timestamp: u64,
+    pub max_altitude: f32,
+    pub max_velocity: f32,
+    pub flight_duration_secs: f32,
+    pub landing_outcome: LandingOutcome,
+    pub landing_speed: f32,
+    #[serde(default)]
+    pub landing_distance: f32,
+}
+
+#[derive(Resource, Clone, Default, Serialize, Deserialize)]
+pub struct LaunchHistory {
+    pub flights: VecDeque<FlightRecord>,
+}
+
+impl LaunchHistory {
+    pub fn push(&mut self, record: FlightRecord) {
+        if self.flights.len() >= MAX_FLIGHT_HISTORY {
+            self.flights.pop_front();
+        }
+        self.flights.push_back(record);
+    }
+
+    pub fn best_altitude(&self) -> Option<f32> {
+        self.flights.iter().map(|f| f.max_altitude).reduce(f32::max)
+    }
+
+    pub fn best_velocity(&self) -> Option<f32> {
+        self.flights.iter().map(|f| f.max_velocity).reduce(f32::max)
+    }
+
+    pub fn best_duration(&self) -> Option<f32> {
+        self.flights
+            .iter()
+            .map(|f| f.flight_duration_secs)
+            .reduce(f32::max)
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Resource)]
 pub enum GameMode {
@@ -103,6 +155,8 @@ pub struct PlayerMeta {
     pub owned_nosecone_types: Vec<NoseconeType>,
     #[serde(default)]
     pub experience: u64,
+    #[serde(default)]
+    pub launch_history: LaunchHistory,
 }
 
 fn default_balance() -> f64 {
@@ -131,6 +185,7 @@ pub fn build_player_meta(
     owned_tube_types: &[TubeType],
     owned_nosecone_types: &[NoseconeType],
     experience: u64,
+    launch_history: &LaunchHistory,
 ) -> PlayerMeta {
     PlayerMeta {
         name: name.to_string(),
@@ -142,6 +197,7 @@ pub fn build_player_meta(
         owned_tube_types: owned_tube_types.to_vec(),
         owned_nosecone_types: owned_nosecone_types.to_vec(),
         experience,
+        launch_history: launch_history.clone(),
     }
 }
 
@@ -268,6 +324,7 @@ mod io {
                 &default_owned_tube_types(),
                 &default_owned_nosecone_types(),
                 0,
+                &LaunchHistory::default(),
             );
             let json = serde_json::to_string_pretty(&meta)
                 .map_err(|e| format!("Failed to serialize player meta: {e}"))?;
