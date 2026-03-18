@@ -224,19 +224,30 @@ pub enum RocketStateEnum {
     Grounded,
 }
 
+pub const SOFT_LANDING_SPEED: f32 = 2.0;
+
 #[derive(Resource)]
 pub struct RocketState {
     pub max_height: f32,
     pub max_velocity: f32,
     pub launch_origin_y: f32,
+    pub landing_speed: f32,
     pub state: RocketStateEnum,
 }
+
+impl RocketState {
+    pub fn soft_landing(&self) -> bool {
+        self.landing_speed <= SOFT_LANDING_SPEED
+    }
+}
+
 impl Default for RocketState {
     fn default() -> Self {
         RocketState {
             max_height: 0.0,
             max_velocity: 0.0,
             launch_origin_y: 0.0,
+            landing_speed: 0.0,
             state: RocketStateEnum::Initial,
         }
     }

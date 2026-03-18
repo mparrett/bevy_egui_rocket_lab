@@ -762,17 +762,21 @@ fn on_crash_event(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     audio_settings: Res<AudioSettings>,
+    rocket_state: Res<RocketState>,
     mut crash_reader: MessageReader<DownedEvent>,
 ) {
     for _event in crash_reader.read() {
-        info!("Crash event");
-        if !audio_settings.sfx_enabled {
-            continue;
+        if rocket_state.soft_landing() {
+            info!("Soft landing at {:.1} m/s", rocket_state.landing_speed);
+        } else {
+            info!("Hard landing at {:.1} m/s", rocket_state.landing_speed);
+            if audio_settings.sfx_enabled {
+                commands.spawn((
+                    AudioPlayer::new(asset_server.load("audio/impact_wood.ogg")),
+                    PlaybackSettings::DESPAWN,
+                ));
+            }
         }
-        commands.spawn((
-            AudioPlayer::new(asset_server.load("audio/impact_wood.ogg")),
-            PlaybackSettings::DESPAWN,
-        ));
     }
 }
 
@@ -853,6 +857,7 @@ fn on_launch_event(
         rocket_state.state = RocketStateEnum::Launched;
         rocket_state.max_height = 0.0;
         rocket_state.max_velocity = 0.0;
+        rocket_state.landing_speed = 0.0;
         rocket_state.launch_origin_y = transform.translation.y;
 
         let force_timer = ForceTimer {
@@ -940,6 +945,7 @@ fn on_reset_event(
     rocket_state.state = RocketStateEnum::Initial;
     rocket_state.max_height = 0.0;
     rocket_state.max_velocity = 0.0;
+    rocket_state.landing_speed = 0.0;
 
     for mut axes in &mut locked_axes {
         *axes = lock_all_axes(LockedAxes::new());
@@ -992,7 +998,9 @@ fn detect_landing_from_collision_system(
         .read()
         .any(|event| event.body1 == Some(rocket_entity) || event.body2 == Some(rocket_entity));
     if touched_ground {
-        info!("Rocket touchdown detected via collision event");
+        let speed = velocity.length();
+        info!("Rocket touchdown at {speed:.1} m/s");
+        rocket_state.landing_speed = speed;
         rocket_state.state = RocketStateEnum::Grounded;
         crash_events.write(DownedEvent);
     }
@@ -1028,9 +1036,18 @@ fn update_stats_system(
         return;
     };
     let altitude = (transform.translation.y - rocket_state.launch_origin_y).max(0.0);
+    let landing_line = if rocket_state.state == RocketStateEnum::Grounded {
+        if rocket_state.soft_landing() {
+            format!("\nLanded ({:.1} m/s)", rocket_state.landing_speed)
+        } else {
+            format!("\nCrashed ({:.1} m/s)", rocket_state.landing_speed)
+        }
+    } else {
+        String::new()
+    };
     **score_text = format!(
         "Alt: {:5.1} / {:5.1} m\n\
-         Vel: {:5.1} / {:5.1} m/s",
+         Vel: {:5.1} / {:5.1} m/s{landing_line}",
         altitude, rocket_state.max_height, velocity.length(), rocket_state.max_velocity
     );
 }
