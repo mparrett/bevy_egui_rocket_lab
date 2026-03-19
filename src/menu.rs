@@ -300,6 +300,7 @@ struct MenuLoadParams<'w> {
     player_balance: ResMut<'w, crate::save::PlayerBalance>,
     owned_materials: ResMut<'w, crate::save::OwnedMaterials>,
     rocket_cam_owned: ResMut<'w, crate::save::RocketCamOwned>,
+    creative_mode_owned: ResMut<'w, crate::save::CreativeModeOwned>,
     rocket_dims: ResMut<'w, crate::rocket::RocketDimensions>,
     flight_params: ResMut<'w, crate::rocket::RocketFlightParameters>,
     equipped: ResMut<'w, crate::inventory::EquippedLoadout>,
@@ -351,6 +352,7 @@ fn menu_action(
                     load_params.owned_nosecone_types.0 = meta.owned_nosecone_types;
                     load_params.experience.0 = meta.experience;
                     *load_params.launch_history = meta.launch_history;
+                    load_params.creative_mode_owned.0 = meta.creative_mode_owned;
                 }
                 load_params.collection.rockets.clear();
                 load_params.collection.active = None;

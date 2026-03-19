@@ -63,13 +63,16 @@ impl LaunchHistory {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Resource)]
 pub enum GameMode {
-    #[default]
     Sandbox,
+    #[default]
     Gameplay,
 }
 
 #[derive(Resource, Default)]
 pub struct RocketCamOwned(pub bool);
+
+#[derive(Resource, Default)]
+pub struct CreativeModeOwned(pub bool);
 
 #[derive(Resource)]
 pub struct OwnedMaterials(pub Vec<RocketMaterial>);
@@ -157,6 +160,8 @@ pub struct PlayerMeta {
     pub experience: u64,
     #[serde(default)]
     pub launch_history: LaunchHistory,
+    #[serde(default)]
+    pub creative_mode_owned: bool,
 }
 
 fn default_balance() -> f64 {
@@ -186,6 +191,7 @@ pub fn build_player_meta(
     owned_nosecone_types: &[NoseconeType],
     experience: u64,
     launch_history: &LaunchHistory,
+    creative_mode_owned: bool,
 ) -> PlayerMeta {
     PlayerMeta {
         name: name.to_string(),
@@ -198,6 +204,7 @@ pub fn build_player_meta(
         owned_nosecone_types: owned_nosecone_types.to_vec(),
         experience,
         launch_history: launch_history.clone(),
+        creative_mode_owned,
     }
 }
 
@@ -325,6 +332,7 @@ mod io {
                 &default_owned_nosecone_types(),
                 0,
                 &LaunchHistory::default(),
+                false,
             );
             let json = serde_json::to_string_pretty(&meta)
                 .map_err(|e| format!("Failed to serialize player meta: {e}"))?;

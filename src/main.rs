@@ -180,6 +180,15 @@ impl Default for AudioSettings {
     }
 }
 
+#[derive(Resource, Default)]
+struct RewardToast {
+    message: Option<String>,
+    timer: f32,
+}
+
+#[derive(Component)]
+struct RewardToastMarker;
+
 #[derive(Component)]
 pub struct LabMusicMarker;
 
@@ -277,6 +286,7 @@ fn main() {
         .init_resource::<save::GameMode>()
         .init_resource::<save::OwnedMaterials>()
         .init_resource::<save::RocketCamOwned>()
+        .init_resource::<save::CreativeModeOwned>()
         .init_resource::<inventory::Inventory>()
         .init_resource::<inventory::OwnedMotorSizes>()
         .init_resource::<inventory::OwnedTubeTypes>()
@@ -288,6 +298,7 @@ fn main() {
         .init_resource::<ParticleProperties>()
         .init_resource::<SceneCameraState>()
         .init_resource::<save::LaunchHistory>()
+        .init_resource::<RewardToast>()
         .add_systems(
             Startup,
             (
@@ -353,6 +364,7 @@ fn main() {
                 record_flight_on_landing.after(detect_landing_from_collision_system),
                 on_crash_event,
                 update_stats_system,
+                update_reward_toast_system,
                 update_wind_hud_system,
                 update_countdown_display,
                 wind::update_wind_system,
@@ -793,13 +805,14 @@ fn on_crash_event(
 #[derive(SystemParam)]
 struct LaunchSaveParams<'w> {
     save_state: Res<'w, save::SaveState>,
-    balance: Res<'w, save::PlayerBalance>,
+    balance: ResMut<'w, save::PlayerBalance>,
     owned_materials: Res<'w, save::OwnedMaterials>,
     rocket_cam_owned: Res<'w, save::RocketCamOwned>,
     owned_motor_sizes: Res<'w, inventory::OwnedMotorSizes>,
     owned_tube_types: Res<'w, inventory::OwnedTubeTypes>,
     owned_nosecone_types: Res<'w, inventory::OwnedNoseconeTypes>,
-    experience: Res<'w, inventory::PlayerExperience>,
+    experience: ResMut<'w, inventory::PlayerExperience>,
+    creative_mode_owned: Res<'w, save::CreativeModeOwned>,
 }
 
 #[allow(unused_variables)]
@@ -852,6 +865,7 @@ fn on_launch_event(
                     &lsp.owned_nosecone_types.0,
                     lsp.experience.0,
                     &history,
+                    lsp.creative_mode_owned.0,
                 );
                 let _ = save::save_player_meta(&meta);
             }
@@ -1050,14 +1064,31 @@ fn detect_landing_from_collision_system(
     }
 }
 
+fn compute_flight_reward(record: &save::FlightRecord) -> f64 {
+    let mut reward = 0.0;
+    reward += (record.max_altitude as f64 / 10.0).min(10.0);
+    reward += (record.flight_duration_secs as f64 * 0.5).min(5.0);
+    if record.landing_outcome == save::LandingOutcome::Soft {
+        reward += 3.0;
+    }
+    match record.landing_outcome {
+        save::LandingOutcome::Soft => {}
+        save::LandingOutcome::Hard => reward *= 0.5,
+        save::LandingOutcome::Reset => return 0.0,
+    }
+    (reward * 100.0).round() / 100.0
+}
+
 #[allow(unused_variables)]
 fn record_flight_on_landing(
     mut downed_events: MessageReader<DownedEvent>,
     mut rocket_state: ResMut<RocketState>,
     mut history: ResMut<save::LaunchHistory>,
     inv: Res<inventory::Inventory>,
-    lsp: LaunchSaveParams,
+    mut lsp: LaunchSaveParams,
     rocket_query: Query<&Transform, (With<RocketMarker>, Without<Camera>)>,
+    game_mode: Res<save::GameMode>,
+    mut reward_toast: ResMut<RewardToast>,
 ) {
     if downed_events.read().next().is_none() {
         return;
@@ -1086,7 +1117,18 @@ fn record_flight_on_landing(
         landing_speed: rocket_state.landing_speed,
         landing_distance,
     };
-    history.push(record);
+    history.push(record.clone());
+
+    if *game_mode == save::GameMode::Gameplay {
+        let reward = compute_flight_reward(&record);
+        if reward > 0.0 {
+            lsp.balance.0 += reward;
+            lsp.experience.0 += reward as u64;
+            reward_toast.message = Some(format!("+${reward:.2}"));
+            reward_toast.timer = 3.0;
+        }
+    }
+
     rocket_state.launch_wall_time = None;
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1102,6 +1144,7 @@ fn record_flight_on_landing(
             &lsp.owned_nosecone_types.0,
             lsp.experience.0,
             &history,
+            lsp.creative_mode_owned.0,
         );
         let _ = save::save_player_meta(&meta);
     }
@@ -1153,6 +1196,50 @@ fn update_stats_system(
     );
 }
 
+fn update_reward_toast_system(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut toast: ResMut<RewardToast>,
+    mut toast_query: Query<(Entity, &mut Text, &mut TextColor), With<RewardToastMarker>>,
+) {
+    if let Some(msg) = toast.message.take() {
+        if let Ok((_, mut text, mut color)) = toast_query.single_mut() {
+            **text = msg;
+            color.0 = Color::srgba(0.2, 1.0, 0.2, 1.0);
+        } else {
+            commands.spawn((
+                RewardToastMarker,
+                Text::new(msg),
+                TextFont {
+                    font_size: 20.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(0.2, 1.0, 0.2, 1.0)),
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(8.0),
+                    left: Val::Percent(50.0),
+                    ..default()
+                },
+            ));
+        }
+    }
+
+    if toast.timer > 0.0 {
+        toast.timer -= time.delta_secs();
+        if toast.timer <= 0.0 {
+            for (entity, _, _) in &toast_query {
+                commands.entity(entity).despawn();
+            }
+        } else if toast.timer < 1.0 {
+            let alpha = toast.timer;
+            for (_, _, mut color) in &mut toast_query {
+                color.0 = Color::srgba(0.2, 1.0, 0.2, alpha);
+            }
+        }
+    }
+}
+
 fn update_wind_hud_system(
     sky_props: Res<SkyProperties>,
     wind: Res<wind::WindProperties>,
@@ -1188,6 +1275,7 @@ struct SaveUiParams<'w> {
     game_mode: ResMut<'w, save::GameMode>,
     owned_materials: ResMut<'w, save::OwnedMaterials>,
     rocket_cam_owned: ResMut<'w, save::RocketCamOwned>,
+    creative_mode_owned: ResMut<'w, save::CreativeModeOwned>,
     parachute_config: ResMut<'w, parachute::ParachuteConfig>,
     inventory: ResMut<'w, inventory::Inventory>,
     owned_motor_sizes: ResMut<'w, inventory::OwnedMotorSizes>,
@@ -1225,6 +1313,7 @@ fn ui_system(
     let game_mode = &mut save_params.game_mode;
     let owned_materials = &mut save_params.owned_materials;
     let rocket_cam_owned = &mut save_params.rocket_cam_owned;
+    let creative_mode_owned = &mut save_params.creative_mode_owned;
     let parachute_config = &mut save_params.parachute_config;
     let inv = &mut save_params.inventory;
     let owned_motor_sizes = &mut save_params.owned_motor_sizes;
@@ -1263,8 +1352,18 @@ fn ui_system(
             ui.add_space(4.0);
 
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut **game_mode, save::GameMode::Sandbox, "Sandbox");
-                ui.selectable_value(&mut **game_mode, save::GameMode::Gameplay, "Gameplay");
+                if creative_mode_owned.0 {
+                    let mut is_sandbox = **game_mode == save::GameMode::Sandbox;
+                    if ui.checkbox(&mut is_sandbox, "Creative Mode").changed() {
+                        **game_mode = if is_sandbox {
+                            save::GameMode::Sandbox
+                        } else {
+                            save::GameMode::Gameplay
+                        };
+                    }
+                } else {
+                    ui.label("Gameplay");
+                }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button("\u{2715}").clicked() {
                         camera_properties.panel_open = false;
@@ -1972,7 +2071,7 @@ fn ui_system(
                     .default_open(true)
                     .show(ui, |ui| {
                         if **game_mode == save::GameMode::Sandbox {
-                            ui.label("Sandbox mode — everything unlocked.");
+                            ui.label("Creative Mode active — everything unlocked.");
                             return;
                         }
 
@@ -1991,7 +2090,8 @@ fn ui_system(
                                          owned_nosecone_types: &inventory::OwnedNoseconeTypes,
                                          experience: &inventory::PlayerExperience,
                                          player: &str,
-                                         launch_history: &save::LaunchHistory| {
+                                         launch_history: &save::LaunchHistory,
+                                         creative_mode_owned: &save::CreativeModeOwned| {
                             let meta = save::build_player_meta(
                                 player,
                                 balance.0,
@@ -2003,6 +2103,7 @@ fn ui_system(
                                 &owned_nosecone_types.0,
                                 experience.0,
                                 launch_history,
+                                creative_mode_owned.0,
                             );
                             let _ = save::save_player_meta(&meta);
                         };
@@ -2047,7 +2148,7 @@ fn ui_system(
                                     save_state.rocket_name_buf = rocket.name.clone();
                                 }
                                 balance.0 -= 10.0;
-                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history, creative_mode_owned);
                                 save_state.status_message = Some("Purchased Starter Rocket!".to_string());
                             }
                             if !can_afford {
@@ -2070,7 +2171,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= price;
                                     owned_materials.0.push(mat);
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history, creative_mode_owned);
                                     save_state.status_message = Some(format!("Purchased {}!", mat.label()));
                                 }
                                 if !can_afford {
@@ -2090,8 +2191,27 @@ fn ui_system(
                             if ui.add_enabled(can_afford, btn).clicked() {
                                 balance.0 -= price;
                                 rocket_cam_owned.0 = true;
-                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history, creative_mode_owned);
                                 save_state.status_message = Some("Purchased Rocket Cam!".to_string());
+                            }
+                            if !can_afford {
+                                ui.label("Not enough funds.");
+                            }
+                        }
+
+                        ui.separator();
+                        ui.label("Special");
+                        if creative_mode_owned.0 {
+                            ui.label("Creative Mode — Owned");
+                        } else {
+                            let price = 175.0;
+                            let can_afford = balance.0 >= price;
+                            let btn = egui::Button::new(format!("Buy Creative Mode — ${price}"));
+                            if ui.add_enabled(can_afford, btn).clicked() {
+                                balance.0 -= price;
+                                creative_mode_owned.0 = true;
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history, creative_mode_owned);
+                                save_state.status_message = Some("Purchased Creative Mode!".to_string());
                             }
                             if !can_afford {
                                 ui.label("Not enough funds.");
@@ -2116,7 +2236,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= unlock_price;
                                     owned_motor_sizes.0.push(size);
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history, creative_mode_owned);
                                     save_state.status_message =
                                         Some(format!("Unlocked {} Motors!", size.label()));
                                 }
@@ -2142,7 +2262,7 @@ fn ui_system(
                             if ui.add_enabled(can_afford, btn).clicked() {
                                 balance.0 -= pack_price;
                                 inv.add_motors(size, 3);
-                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
+                                save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history, creative_mode_owned);
                                 save_state.status_message =
                                     Some(format!("Purchased 3x {} Motors!", size.label()));
                             }
@@ -2167,7 +2287,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= price;
                                     *inv.parachutes.entry(size).or_insert(0) += 1;
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history, creative_mode_owned);
                                     save_state.status_message =
                                         Some(format!("Purchased {} Parachute!", size.label()));
                                 }
@@ -2195,7 +2315,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= price;
                                     owned_tube_types.0.push(tt);
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history, creative_mode_owned);
                                     save_state.status_message =
                                         Some(format!("Purchased {} Tube!", tt.label()));
                                 }
@@ -2223,7 +2343,7 @@ fn ui_system(
                                 if ui.add_enabled(can_afford, btn).clicked() {
                                     balance.0 -= price;
                                     owned_nosecone_types.0.push(nt);
-                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history);
+                                    save_meta(balance, owned_materials, rocket_cam_owned, inv, owned_motor_sizes, owned_tube_types, owned_nosecone_types, experience, &player, launch_history, creative_mode_owned);
                                     save_state.status_message =
                                         Some(format!("Purchased {} Nosecone!", nt.label()));
                                 }
@@ -3436,12 +3556,14 @@ mod tests {
         app.insert_resource(save::PlayerBalance::default());
         app.insert_resource(save::OwnedMaterials::default());
         app.insert_resource(save::RocketCamOwned::default());
+        app.insert_resource(save::CreativeModeOwned::default());
         app.insert_resource(inventory::OwnedMotorSizes::default());
         app.insert_resource(inventory::OwnedTubeTypes::default());
         app.insert_resource(inventory::OwnedNoseconeTypes::default());
         app.insert_resource(inventory::PlayerExperience::default());
         app.insert_resource(SceneCameraState::default());
         app.insert_resource(save::LaunchHistory::default());
+        app.insert_resource(RewardToast::default());
         app
     }
 
@@ -3835,5 +3957,59 @@ mod tests {
 
         let history = app.world().resource::<save::LaunchHistory>();
         assert_eq!(history.flights.len(), 0);
+    }
+
+    #[test]
+    fn default_game_mode_is_gameplay() {
+        assert_eq!(save::GameMode::default(), save::GameMode::Gameplay);
+    }
+
+    #[test]
+    fn flight_reward_soft_landing_positive() {
+        let record = save::FlightRecord {
+            timestamp: 1,
+            max_altitude: 50.0,
+            max_velocity: 10.0,
+            flight_duration_secs: 4.0,
+            landing_outcome: save::LandingOutcome::Soft,
+            landing_speed: 1.0,
+            landing_distance: 5.0,
+        };
+        let reward = compute_flight_reward(&record);
+        assert!(reward > 0.0, "soft landing should yield positive reward, got {reward}");
+    }
+
+    #[test]
+    fn flight_reward_reset_is_zero() {
+        let record = save::FlightRecord {
+            timestamp: 1,
+            max_altitude: 50.0,
+            max_velocity: 10.0,
+            flight_duration_secs: 4.0,
+            landing_outcome: save::LandingOutcome::Reset,
+            landing_speed: 0.0,
+            landing_distance: 0.0,
+        };
+        assert_eq!(compute_flight_reward(&record), 0.0);
+    }
+
+    #[test]
+    fn flight_reward_hard_landing_halved() {
+        let soft_record = save::FlightRecord {
+            timestamp: 1,
+            max_altitude: 50.0,
+            max_velocity: 10.0,
+            flight_duration_secs: 4.0,
+            landing_outcome: save::LandingOutcome::Soft,
+            landing_speed: 1.0,
+            landing_distance: 5.0,
+        };
+        let mut hard_record = soft_record.clone();
+        hard_record.landing_outcome = save::LandingOutcome::Hard;
+        let soft_reward = compute_flight_reward(&soft_record);
+        let hard_reward = compute_flight_reward(&hard_record);
+        let soft_base_without_bonus = soft_reward - 3.0;
+        let expected_hard = (soft_base_without_bonus * 0.5 * 100.0).round() / 100.0;
+        assert_eq!(hard_reward, expected_hard, "hard landing should be half of base (without soft bonus)");
     }
 }
