@@ -514,6 +514,7 @@ fn spawn_store_room(
     ));
 
     // Thunder motors poster on back wall, left of shelf
+    // Use -Z face (correct UVs) rotated 180° around Y to face into room
     let poster_h = 1.2_f32;
     let poster_w = poster_h * (916.0 / 1457.0);
     let poster_thickness = 0.005;
@@ -526,7 +527,7 @@ fn spawn_store_room(
     commands.spawn((
         IndoorRoom,
         despawn.clone(),
-        Mesh3d(meshes.add(Cuboid::new(poster_h, poster_w, poster_thickness))),
+        Mesh3d(meshes.add(Cuboid::new(poster_w, poster_h, poster_thickness))),
         MeshMaterial3d(poster_mat),
         Transform {
             translation: Vec3::new(
@@ -534,7 +535,7 @@ fn spawn_store_room(
                 ROOM_HEIGHT / 2.0,
                 -half_z + WALL_THICKNESS + poster_thickness / 2.0 + 0.001,
             ),
-            rotation: Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
+            rotation: Quat::from_rotation_y(std::f32::consts::PI),
             ..default()
         },
     ));
@@ -619,12 +620,12 @@ fn spawn_store_room(
         unlit: true,
         ..default()
     });
-    // On exterior side of left wall (facing -X), to the left of door (lower Z from outside)
-    // Cuboid UV maps texture width→Z, height→Y; rotate 90° around X to fix orientation
+    // On exterior side of left wall (facing -X), to the left of door (from outside)
+    // Use -Z face (correct UVs) rotated -90° around Y to face -X
     commands.spawn((
         IndoorRoom,
         despawn,
-        Mesh3d(meshes.add(Cuboid::new(sign_thickness, sign_w, sign_h))),
+        Mesh3d(meshes.add(Cuboid::new(sign_w, sign_h, sign_thickness))),
         MeshMaterial3d(sign_mat),
         Transform {
             translation: Vec3::new(
@@ -632,7 +633,7 @@ fn spawn_store_room(
                 1.5,
                 door_center_z - door_w / 2.0 - sign_w / 2.0 - 0.15,
             ),
-            rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+            rotation: Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
             ..default()
         },
     ));

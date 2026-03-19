@@ -51,6 +51,15 @@ When asked to write a ticket, create it locally in `docs/project_notes/incoming/
 
 **Rocket entity tree:** Rocket is a parent entity with child entities for body cylinder, cone, and fins. Fins are rebuilt dynamically when dimensions change. Dynamic bodies tracked by visuals need `TransformInterpolation`.
 
+## Textured Posters/Signs (Cuboid UV)
+
+Bevy's `Cuboid` UV mapping is only correct on the **-Z face**. Other faces produce mirrored or rotated textures. For posters and signs, always use:
+
+- `Cuboid::new(width, height, thickness)` with natural dimensions (no swapping)
+- Rotate the entity so the -Z face points toward the viewer (e.g. `rotation_y(PI)` for a poster on a back wall facing +Z into the room)
+
+See `src/scene.rs` for examples: front-wall posters need no rotation (-Z already faces viewer), back-wall poster uses `rotation_y(PI)`, exterior sign uses `rotation_x(-FRAC_PI_2)`.
+
 ## Clippy
 
 `type_complexity` and `too_many_arguments` are allowed project-wide in `Cargo.toml`.
