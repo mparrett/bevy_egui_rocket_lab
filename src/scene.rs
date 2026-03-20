@@ -621,7 +621,7 @@ fn spawn_store_room(
         ..default()
     });
     // On exterior side of left wall (facing -X), to the left of door (from outside)
-    // Use -Z face (correct UVs) rotated -90° around Y to face -X
+    // Use -Z face (correct UVs) rotated +90° around Y to face -X
     commands.spawn((
         IndoorRoom,
         despawn,
@@ -633,7 +633,7 @@ fn spawn_store_room(
                 1.5,
                 door_center_z - door_w / 2.0 - sign_w / 2.0 - 0.15,
             ),
-            rotation: Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2),
+            rotation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
             ..default()
         },
     ));
